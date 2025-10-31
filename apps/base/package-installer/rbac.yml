@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: carvel-sa
+  namespace: infra-packages
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: carvel-sa-cluster-role
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+rules:
+- apiGroups:
+  - '*'
+  resources:
+  - '*'
+  verbs:
+  - '*'
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: carvel-sa-cluster-rolebinding
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: carvel-sa-cluster-role
+subjects:
+- kind: ServiceAccount
+  name: carvel-sa
+  namespace: infra-packages

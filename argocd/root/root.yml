@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root-bootstrap
+  namespace: replaceme
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/warroyo/argocd-scaffolding
+    targetRevision: main
+    path: argocd
+  destination:
+    name: replaceme
+    namespace: replaceme
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

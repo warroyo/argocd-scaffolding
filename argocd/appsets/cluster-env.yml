@@ -1,0 +1,27 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-env-apps
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+  - clusters:
+      selector:
+        matchLabels:
+          type: 'tenant'
+  template:
+    metadata:
+      name: '{{cluster.name}}-{{cluster.environment}}'
+    spec:
+      project: '{{cluster.project}}'
+      source:
+        repoURL: https://github.com/warroyo/argocd-scaffolding
+        targetRevision: main
+        path: apps/clusters/{{cluster.name}}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{.path.basename}}'
+      syncPolicy:
+        syncOptions:
+        - CreateNamespace=true
