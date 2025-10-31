@@ -2,7 +2,6 @@ apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
   name: tenant-1
-  namespace: argocd
 spec:
   description: tenant-1
   clusterResourceWhitelist:
