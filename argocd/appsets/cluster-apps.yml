@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: global-apps
+  name: cluster-apps
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
@@ -10,20 +10,18 @@ spec:
       selector:
         matchLabels:
           type: 'tenant'
-      values:
-        project: '{{index .metadata.labels "project"}}'
   template:
     metadata:
-      name: '{{.name}}'
+      name: '{{.name}}-apps'
     spec:
-      project: '{{.project}}'
+      project: 'standard-project'
       source:
         repoURL: https://github.com/warroyo/argocd-scaffolding
         targetRevision: main
-        path: apps/global
+        path: apps/clusters/{{.name}}
       destination:
-        name: '{.name}'
-        namespace: default
+        server: '{{.server}}'
+        namespace: argocd
       syncPolicy:
         syncOptions:
         - CreateNamespace=true

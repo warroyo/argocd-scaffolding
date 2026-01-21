@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-provisioning
+  namespace: argocd
+spec:
+  generators:
+  - git:
+      repoURL: https://github.com/warroyo/argocd-scaffolding
+      revision: main
+      directories:
+      - path: infrastructure/clusters/*/*
+  template:
+    metadata:
+      name: 'provision-{{path.basename}}'
+    spec:
+      project: '{{path.basenameNormalized 1}}'
+      source:
+        repoURL: https://github.com/warroyo/argocd-scaffolding
+        targetRevision: main
+        path: '{{path}}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: default
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
