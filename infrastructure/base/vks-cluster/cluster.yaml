@@ -1,0 +1,56 @@
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: cluster
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks:
+        - 192.168.156.0/20
+    services:
+      cidrBlocks:
+        - 10.96.0.0/12
+    serviceDomain: cluster.local
+  topology:
+    class: builtin-generic-v3.5.0
+    classNamespace: vmware-system-vks-public
+    version: v1.34.1---vmware.1-vkr.4
+    variables:
+      - name: vsphereOptions
+        value:
+          persistentVolumes:
+            availableStorageClasses:
+              - vsan-default-storage-policy
+            defaultStorageClass: vsan-default-storage-policy
+      - name: kubernetes
+        value:
+          certificateRotation:
+            enabled: true
+            renewalDaysBeforeExpiry: 90
+      - name: vmClass
+        value: best-effort-small
+      - name: storageClass
+        value: vsan-default-storage-policy
+    controlPlane:
+      replicas: 1
+      metadata:
+        annotations:
+          run.tanzu.vmware.com/resolve-os-image: os-name=ubuntu, content-library=cl-a3b5e06b12f2737ca, os-version=24.04
+    workers:
+      machineDeployments:
+        - class: node-pool
+          name: base-np-v9ti
+          replicas: 1
+          metadata:
+            annotations:
+              run.tanzu.vmware.com/resolve-os-image: os-name=ubuntu, content-library=cl-a3b5e06b12f2737ca, os-version=24.04
+          variables:
+            overrides:
+              - name: vmClass
+                value: best-effort-medium
+              - name: volumes
+                value:
+                  - name: vol-sq33
+                    mountPath: /var/lib/containerd
+                    storageClass: vsan-default-storage-policy
+                    capacity: 20Gi

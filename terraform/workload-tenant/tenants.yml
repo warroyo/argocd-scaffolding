@@ -1,1 +1,3 @@
 - name: tenant-1
+  namespace_class: medium
+  provider_alias: kubernetes.tentant-1

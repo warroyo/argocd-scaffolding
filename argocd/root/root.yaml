@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: root-bootstrap
-  namespace: argocd
+  namespace: <replace-withargo-ns>
 spec:
   project: default
   source:
@@ -10,8 +10,8 @@ spec:
     targetRevision: main
     path: argocd
   destination:
-    server: https://kubernetes.default.svc
-    namespace: argocd
+    name: <replace-with-argocluster>
+    namespace: <replace-withargo-ns>
   syncPolicy:
     automated:
       prune: false

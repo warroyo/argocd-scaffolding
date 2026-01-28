@@ -13,8 +13,10 @@ spec:
   template:
     metadata:
       name: 'provision-{{path.basename}}'
+      labels:
+        tenant: '{{path.basenameNormalized 1}}'
     spec:
-      project: '{{path.basenameNormalized 1}}'
+      project: infra
       source:
         repoURL: https://github.com/warroyo/argocd-scaffolding
         targetRevision: main

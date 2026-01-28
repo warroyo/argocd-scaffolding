@@ -1,0 +1,12 @@
+- source:
+    kind: Cluster
+    name: cluster # base name
+    fieldPath: metadata.name
+  targets:
+    - select:
+        kind: AntreaConfig
+        name: prefix-antrea-package
+      fieldPath: metadata.name
+      options:
+        delimiter: '-'
+        index: 0

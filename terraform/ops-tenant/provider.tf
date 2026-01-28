@@ -1,11 +1,15 @@
 terraform {
   required_providers {
-    kubernetes = {
-      source = "hashicorp/kubernetes"
-    }
+    # kubernetes = {
+    #   source = "hashicorp/kubernetes"
+    # }
 
     vcfa = {
       source = "vmware/vcfa"
+    }
+     k8sconnect = {
+      source = "jmorris0x0/k8sconnect"
+      version = "0.3.6"
     }
 
   }
@@ -19,17 +23,13 @@ provider "vcfa" {
   api_token            = var.vcfa_refresh_token
 }
 
-data "vcfa_kubeconfig" "kubeconfig" {
-  project_name              = "default-project"
-  supervisor_namespace_name = module.supervisor_namespace.namespace
-  depends_on = [ module.supervisor_namespace ]
-}
 
 
 
-provider "kubernetes" {
-  alias = "vcfa-ns"
-  host     = data.vcfa_kubeconfig.kubeconfig.host
-  insecure = data.vcfa_kubeconfig.kubeconfig.insecure_skip_tls_verify
-  token    = data.vcfa_kubeconfig.kubeconfig.token
-}
+# provider "kubernetes" {
+#   alias = "vcfa-ns"
+#   host     = data.vcfa_kubeconfig.kubeconfig.host
+#   insecure = data.vcfa_kubeconfig.kubeconfig.insecure_skip_tls_verify
+#   token    = data.vcfa_kubeconfig.kubeconfig.token
+# }
+provider "k8sconnect" {} 

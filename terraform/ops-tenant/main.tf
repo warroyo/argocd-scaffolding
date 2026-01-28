@@ -19,6 +19,10 @@ locals {
       })
     }
   )
+  sup_ns_connection = {
+    kubeconfig = data.vcfa_kubeconfig.kubeconfig.kube_config_raw
+  }
+
 }
 
 module "supervisor_namespace" {
@@ -29,19 +33,24 @@ module "supervisor_namespace" {
   name = "argocd-ops"
 }
 
-module "argocd-instance" {
-  source = "git::https://github.com/warroyo/vcfa-terraform-examples.git//modules/argocd-instance?ref=main"
-  name = "argocd-ops"
-  namespace = module.supervisor_namespace.namespace
-  providers = {
-    kubernetes = kubernetes.vcfa-ns
-  }
+data "vcfa_kubeconfig" "kubeconfig" {
+  project_name              = "default-project"
+  supervisor_namespace_name = module.supervisor_namespace.namespace
+  depends_on = [ module.supervisor_namespace ]
 }
 
 
+module "argocd-instance" {
+  source = "../modules/argocd-instance"
+  name = "argocd-ops"
+  namespace = module.supervisor_namespace.namespace
+  cluster = local.sup_ns_connection
+  password = var.argo_password
+}
 
-resource "kubernetes_manifest" "root-app" {
-  depends_on = [ module.argocd-instance ]
-  manifest = local.modified_app
-  provider = kubernetes.vcfa-ns
+
+resource "k8sconnect_object" "app" {
+  yaml_body          = yamlencode(local.modified_app)
+  cluster = local.sup_ns_connection
+  depends_on = [data.vcfa_kubeconfig.kubeconfig]
 }

@@ -25,3 +25,9 @@ variable "vpc_name" {
 variable "zone_name" {
   type        = string
 }
+
+variable "argo_password" {
+  type = string
+  sensitive = true
+  default = ""
+}

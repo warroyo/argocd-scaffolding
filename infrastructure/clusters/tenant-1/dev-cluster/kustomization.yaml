@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: my-prod-namespace
+
+#This name prefix builds on the cluster base
+# the cluster base is always just "cluster" so the end result will be this prefix appended in front of "cluster"
+# ex. dev1-cluster
+namePrefix: dev1-
+
+resources:
+- ../../../base/vks-cluster
+components:
+- ../../../components/ha-control-plane
+- ../../../components/antrea-nsx

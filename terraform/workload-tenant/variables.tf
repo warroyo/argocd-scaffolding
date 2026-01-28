@@ -4,6 +4,11 @@ variable "vcfa_refresh_token" {
   sensitive   = true
 }
 
+variable "ops_namespace" {
+  description = "namespace for the ops tenant"
+  type = string
+}
+
 variable "vcfa_url" {
   type        = string
   description = "The VCF Automation url"
