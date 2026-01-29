@@ -1,7 +1,9 @@
 apiVersion: cni.tanzu.vmware.com/v1alpha1
 kind: AntreaConfig
 metadata:
-  name: prefix-antrea-package
+  name: clustername-antrea-package
+  labels:
+    config.k8s.io/inject-cluster-name-prefix: "true"
 spec:
   antrea:
     config:

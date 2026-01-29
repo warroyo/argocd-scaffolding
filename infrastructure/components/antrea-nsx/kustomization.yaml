@@ -7,9 +7,16 @@ patches:
     group: cni.tanzu.vmware.com
     version: v1alpha1
     kind: AntreaConfig
+    name: clustername-antrea-package
   patch: |-
     - op: replace
       path: /spec/antreaNSX/enable
       value: true
-replacements:
-  - path: cluster-ref.yaml
+# configMapGenerator:
+#   - name: vars
+#     literals:
+#       - cluster_name=chnageme
+# generatorOptions:
+#   disableNameSuffixHash: true
+#   annotations:
+#     config.kubernetes.io/local-config: "true"

@@ -1,7 +1,9 @@
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster
 metadata:
-  name: cluster
+  name: clustername
+  labels:
+    config.k8s.io/inject-cluster-name: "true"
 spec:
   clusterNetwork:
     pods:

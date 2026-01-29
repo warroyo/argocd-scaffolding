@@ -1,15 +1,22 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-namespace: my-prod-namespace
-
-#This name prefix builds on the cluster base
-# the cluster base is always just "cluster" so the end result will be this prefix appended in front of "cluster"
-# ex. dev1-cluster
-namePrefix: dev1-
-
 resources:
 - ../../../base/vks-cluster
+- ../../../base/cluster-argocd-attach
 components:
 - ../../../components/ha-control-plane
 - ../../../components/antrea-nsx
+- ../../../components/argocd-tenant-cluster
+- ../../../components/cluster-var-injector
+
+
+configMapGenerator:
+  - name: vars
+    literals:
+      - cluster_name=dev1-cluster
+      - project=tenant1
+    options:
+      disableNameSuffixHash: true
+      annotations:
+        config.kubernetes.io/local-config: "true"

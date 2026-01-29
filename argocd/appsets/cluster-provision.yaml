@@ -12,9 +12,10 @@ spec:
       - path: infrastructure/clusters/*/*
   template:
     metadata:
-      name: 'provision-{{path.basename}}'
+      name: '{{path.segment[2]}}-{{path.basename}}-provision'
       labels:
-        tenant: '{{path.basenameNormalized 1}}'
+        tenant: '{{path.segment[2]}}'
+        type: "cluster-infrastructure"
     spec:
       project: infra
       source:
