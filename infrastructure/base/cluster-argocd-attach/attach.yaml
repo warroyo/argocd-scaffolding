@@ -1,0 +1,15 @@
+apiVersion: field.vmware.com/v1
+kind: ArgoCluster
+metadata:
+  name: cluster
+  labels:
+    config.k8s.io/inject-cluster-name: "true"
+  annotations:
+    project-debug: ""
+spec:
+  clusterName: "cluster"
+  argoNamespace: "default"
+  clusterLabels:
+    provider: "vks"
+    type: ""
+  project: "default"

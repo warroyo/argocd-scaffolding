@@ -1,0 +1,31 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+replacements:
+  - source:
+      kind: ConfigMap
+      name: vars
+      fieldPath: data.cluster_name
+
+    targets:
+      - select:
+          labelSelector: "config.k8s.io/inject-cluster-name-prefix=true"
+        fieldPaths: 
+        - metadata.name
+        options:
+          delimiter: '-'
+          index: 0
+
+      - select:
+          labelSelector: "config.k8s.io/inject-cluster-name=true"
+        fieldPaths: 
+        - metadata.name
+  - source:
+      kind: ConfigMap
+      name: vars
+      fieldPath: data.project
+    targets:
+      - select:
+          kind: ArgoCluster
+        fieldPaths: 
+        - spec.project

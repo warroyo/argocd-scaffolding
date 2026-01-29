@@ -23,6 +23,7 @@ variable "role_name" {
   
 }
 
-variable "cluster" {
-  type = any
+variable "argo_version" {
+  type = string
+  default = "3.0.19+vmware.1-vks.1"
 }

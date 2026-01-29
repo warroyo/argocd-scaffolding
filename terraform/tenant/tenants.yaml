@@ -1,0 +1,15 @@
+tenants:
+  - name: "tenant-1"
+    namespaces:
+      - name: "dev-1"
+        storage_limit: "20Gi"
+        mem_limit: "4Gi"
+      # - name: "dev-2"
+      #   class_name: "small"
+  - name: "infra-1"
+    namespaces:
+      - name: "infra"
+        storage_limit: "20Gi"
+        mem_limit: "4Gi"
+        class_name: large
+  

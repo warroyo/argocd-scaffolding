@@ -1,0 +1,46 @@
+variable "region_name" {
+  type        = string
+}
+
+variable "vpc_name" {
+  type        = string
+}
+
+variable "zone_name" {
+  type        = string
+}
+
+variable "name" {
+  type = string
+  default = "lab"
+}
+
+variable "storage_limit" {
+  type = string
+  default = "102400Mi"
+}
+
+variable "class_name" {
+  type = string
+  default = "small"
+}
+
+variable "cpu_limit" {
+   type = string
+  default = "10000M"
+}
+
+variable "mem_limit" {
+   type = string
+  default = "10000Mi"
+}
+
+variable "storage_policy" {
+   type = string
+  default = "vSAN Default Storage Policy"
+}
+
+variable "project_name" {
+   type = string
+  default = "default-project"
+}

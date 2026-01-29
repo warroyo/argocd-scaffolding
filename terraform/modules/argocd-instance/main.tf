@@ -2,13 +2,12 @@ locals {
   argo_password = ( 
     length(trimspace(var.password)) > 0
     ? var.password
-    : data.k8sconnect_object.admin-password.object.data.password
+    : data.kubernetes_secret.admin-password.data.password
   )
 }
+resource "kubernetes_manifest" "argo-cd-instance" {
 
-
-resource "k8sconnect_object" "argo-cd-instance" {
-  yaml_body          = yamlencode({
+  manifest = {
     "apiVersion" = "argocd-service.vsphere.vmware.com/v1alpha1"
     "kind" = "ArgoCD"
     "metadata" = {
@@ -19,70 +18,45 @@ resource "k8sconnect_object" "argo-cd-instance" {
       "applicationSet" = {
         "enabled": true
       }
-      "version" = "2.14.15+vmware.1-vks.1"
+      "version" = var.argo_version
     }
-  })
-  cluster = var.cluster
-
-}
-
-resource "k8sconnect_wait" "argocd-instance" {
-  object_ref = k8sconnect_object.argo-cd-instance.object_ref
-
-  wait_for = {
-    field_value   = {
+  }
+  wait {
+    fields = {
+      //need to check the reason since the status is always true
       "status.conditions[2].reason" = "ReconcileSucceeded"
-    } 
-    timeout = "5m"
+    }
   }
-
-  cluster = var.cluster
 }
 
-module "namespace-register" {
-  source = "../argocd-attach-sv-namespace"
-  namespace = var.namespace
-  argocd_namespace = var.namespace
-  cluster = var.cluster
-}
-
-resource "k8sconnect_patch" "update-admin-secret" {
-  target = {
-    api_version = "v1"
-    kind        = "Secret"
-    name        = "argocd-secret" 
-    namespace   = var.namespace
-  }
-
-  patch = jsonencode({
-     data = {
-        "admin.password" = base64encode(bcrypt(var.password))
-        "admin.passwordMtime" = base64encode(timestamp())
+resource "kubernetes_secret_v1_data" "update-admin-secret" {
+      count = var.password != "" ? 1 : 0 
+      metadata {
+        name      = "argocd-secret" 
+        namespace = var.namespace
       }
-  })
 
-  cluster = var.cluster
-  depends_on = [ k8sconnect_object.argo-cd-instance ]
+      data = {
+        "admin.password" = bcrypt(var.password)
+        "admin.passwordMtime" = timestamp()
+      }
+      force = true
+      depends_on = [ kubernetes_manifest.argo-cd-instance ]
 }
 
-
-data "k8sconnect_object" "argocd_service" {
-  api_version = "v1"
-  kind        = "Service"
-  name = "argocd-server"
-  namespace = var.namespace
-
-  cluster = var.cluster
-  depends_on = [ k8sconnect_wait.argocd-instance ]
+data "kubernetes_service" "argocd" {
+  metadata {
+    name = "argocd-server"
+    namespace = var.namespace
+  }
+  depends_on = [ kubernetes_manifest.argo-cd-instance ]
 }
 
+data "kubernetes_secret" "admin-password" {
+  metadata {
+    name = "argocd-initial-admin-secret"
+    namespace = var.namespace
+  }
 
-data "k8sconnect_object" "admin-password" {
-  api_version = "v1"
-  kind        = "Secret"
-  name = "argocd-initial-admin-secret"
-  namespace = var.namespace
-
-  cluster = var.cluster
-  depends_on = [ k8sconnect_wait.argocd-instance ]
+  depends_on =  [ kubernetes_manifest.argo-cd-instance ]
 }

@@ -1,6 +1,5 @@
 output "server_ip" {
-  value = data.k8sconnect_object.argocd_service.object.status.loadBalancer.ingress.0.ip
-  
+  value = data.kubernetes_service.argocd.status.0.load_balancer.0.ingress.0.ip
 }
 
 output "admin_password" {
