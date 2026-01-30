@@ -9,9 +9,9 @@ locals {
     for k, v in local.tenant_map : k => v if lookup(v, "type", "") == "infra"
   }
 
-  all_project_map = {
-    for name, mod in module.tenant : name => mod.project_id
-  }
+  all_project_ids = [
+    for mod in module.tenant : mod.project_id
+  ]
 
   infra_count = length(local.infra_tenants)
   validate_single_infra = local.infra_count != 1 ? file("ERROR: Exactly one tenant of type 'infra' is required. Found: ${local.infra_count}") : true
@@ -62,8 +62,11 @@ module "tenant" {
 
 module "namepace_boostrap_catalog" {
   source = "../modules/namespace-bp-catalog"
-  enabled_projects = local.all_project_map
+  enabled_projects = local.all_project_ids
+  api_token = var.vcfa_refresh_token
   project_id = module.tenant[local.infra_tenant_name].project_id
+  vcfa_url = var.vcfa_url
+  org = var.vcfa_org
   for_each = local.infra_tenants
 }
 
@@ -90,3 +93,6 @@ resource "vra_deployment" "deploy_ns_bootstrap" {
   }
 }
 
+output "response" {
+  value = module.namepace_boostrap_catalog[local.infra_tenant_name].catalog_api_response
+}
