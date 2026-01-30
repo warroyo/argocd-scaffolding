@@ -6,7 +6,7 @@ locals {
     })
     spec = merge(local.raw_remote_data.spec, {
       destination = {
-          name = var.supervisor_namespace
+          name = "supervisor-ns-${var.supervisor_namespace}"
           namespace = var.supervisor_namespace
         }
     })

@@ -1,5 +1,7 @@
 tenants:
   - name: "tenant-1"
+    type: tenant
+    argo_namespace: "infra"
     namespaces:
       - name: "dev-1"
         storage_limit: "20Gi"
@@ -7,9 +9,11 @@ tenants:
       # - name: "dev-2"
       #   class_name: "small"
   - name: "infra-1"
+    type: infra
+    argo_namespace: infra
     namespaces:
       - name: "infra"
+        deploy_argo: true
         storage_limit: "20Gi"
         mem_limit: "4Gi"
         class_name: large
-  

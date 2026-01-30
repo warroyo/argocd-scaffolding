@@ -1,3 +1,3 @@
 output "namespace" {
-  value = resource.vcfa_supervisor_namespace.supervisor_namespace.name
+  value = vcfa_supervisor_namespace.supervisor_namespace.name
 }

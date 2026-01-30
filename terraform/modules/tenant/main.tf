@@ -24,3 +24,21 @@ module "svns" {
   depends_on = [ module.project ]
   storage_policy = each.value.storage_policy
 }
+
+
+output "argo_namespace" {
+  value = var.argo_namespace
+}
+output "project_id" {
+  value = module.project.project_id
+}
+
+output "namespaces" {
+  value = {
+    for name, ns in module.svns : name => {
+      name = ns.namespace
+      deploy_argo = var.namespaces[name].deploy_argo
+    }
+  }
+  description = "A map of created namespaces and their properties."
+}

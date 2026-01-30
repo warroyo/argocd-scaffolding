@@ -16,7 +16,11 @@ variable "namespaces" {
     mem_limit     = optional(string, "10000Mi")
     cpu_limit     = optional(string, "10000M")
     storage_policy     = optional(string, "vSAN Default Storage Policy")
+    deploy_argo   = optional(bool, false)
   }))
   description = "A map of namespaces with associated resource and location settings"
   default     = {}
+}
+variable "argo_namespace" {
+   type = string
 }
