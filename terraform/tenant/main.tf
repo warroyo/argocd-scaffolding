@@ -85,12 +85,18 @@ resource "vra_deployment" "deploy_ns_bootstrap" {
   catalog_item_version = module.namepace_boostrap_catalog[local.infra_tenant_name].bp_version
   project_id           = each.value.project_id
 
-  inputs = {
+  inputs = merge({
     namespace    = each.value.ns_name
     argo_namespace = each.value.argo_namespace
-    # cluster_labels  = {type = "tenant" }
+    cluster_labels  = jsonencode({type = "tenant" })
+   
     argo_project   = each.value.tenant_name
-  }
+  },
+  each.value.deploy_argo ? {
+     argo_password = bcrypt(var.argo_password)
+     deploy_argo = true
+  } : {}
+  )
 }
 
 output "response" {

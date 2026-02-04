@@ -30,6 +30,14 @@ resource "vra_blueprint" "namespace_bootstrap" {
         type: object
         default:
           test: test
+      deploy_argo:
+        type: boolean
+        title: deploy an argo cd instance?
+        default: false
+      argo_password:
+        type: string
+        title: argo cd admin password
+        description: only used when deploying argo, must be bcrypt format
     resources:
       CCI_Supervisor_Namespace_1:
         type: CCI.Supervisor.Namespace
@@ -50,6 +58,41 @@ resource "vra_blueprint" "namespace_bootstrap" {
               argoNamespace: $${input.argo_namespace}
               clusterLabels: $${input.cluster_labels}
               project: $${input.argo_project}
+      Argo_deploy:
+        type: CCI.Supervisor.Resource
+        dependsOn:
+          - Argo_password
+        properties:
+          count: '$${input.deploy_argo ? 1 : 0}'
+          context: $${resource.CCI_Supervisor_Namespace_1.id}
+          manifest:
+            apiVersion: argocd-service.vsphere.vmware.com/v1alpha1
+            kind: ArgoCD
+            metadata:
+              name: argocd-infra
+            spec:
+              appplicationSet:
+                enabled: true
+              version: 3.0.19+vmware.1-vks.1
+          wait:
+            fields:
+              - path: status.conditions[2].reason
+                value: ReconcileSucceeded
+                indicatesFailure: false
+      Argo_password:
+        type: CCI.Supervisor.Resource
+        properties:
+          count: '$${input.deploy_argo ? 1 : 0}'
+          context: $${resource.CCI_Supervisor_Namespace_1.id}
+          manifest:
+            apiVersion: v1
+            kind: Secret
+            metadata:
+              name: argocd-secret
+            type: Opaque
+            data:
+              admin.password: $${base64_encode(input.argo_password)}
+
   EOT
 }
 
