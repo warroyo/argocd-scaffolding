@@ -2,7 +2,7 @@
 # based on the output of the tenants unit
 
 dependency "tenants" {
-  config_path = values.tenants_path
+  config_path = "../tenant"
 
   mock_outputs = {
     kubeconfigs = {}

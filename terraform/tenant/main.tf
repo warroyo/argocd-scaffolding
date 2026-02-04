@@ -60,50 +60,7 @@ module "tenant" {
   }
 }
 
-# module "namepace_boostrap_catalog" {
-#   source = "../modules/namespace-bp-catalog"
-#   enabled_projects = local.all_project_ids
-#   api_token = var.vcfa_refresh_token
-#   project_id = module.tenant[local.infra_tenant_name].project_id
-#   vcfa_url = var.vcfa_url
-#   org = var.vcfa_org
-#   for_each = local.infra_tenants
-# }
 
-# //boostrap each NS 
-
-
-
-# resource "vra_deployment" "deploy_ns_bootstrap" {
-#   for_each = local.ns_deployments
-
-#   name        = "${each.key}-deployment"
-#   description = "Deployment for namespace ${each.value.ns_name} in tenant ${each.value.tenant_name}"
-
-
-#   catalog_item_id      = module.namepace_boostrap_catalog[local.infra_tenant_name].catalog_id
-#   catalog_item_version = module.namepace_boostrap_catalog[local.infra_tenant_name].bp_version
-#   project_id           = each.value.project_id
-
-#   inputs = merge({
-#     namespace    = each.value.ns_name
-#     argo_namespace = each.value.argo_namespace
-#     cluster_labels  = jsonencode({type = "tenant" })
-   
-#     argo_project   = each.value.tenant_name
-#   },
-#   each.value.deploy_argo ? {
-#      argo_password = bcrypt(var.argo_password)
-#      deploy_argo = true
-#   } : {}
-#   )
-# }
-
-# output "response" {
-#   value = module.namepace_boostrap_catalog[local.infra_tenant_name].catalog_api_response
-# }
-
-# Fetch kubeconfig for each namespace
 data "vcfa_kubeconfig" "ns_kubeconfig" {
   for_each = local.ns_deployments
 
@@ -111,7 +68,6 @@ data "vcfa_kubeconfig" "ns_kubeconfig" {
   supervisor_namespace_name = each.value.ns_name
 }
 
-# Output kubeconfigs for each namespace (for Terragrunt bootstrap units)
 output "kubeconfigs" {
   description = "Map of namespace name to kubeconfig details"
   value = {
@@ -124,7 +80,6 @@ output "kubeconfigs" {
   sensitive = true
 }
 
-# Output namespace config for each namespace (for Terragrunt bootstrap units)
 output "namespaces_config" {
   description = "Map of namespace name to bootstrap configuration"
   value = {
