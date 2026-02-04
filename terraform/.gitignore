@@ -1,0 +1,36 @@
+# Terragrunt cache
+.terragrunt-cache/
+
+# Generated stack directory
+.terragrunt-stack/
+
+# Terraform files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.lock.hcl
+
+# Terragrunt generated files (in generated units)
+terragrunt-debug.log
+
+# Crash log files
+crash.log
+crash.*.log
+
+# Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Sensitive variable files
+*.tfvars
+*.tfvars.json
+!example.tfvars
+
+# IDE
+.idea/
+*.swp
+*.swo
+.vscode/
