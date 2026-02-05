@@ -7,8 +7,25 @@ dependency "tenants" {
   config_path = values.tenants_path
 
   mock_outputs = {
-    kubeconfigs = {}
-    namespaces_config = {}
+    kubeconfigs = {
+      "tenant1" = {
+        host = "https://127.0.0.1:6443"
+        token = "token"
+        insecure_skip_tls_verify = true
+      }
+    }
+    namespaces_config = {
+      "tenant1" = {
+        namespace_name = "tenant1"
+        deploy_argo = true
+        argo_namespace = "tenant1"
+        argo_password = "password"
+        argo_cluster_labels = {
+          type = "tenant"
+        }
+        argo_project = "tenant1"
+      }
+    }
   }
   mock_outputs_allowed_terraform_commands = ["validate", "plan"]
 }
