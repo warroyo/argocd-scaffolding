@@ -17,9 +17,3 @@ variable "vcfa_org" {
 variable "region_name" {
   type        = string
 }
-
-variable "argo_password" {
-  type = string
-  sensitive = true
-  default = ""
-}

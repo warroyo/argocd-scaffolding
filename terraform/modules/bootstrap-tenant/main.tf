@@ -14,27 +14,24 @@ locals {
 }
 
 module "argocd-instance" {
-  source = "../modules/argocd-instance"
+  count = var.deploy_argo ? 1 : 0 
+  source = "../argocd-instance"
   name = "argocd-1"
   namespace = var.supervisor_namespace
   password = var.argo_password
   argo_version = "3.0.19+vmware.1-vks.1"
-  providers = {
-    kubernetes = kubernetes
-  }
 }
 
 module "ns-attach" {
-  source = "../modules/argocd-ns-attach"
+  source = "../argocd-ns-attach"
   ns_name = var.supervisor_namespace
-  argo_namespace = var.supervisor_namespace
-  argo_cluster_labels = {
-    type = "infra"
-  }
-  argo_project = "default"
+  argo_namespace = var.argo_ns
+  argo_cluster_labels = var.argo_cluster_labels
+  argo_project = var.argo_project
 }
 
 data "http" "root_app" {
+  count = var.deploy_argo ? 1 : 0 
   url = var.root_app
 
   retry {
@@ -44,16 +41,17 @@ data "http" "root_app" {
 }
 
 resource "kubernetes_manifest" "root_app" {
+  count = var.deploy_argo ? 1 : 0 
   manifest = local.modified_remote_object
 }
 
 
 
-output "argo_ip" {
-  value = module.argocd-instance.server_ip
-}
+# output "argo_ip" {
+#   value = module.argocd-instance.server_ip
+# }
 
-output "argo_password" {
-  value = module.argocd-instance.admin_password
-  sensitive = true
-}
+# output "argo_password" {
+#   value = module.argocd-instance.admin_password
+#   sensitive = true
+# }
