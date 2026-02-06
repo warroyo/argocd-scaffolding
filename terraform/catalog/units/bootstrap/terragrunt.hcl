@@ -23,6 +23,9 @@ dependency "tenants" {
         argo_cluster_labels = {
           type = "tenant"
         }
+        cluster_labels = {
+          env = "prod"
+        }
         tenant_name = "tenant1"
       }
     }
@@ -31,9 +34,17 @@ dependency "tenants" {
   mock_outputs_allowed_terraform_commands = ["init","validate", "plan"]
 }
 
-terraform {
-  # We use the bootstrap-helm wrapper which calls the helm chart
-  source = "${get_repo_root()}//terraform/bootstrap-helm"
+# Generate root variables required by inputs
+generate "variables" {
+  path      = "variables.tf"
+  if_exists = "overwrite_terragrunt"
+  contents  = <<EOF
+variable "argo_password" {
+  type        = string
+  description = "ArgoCD admin password"
+  sensitive   = true
+}
+EOF
 }
 
 # Generate HELM providers for each namespace from tenants output
@@ -61,7 +72,7 @@ generate "modules" {
   contents  = <<EOF
 %{ for key, ns_config in dependency.tenants.outputs.namespaces_config ~}
 module "bootstrap_${replace(key, "-", "_")}" {
-  source = "${get_repo_root()}//terraform/bootstrap-helm"
+  source = "${get_repo_root()}//terraform/modules/bootstrap-helm"
 
   providers = {
     helm = helm.${replace(key, "-", "_")}
@@ -72,9 +83,16 @@ module "bootstrap_${replace(key, "-", "_")}" {
   deploy_argo        = ${ns_config.deploy_argo}
   argo_namespace     = "${ns_config.argo_namespace}"
   argo_password      = var.argo_password
-  argo_cluster_labels = {
-    type = "tenant"
-  }
+  
+  # Pass cluster labels from tenants.yaml output
+  # If empty, defaults to { type = "tenant" } inside the module if we didn't override it,
+  # but here we override it. If users want default + extra, logic should be handled here.
+  # For now, we pass what's in yaml. If null/empty, we might want a default.
+  # The Terraform wrapper has default = { type = "tenant" }.
+  # ns_config.cluster_labels usually comes from yaml. If it is empty map, it overwrites default.
+  # If we want to merge, we need to do it here or in Terraform.
+  # Let's assume the YAML defines the FULL set of labels desired.
+  argo_cluster_labels = ${jsonencode(ns_config.cluster_labels)}
   
   # Root app configuration (using defaults or passed inputs if we add them to terragrunt inputs)
 }

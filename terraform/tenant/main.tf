@@ -30,7 +30,12 @@ locals {
         argo_namespace = local.infra_tenant_name != null ? [
           for infra_ns_key, infra_ns_val in module.tenant[local.infra_tenant_name].namespaces : infra_ns_val.name 
           if infra_ns_val.deploy_argo == true && infra_ns_key == local.tenant_map[t_name].argo_namespace
-        ][0] : "argocd" 
+        ][0] : "argocd"
+
+        cluster_labels = try(
+            [for ns in local.tenant_map[t_name].namespaces : lookup(ns, "cluster_labels", {}) if ns.name == ns_val.name][0],
+            {}
+        )
       }
     }
   ]...)
@@ -89,6 +94,7 @@ output "namespaces_config" {
       deploy_argo    = ns.deploy_argo
       argo_namespace = ns.argo_namespace
       project_id     = ns.project_id
+      cluster_labels = ns.cluster_labels
     }
   }
 }
