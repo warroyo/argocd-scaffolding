@@ -14,7 +14,7 @@ spec:
     metadata:
       name: '{{.name}}-apps'
     spec:
-      project: 'standard-project'
+      project: 'infra'
       source:
         repoURL: https://github.com/warroyo/argocd-scaffolding
         targetRevision: main
