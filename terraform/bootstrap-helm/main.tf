@@ -13,28 +13,27 @@ resource "helm_release" "bootstrap" {
   create_namespace = false # Assumed created by tenants job
 
   # Pass values to Helm chart
-  set {
+  set [
+  {
     name  = "deployArgo"
     value = var.deploy_argo
   }
 
-  set {
+  {
     name  = "argoNamespace"
     value = var.argo_namespace
   }
 
-  set {
+ {
     name  = "tenantName"
     value = var.tenant_name
   }
 
-  set {
+   {
     name  = "argoInstance.password"
-    # We pass the password directly. 
     value = var.deploy_argo ? bcrypt(var.argo_password) : ""
   }
 
-  # Pass cluster labels map
   dynamic "set" {
     for_each = var.argo_cluster_labels
     content {

@@ -41,14 +41,6 @@ generate "providers" {
   path      = "providers.tf"
   if_exists = "overwrite_terragrunt"
   contents  = <<EOF
-terraform {
-  required_providers {
-    helm = {
-      source = "hashicorp/helm"
-    }
-  }
-}
-
 %{ for key, config in dependency.tenants.outputs.kubeconfigs ~}
 provider "helm" {
   alias    = "${replace(key, "-", "_")}"
