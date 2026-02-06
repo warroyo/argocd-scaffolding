@@ -15,7 +15,6 @@ spec:
     serviceDomain: cluster.local
   topology:
     class: builtin-generic-v3.5.0
-    classNamespace: vmware-system-vks-public
     version: v1.34.1---vmware.1-vkr.4
     variables:
       - name: vsphereOptions
