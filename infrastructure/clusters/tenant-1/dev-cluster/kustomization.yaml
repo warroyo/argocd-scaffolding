@@ -4,18 +4,9 @@ kind: Kustomization
 resources:
 - ../../../base/vks-cluster
 - ../../../base/cluster-argocd-attach
+- ./cluster-details.yaml
 components:
 - ../../../components/ha-control-plane
 - ../../../components/antrea-nsx
 - ../../../components/argocd-tenant-cluster
 - ../../../components/cluster-var-injector
-
-
-configMapGenerator:
-  - name: vars
-    files:
-    - cluster-details.yaml
-    options:
-      disableNameSuffixHash: true
-      annotations:
-        config.kubernetes.io/local-config: "true"

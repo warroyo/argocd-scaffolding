@@ -11,9 +11,9 @@ spec:
       - path: infrastructure/clusters/*/*/cluster-details.yaml
   template:
     metadata:
-      name: '{{project}}-{{cluster_name}}-provision'
+      name: '{{data.project}}-{{data.cluster_name}}-provision'
       labels:
-        tenant: '{{project}}'
+        tenant: '{{data.project}}'
         type: "cluster-infrastructure"
     spec:
       project: infra
@@ -22,8 +22,8 @@ spec:
         targetRevision: main
         path: '{{path}}'
       destination:
-        name:  'supervisor-ns-{{namespace}}'
-        namespace: '{{namespace}}'
+        name:  'supervisor-ns-{{data.namespace}}'
+        namespace: '{{data.namespace}}'
       syncPolicy:
         automated:
           prune: true
