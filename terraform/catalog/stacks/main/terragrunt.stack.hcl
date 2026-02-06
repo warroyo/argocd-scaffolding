@@ -1,5 +1,5 @@
 stack "tenant-management" {
-  source = "${get_repo_root()}/terraform/catalog/stacks/tenant-management"
+  source = "${find_in_parent_folders("catalog/stacks")}/tenant-management"
   path   = "tenant-management"
 
   values = {

@@ -8,7 +8,7 @@ terraform {
 
 resource "helm_release" "bootstrap" {
   name       = "bootstrap-tenant"
-  chart      = "../../../charts/bootstrap-tenant"
+  chart      = "../../charts/bootstrap-tenant"
   namespace  = var.namespace
   create_namespace = false # Assumed created by tenants job
 

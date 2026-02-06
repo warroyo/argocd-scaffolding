@@ -13,9 +13,8 @@ components:
 
 configMapGenerator:
   - name: vars
-    literals:
-      - cluster_name=dev1-cluster
-      - project=tenant1
+    files:
+    - cluster-details.yaml
     options:
       disableNameSuffixHash: true
       annotations:

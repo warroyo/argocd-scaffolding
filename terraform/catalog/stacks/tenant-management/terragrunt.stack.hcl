@@ -1,6 +1,9 @@
 
+locals {
+  units_path = find_in_parent_folders("catalog/units")
+}
 unit "tenants" {
-  source = "${get_repo_root()}/terraform/catalog/units/tenants"
+  source = "${local.units_path}/tenants"
   path   = "tenants"
   values = {
       vcfa_refresh_token = values.vcfa_refresh_token
@@ -11,11 +14,11 @@ unit "tenants" {
 }
 
 unit "bootstrap" {
-  source = "${get_repo_root()}/terraform/catalog/units/bootstrap"
+  source = "${local.units_path}/bootstrap"
   path   = "bootstrap"
 
   values = {
-    tenants_path = "${get_repo_root()}/terraform/catalog/units/tenants"
+    tenants_path = "../tenants"
     argo_password = values.argo_password
   }
 }
