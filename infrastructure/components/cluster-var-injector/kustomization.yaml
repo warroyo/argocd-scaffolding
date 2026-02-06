@@ -29,3 +29,12 @@ replacements:
           kind: ArgoCluster
         fieldPaths: 
         - spec.project
+  - source:
+      kind: ConfigMap
+      name: vars
+      fieldPath: data.argo_namespace
+    targets:
+      - select:
+          kind: ArgoCluster
+        fieldPaths: 
+        - spec.argoNamespace
