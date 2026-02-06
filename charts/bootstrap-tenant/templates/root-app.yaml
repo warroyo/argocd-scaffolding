@@ -1,0 +1,22 @@
+{{- if and .Values.deployArgo .Values.rootApp.enabled }}
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .Values.rootApp.name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  project: {{ .Values.project }}
+  source:
+    repoURL: {{ .Values.rootApp.repoURL }}
+    targetRevision: {{ .Values.rootApp.targetRevision }}
+    path: {{ .Values.rootApp.path }}
+  destination:
+    # Use explicit destination name if provided, otherwise construct it or default to server
+    # The terraform logic used: name = "supervisor-ns-${var.supervisor_namespace}"
+    name: {{ default (printf "supervisor-ns-%s" .Release.Namespace) .Values.rootApp.destination.name }}
+    namespace: {{ default .Release.Namespace .Values.rootApp.destination.namespace }}
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+{{- end }}

@@ -1,0 +1,24 @@
+project: "default"
+
+deployArgo: false
+argoNamespace: "infra"
+tenantName: "tenant"
+
+argoInstance:
+  name: "argocd"
+  version: "3.0.19+vmware.1-vks.1"
+  password: "" 
+
+clusterLabels:
+  type: "tenant"
+
+rootApp:
+  enabled: true
+  name: "root-bootstrap"
+  repoURL: "https://github.com/warroyo/argocd-scaffolding"
+  targetRevision: "main"
+  path: "argocd"
+  destination: 
+    # If empty, defaults to current cluster/namespace logic
+    name: "" 
+    namespace: ""

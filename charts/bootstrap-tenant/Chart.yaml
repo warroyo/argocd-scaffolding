@@ -1,0 +1,6 @@
+apiVersion: v2
+name: bootstrap-tenant
+description: A Helm chart to bootstrap tenant namespaces with ArgoNamespace and optional ArgoCD instance
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

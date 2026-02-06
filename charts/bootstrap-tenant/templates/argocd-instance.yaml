@@ -1,0 +1,11 @@
+{{- if .Values.deployArgo }}
+apiVersion: argocd-service.vsphere.vmware.com/v1alpha1
+kind: ArgoCD
+metadata:
+  name: {{ .Values.argoInstance.name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  applicationSet:
+    enabled: true
+  version: {{ .Values.argoInstance.version }}
+{{- end }}

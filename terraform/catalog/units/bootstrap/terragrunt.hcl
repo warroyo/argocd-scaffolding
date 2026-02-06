@@ -3,6 +3,7 @@
 include {
   path =  find_in_parent_folders("root.hcl")
 }
+
 dependency "tenants" {
   config_path = values.tenants_path
 
@@ -31,22 +32,32 @@ dependency "tenants" {
 }
 
 terraform {
-  source = "${get_repo_root()}//terraform/bootstrap-tenant"
+  # We use the bootstrap-helm wrapper which calls the helm chart
+  source = "${get_repo_root()}//terraform/bootstrap-helm"
 }
 
-# Generate providers for each namespace from tenants output
+# Generate HELM providers for each namespace from tenants output
 generate "providers" {
   path      = "providers.tf"
   if_exists = "overwrite_terragrunt"
   contents  = <<EOF
-%{ for key, config in dependency.tenants.outputs.kubeconfigs ~}
-provider "kubernetes" {
-  alias    = "${replace(key, "-", "_")}"
-  host     = "${config.host}"
-  token    = "${config.token}"
-  insecure = ${config.insecure_skip_tls_verify}
+terraform {
+  required_providers {
+    helm = {
+      source = "hashicorp/helm"
+    }
+  }
 }
 
+%{ for key, config in dependency.tenants.outputs.kubeconfigs ~}
+provider "helm" {
+  alias    = "${replace(key, "-", "_")}"
+  kubernetes {
+    host     = "${config.host}"
+    token    = "${config.token}"
+    insecure = ${config.insecure_skip_tls_verify}
+  }
+}
 %{ endfor ~}
 EOF
 }
@@ -58,22 +69,23 @@ generate "modules" {
   contents  = <<EOF
 %{ for key, ns_config in dependency.tenants.outputs.namespaces_config ~}
 module "bootstrap_${replace(key, "-", "_")}" {
-  source = "../modules/bootstrap-tenant"
+  source = "${get_repo_root()}//terraform/bootstrap-helm"
 
   providers = {
-    kubernetes = kubernetes.${replace(key, "-", "_")}
+    helm = helm.${replace(key, "-", "_")}
   }
 
-  supervisor_namespace          = "${ns_config.namespace_name}"
+  namespace          = "${ns_config.namespace_name}"
+  tenant_name        = "${ns_config.tenant_name}"
   deploy_argo        = ${ns_config.deploy_argo}
-  argo_ns    = "${ns_config.argo_namespace}"
+  argo_namespace     = "${ns_config.argo_namespace}"
   argo_password      = var.argo_password
   argo_cluster_labels = {
     type = "tenant"
   }
-  argo_project = "${ns_config.tenant_name}"
+  
+  # Root app configuration (using defaults or passed inputs if we add them to terragrunt inputs)
 }
-
 %{ endfor ~}
 EOF
 }

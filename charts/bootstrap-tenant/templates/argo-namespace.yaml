@@ -1,0 +1,11 @@
+apiVersion: field.vmware.com/v1
+kind: ArgoNamespace
+metadata:
+  name: {{ .Release.Namespace }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  argoNamespace: {{ .Values.argoNamespace }}
+  clusterLabels:
+{{ toYaml .Values.clusterLabels | indent 4 }}
+  project: {{ .Values.tenantName }}
+  serviceAccount: ""
