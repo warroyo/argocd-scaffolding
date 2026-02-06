@@ -7,7 +7,7 @@ spec:
   - git:
       repoURL: https://github.com/warroyo/argocd-scaffolding
       revision: main
-      directories:
+      files:
       - path: infrastructure/clusters/*/*/cluster-details.yaml
   template:
     metadata:
@@ -20,7 +20,7 @@ spec:
       source:
         repoURL: https://github.com/warroyo/argocd-scaffolding
         targetRevision: main
-        path: '{{path}}'
+        path: '{{path | dir}}'
       destination:
         name:  'supervisor-ns-{{namespace}}'
         namespace: '{{namespace}}'
