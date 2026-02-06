@@ -19,15 +19,15 @@ dependency "tenants" {
         namespace_name = "tenant1"
         deploy_argo = true
         argo_namespace = "tenant1"
-        argo_password = "password"
         argo_cluster_labels = {
           type = "tenant"
         }
-        argo_project = "tenant1"
+        tenant_name = "tenant1"
       }
     }
   }
-  mock_outputs_allowed_terraform_commands = ["validate", "plan"]
+  mock_outputs_merge_with_state = true
+  mock_outputs_allowed_terraform_commands = ["init","validate", "plan"]
 }
 
 terraform {
@@ -64,9 +64,9 @@ module "bootstrap_${replace(key, "-", "_")}" {
     kubernetes = kubernetes.${replace(key, "-", "_")}
   }
 
-  namespace          = "${ns_config.namespace_name}"
+  supervisor_namespace          = "${ns_config.namespace_name}"
   deploy_argo        = ${ns_config.deploy_argo}
-  argo_namespace     = "${ns_config.argo_namespace}"
+  argo_ns    = "${ns_config.argo_namespace}"
   argo_password      = var.argo_password
   argo_cluster_labels = {
     type = "tenant"

@@ -1,5 +1,5 @@
 locals {
-  raw_remote_data = yamldecode(data.http.root_app.response_body)
+  raw_remote_data = yamldecode(data.http.root_app[0].response_body)
   modified_remote_object = merge(local.raw_remote_data, {
     metadata = merge(local.raw_remote_data.metadata, {
       namespace = var.supervisor_namespace
