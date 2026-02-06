@@ -30,7 +30,7 @@ variable "argo_cluster_labels" {
   type        = map(string)
   description = "Labels to apply to the ArgoCD cluster"
   default = {
-    type = "tenant"
+    type = "supervisor-ns"
   }
 }
 

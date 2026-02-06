@@ -9,8 +9,7 @@ argoInstance:
   version: "3.0.19+vmware.1-vks.1"
   password: "" 
 
-clusterLabels:
-  type: "tenant"
+clusterLabels: {}
 
 rootApp:
   enabled: true
