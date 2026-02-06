@@ -8,6 +8,8 @@ tenants:
         mem_limit: "4Gi"
       # - name: "dev-2"
       #   class_name: "small"
+        argo_labels:
+          type: supervisor-ns
   - name: "infra-1"
     type: infra
     argo_namespace: infra
@@ -17,3 +19,5 @@ tenants:
         storage_limit: "20Gi"
         mem_limit: "4Gi"
         class_name: large
+        argo_labels:
+          type: supervisor-ns

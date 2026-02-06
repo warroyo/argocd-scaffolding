@@ -33,7 +33,7 @@ locals {
         ][0] : "argocd"
 
         cluster_labels = try(
-            [for ns in local.tenant_map[t_name].namespaces : lookup(ns, "cluster_labels", {}) if ns.name == ns_val.name][0],
+            [for ns in local.tenant_map[t_name].namespaces : lookup(ns, "argo_labels", {}) if ns.name == ns_key][0],
             {}
         )
       }
