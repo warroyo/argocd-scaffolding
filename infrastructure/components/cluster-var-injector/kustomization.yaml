@@ -29,6 +29,7 @@ replacements:
           kind: ArgoCluster
         fieldPaths: 
         - spec.project
+        - spec.clusterLabels.project
   - source:
       kind: ConfigMap
       name: vars

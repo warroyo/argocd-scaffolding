@@ -6,10 +6,19 @@ spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   generators:
-  - clusters:
-      selector:
-        matchLabels:
-          type: 'tenant'
+    - matrix:
+        generators:
+        - clusters:
+            selector:
+              matchLabels:
+                type: 'tenant'
+            values:
+              project: {{metadata.labels.project}}
+        - git:
+            repoURL: https://github.com/warroyo/argocd-scaffolding
+            revision: main
+            files:
+            - path: infrastructure/clusters/{{values.project}}/{{.name}}/cluster-details.yaml
   template:
     metadata:
       name: '{{.name}}-apps'
@@ -21,7 +30,7 @@ spec:
         path: apps/clusters/{{.name}}
       destination:
         server: '{{.server}}'
-        namespace: argocd
+        namespace: default
       syncPolicy:
         syncOptions:
         - CreateNamespace=true
