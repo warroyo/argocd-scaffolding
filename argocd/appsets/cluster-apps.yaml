@@ -13,7 +13,7 @@ spec:
               matchLabels:
                 type: 'tenant'
             values:
-              project: "{{.metadata.labels.project}}"
+              project: '{{index .metadata.labels "project"}}'
         - git:
             repoURL: https://github.com/warroyo/argocd-scaffolding
             revision: main
