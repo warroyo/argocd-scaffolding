@@ -18,7 +18,7 @@ spec:
             repoURL: https://github.com/warroyo/argocd-scaffolding
             revision: main
             files:
-            - path: infrastructure/clusters/{{.values.project}}/{{.name}}/cluster-details.yaml
+            - path: infrastructure/clusters/{{index .metadata.labels "project"}}/{{.name}}/cluster-details.yaml
   template:
     metadata:
       name: '{{.name}}-apps'
