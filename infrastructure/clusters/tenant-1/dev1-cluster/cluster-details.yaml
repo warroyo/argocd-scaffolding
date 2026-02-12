@@ -8,4 +8,4 @@ data:
   argo_namespace: "infra-vjcb9"
   namespace: "dev-1-7krjm"
   cluster_name: "dev1-cluster"
-  project: "tenant1"
+  project: "tenant-1"
