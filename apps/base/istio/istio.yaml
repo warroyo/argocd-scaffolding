@@ -1,39 +1,134 @@
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Secret
 metadata:
-  name: istiod
-  namespace: istio-system
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: istiod
-  template:
-    metadata:
-      labels:
-        app: istiod
-    spec:
-      containers:
-      - image: gcr.io/istio/pilot:1.15.0
-        name: discovery
-        ports:
-        - containerPort: 15010
-        - containerPort: 15012
+  name: istio-values
+stringData:
+  values.yml: |
+    ---
+    istio:
+      namespace: "istio-system"
+      ambientMode:
+        enabled: false
+        ztunnel:
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+      istioCNI:
+        enabled: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+      enableStrictMTLS: false
+      gateways:
+        egress:
+          enabled: true
+          namespace: "istio-egress"
+          priorityClassName: ""
+          replicas: 1
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          autoscaling:
+            enabled: true
+            minReplicas: 1
+            maxReplicas: 5
+        ingress:
+          enabled: true
+          namespace: "istio-ingress"
+          priorityClassName: ""
+          replicas: 1
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          autoscaling:
+            enabled: true
+            minReplicas: 1
+            maxReplicas: 5
+      pilot:
+        priorityClassName: ""
+        replicas: 1
         resources:
           requests:
             cpu: 500m
             memory: 2048Mi
+        autoscaling:
+          enabled: true
+          minReplicas: 1
+          maxReplicas: 5
+      support:
+        priorityClassName: ""
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+      meshConfig:
+        connectTimeout: "10s"
+        ingressControllerMode: "STRICT"
+        accessLogFile: ""
+        trustDomain: "cluster.local"
+        trustDomainAliases: []
+        enablePrometheusMerge: true
+        meshID: ""
+        meshMTLS:
+          minProtocolVersion: "TLSV1_2"
+        enableDNSProxy: false
+        proxy:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 2000m
+              memory: 1024Mi
+        waypoint:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+        enableTracing: true
+        extensionProviders:
+          - name: jaeger
+            opentelemetry:
+              port: 4317
+              service: jaeger-collector.istio-system.svc.cluster.local
+          - name: zipkin
+            zipkin:
+              port: 4317
+              service: jaeger-collector.istio-system.svc.cluster.local
+        defaultProviders:
+          tracing:
+            - jaeger
+
 ---
-apiVersion: v1
-kind: Service
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageInstall
 metadata:
-  name: istiod
-  namespace: istio-system
+  name: istio
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
 spec:
-  ports:
-  - port: 15010
-    name: grpc-xds
-  - port: 15012
-    name: https-dns
-  selector:
-    app: istiod
+  packageRef:
+    refName: istio.kubernetes.vmware.com
+    versionSelection:
+      constraints: 1.25.3+vmware.1-vks.2
+      prereleases: {}
+  serviceAccountName: carvel-sa
+  values:
+  - secretRef:
+      name: istio-values

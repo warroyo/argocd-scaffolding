@@ -1,35 +1,14 @@
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: cert-manager
-  namespace: cert-manager
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: cert-manager
-  template:
-    metadata:
-      labels:
-        app: cert-manager
-    spec:
-      containers:
-      - image: quay.io/jetstack/cert-manager-controller:v1.8.0
-        name: cert-manager
-        resources:
-          requests:
-            cpu: 10m
-            memory: 32Mi
 ---
-apiVersion: v1
-kind: Service
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageInstall
 metadata:
   name: cert-manager
-  namespace: cert-manager
+  annotations:
+    argocd.argoproj.io/sync-wave: '1'
 spec:
-  ports:
-  - port: 9402
-    targetPort: 9402
-    name: metrics
-  selector:
-    app: cert-manager
+  packageRef:
+    refName: cert-manager.kubernetes.vmware.com
+    versionSelection:
+      constraints: 1.18.2+vmware.1-vks.1
+      prereleases: {}
+  serviceAccountName: carvel-sa
