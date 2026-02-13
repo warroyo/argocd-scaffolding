@@ -5,8 +5,12 @@ resources:
 - ../../../base/vks-cluster
 - ../../../base/cluster-argocd-attach
 - ./cluster-details.yaml
+- ../tenant-vars.yaml
 components:
 - ../../../components/ha-control-plane
 - ../../../components/antrea-nsx
 - ../../../components/argocd-tenant-cluster
+- ../../../components/ako
+- ../../../components/ako-istio
 - ../../../components/cluster-var-injector
+- ../../../components/envs/dev

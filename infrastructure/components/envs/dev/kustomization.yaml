@@ -1,0 +1,16 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+- target:
+    group: addons.kubernetes.vmware.com
+    version: v1alpha1
+    kind: AddonConfig
+    labelSelector: "app.kubernetes.io/name=ako"
+  patch: |-
+    - op: replace
+      path: /spec/values/ControllerSettings/controllerHost
+      value: "10.0.0.150" # Dev Controller Host
+    - op: replace
+      path: /spec/values/ControllerSettings/cloudName
+      value: "nsx-wld-cloud" # Dev Cloud Name

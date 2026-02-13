@@ -3,6 +3,5 @@ kind: Component
 resources:
 - ../../../base/standard-repo
 - ../../../base/package-installer
-- ../../../base/istio
 - ../../../base/cert-manager
 

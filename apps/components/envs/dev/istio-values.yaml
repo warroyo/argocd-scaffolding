@@ -1,0 +1,5 @@
+#@data/values
+---
+istio:
+  pilot:
+    replicas: 2

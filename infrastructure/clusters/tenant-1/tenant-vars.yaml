@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tenant-vars
+  annotations:
+    kustomize.config.k8s.io/behavior: merge
+data:
+  tenant_uuid: "289de50-c88c-44d4-a137-34ed63c29968"
+  vpc_name: "tenant-1-us-west-vpc"

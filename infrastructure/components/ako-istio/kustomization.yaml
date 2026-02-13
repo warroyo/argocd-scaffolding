@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+
+patches:
+- target:
+    group: addons.kubernetes.vmware.com
+    version: v1alpha1
+    kind: AddonConfig
+    name: cluster-ako
+  patch: |-
+    - op: replace
+      path: /spec/values/AKOSettings/istioEnabled
+      value: true

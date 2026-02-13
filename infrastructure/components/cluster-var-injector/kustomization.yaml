@@ -18,8 +18,49 @@ replacements:
 
       - select:
           labelSelector: "config.k8s.io/inject-cluster-name=true"
-        fieldPaths: 
+        fieldPaths:
         - metadata.name
+  - source:
+      kind: ConfigMap
+      name: tenant-vars
+      fieldPath: data.tenant_uuid
+    targets:
+      - select:
+          kind: AddonConfig
+          labelSelector: "app.kubernetes.io/name=ako"
+        fieldPaths:
+        - spec.values.ControllerSettings.tenantName
+  - source:
+      kind: ConfigMap
+      name: tenant-vars
+      fieldPath: data.tenant_uuid
+    targets:
+      - select:
+          kind: AddonConfig
+          labelSelector: "app.kubernetes.io/name=ako"
+        fieldPaths:
+        - spec.values.NetworkSettings.nsxtT1LR
+        options:
+          delimiter: '/'
+          index: 4
+      - select:
+          kind: AddonConfig
+          labelSelector: "app.kubernetes.io/name=ako"
+        fieldPaths:
+        - spec.values.ControllerSettings.tenantName
+  - source:
+      kind: ConfigMap
+      name: tenant-vars
+      fieldPath: data.vpc_name
+    targets:
+      - select:
+          kind: AddonConfig
+          labelSelector: "app.kubernetes.io/name=ako"
+        fieldPaths:
+        - spec.values.NetworkSettings.nsxtT1LR
+        options:
+          delimiter: '/'
+          index: 6
   - source:
       kind: ConfigMap
       name: vars
@@ -39,3 +80,18 @@ replacements:
           kind: ArgoCluster
         fieldPaths: 
         - spec.argoNamespace
+  - source:
+      kind: ConfigMap
+      name: vars
+      fieldPath: data.cluster_name
+    targets:
+      - select:
+          kind: AddonConfig
+          labelSelector: "config.k8s.io/inject-cluster-name-prefix=true"
+        fieldPaths:
+        - spec.values.AKOSettings.clusterName
+      - select:
+          kind: AddonInstall
+          labelSelector: "config.k8s.io/inject-cluster-name-prefix=true"
+        fieldPaths:
+        - spec.clusters.0.selector.matchLabels.[cluster.x-k8s.io/cluster-name]
