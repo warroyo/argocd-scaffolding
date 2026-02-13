@@ -3,6 +3,7 @@ apiVersion: packaging.carvel.dev/v1alpha1
 kind: PackageInstall
 metadata:
   name: cert-manager
+  namespace: infra-packages
   annotations:
     argocd.argoproj.io/sync-wave: '1'
 spec:

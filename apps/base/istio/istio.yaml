@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: istio-values
+  namespace: infra-packages
 stringData:
   values.yml: |
     ---
@@ -120,6 +121,7 @@ apiVersion: packaging.carvel.dev/v1alpha1
 kind: PackageInstall
 metadata:
   name: istio
+  namespace: infra-packages
   annotations:
     argocd.argoproj.io/sync-wave: '2'
 spec:
