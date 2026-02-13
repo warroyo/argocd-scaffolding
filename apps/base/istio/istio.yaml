@@ -126,7 +126,7 @@ spec:
   packageRef:
     refName: istio.kubernetes.vmware.com
     versionSelection:
-      constraints: 1.25.3+vmware.1-vks.2
+      constraints: 1.28.2+vmware.1-vks.1
       prereleases: {}
   serviceAccountName: carvel-sa
   values:

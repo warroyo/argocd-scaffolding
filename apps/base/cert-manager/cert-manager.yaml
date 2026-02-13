@@ -9,6 +9,6 @@ spec:
   packageRef:
     refName: cert-manager.kubernetes.vmware.com
     versionSelection:
-      constraints: 1.18.2+vmware.1-vks.1
+      constraints: 1.19.2+vmware.1-vks.1
       prereleases: {}
   serviceAccountName: carvel-sa

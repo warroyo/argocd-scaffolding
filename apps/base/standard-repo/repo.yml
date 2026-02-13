@@ -3,7 +3,9 @@ kind: PackageRepository
 metadata:
   name: standard-repo
   namespace: tkg-system
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
 spec:
   fetch:
     imgpkgBundle:
-      image: projects.packages.broadcom.com/vsphere/supervisor/packages/2025.8.19/vks-standard-packages:v2025.8.19
+      image: projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211
