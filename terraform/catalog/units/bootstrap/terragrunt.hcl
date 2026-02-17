@@ -47,6 +47,24 @@ variable "argo_password" {
   description = "ArgoCD admin password"
   sensitive   = true
 }
+variable "ako_secret_enabled" {
+  type        = string
+  description = "Enable AKO secret"
+  default     = "false"
+}
+variable "ako_username" {
+  type        = string
+  description = "AKO username"
+}
+variable "ako_password" {
+  type        = string
+  description = "AKO password"
+  sensitive   = true
+}
+variable "ako_ca_data" {
+  type        = string
+  description = "AKO CA data"
+}
 EOF
 }
 
