@@ -21,3 +21,9 @@ rootApp:
     # If empty, defaults to current cluster/namespace logic
     name: "" 
     namespace: ""
+
+akoSecret:
+  enabled: false
+  username: ""
+  password: ""
+  certificateAuthorityData: ""

@@ -51,3 +51,30 @@ variable "root_app_revision" {
   description = "Target revision for the root app"
   default     = "main"
 }
+
+variable "ako_secret_enabled" {
+  type        = bool
+  description = "Whether to create the AKO secret"
+  default     = false
+}
+
+variable "ako_username" {
+  type        = string
+  description = "Base64 encoded AVI username"
+  sensitive   = true
+  default     = ""
+}
+
+variable "ako_password" {
+  type        = string
+  description = "Base64 encoded AVI password"
+  sensitive   = true
+  default     = ""
+}
+
+variable "ako_ca_data" {
+  type        = string
+  description = "Base64 encoded Root CA Data"
+  sensitive   = true
+  default     = ""
+}

@@ -89,6 +89,10 @@ module "bootstrap_${replace(key, "-", "_")}" {
   
   argo_cluster_labels = ${jsonencode(ns_config.cluster_labels)}
   
+  ako_secret_enabled = var.ako_secret_enabled
+  ako_username       = var.ako_username
+  ako_password       = var.ako_password
+  ako_ca_data        = var.ako_ca_data
 }
 %{ endfor ~}
 EOF
@@ -96,4 +100,8 @@ EOF
 
 inputs = {
   argo_password = values.argo_password
+  ako_secret_enabled = values.ako_secret_enabled
+  ako_username       = values.ako_username
+  ako_password       = values.ako_password
+  ako_ca_data        = values.ako_ca_data
 }

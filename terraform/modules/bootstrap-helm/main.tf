@@ -29,6 +29,13 @@ resource "helm_release" "bootstrap" {
         path           = var.root_app_path
         targetRevision = var.root_app_revision
       }
+
+      akoSecret = {
+        enabled                  = var.ako_secret_enabled
+        username                 = var.ako_username
+        password                 = var.ako_password
+        certificateAuthorityData = var.ako_ca_data
+      }
     })
   ]
 }

@@ -20,5 +20,9 @@ unit "bootstrap" {
   values = {
     tenants_path = "../tenants"
     argo_password = values.argo_password
+    ako_secret_enabled = values.ako_secret_enabled
+    ako_username       = values.ako_username
+    ako_password       = values.ako_password
+    ako_ca_data        = values.ako_ca_data
   }
 }
