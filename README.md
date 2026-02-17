@@ -70,7 +70,7 @@ AKO is configured as a modular component in the infrastructure layer.
 *   **Base**: `infrastructure/base/ako` defines the core `AddonConfig` and `AddonInstall`.
 *   **Variable Injection**:
     *   `cluster-var-injector` injects `cluster_name` from `cluster-details.yaml`.
-    *   `cluster-var-injector` injects `tenant_uuid` and `vpc_name` from `tenant-vars.yaml`, dynamically constructing the NSX path.
+    *   `cluster-var-injector` injects `tenant_uuid` and `vpc_name` from `tenant-1/vars/tenant-vars.yaml`.
 *   **Environment Overlays**: `infrastructure/components/envs/<env>` patches environment-specific settings (Controller Host, Cloud Name, etc.).
 *   **Istio Integration**: `infrastructure/components/ako-istio` optionally enables Istio support.
 

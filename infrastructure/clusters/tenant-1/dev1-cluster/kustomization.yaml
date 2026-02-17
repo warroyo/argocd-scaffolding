@@ -5,7 +5,7 @@ resources:
 - ../../../base/vks-cluster
 - ../../../base/cluster-argocd-attach
 - ./cluster-details.yaml
-- ../tenant-vars.yaml
+- ../vars
 components:
 - ../../../components/ha-control-plane
 - ../../../components/antrea-nsx
