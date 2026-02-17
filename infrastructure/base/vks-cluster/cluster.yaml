@@ -29,7 +29,7 @@ spec:
             enabled: true
             renewalDaysBeforeExpiry: 90
       - name: vmClass
-        value: best-effort-small
+        value: best-effort-medium
       - name: storageClass
         value: vsan-default-storage-policy
     controlPlane:
@@ -48,7 +48,7 @@ spec:
           variables:
             overrides:
               - name: vmClass
-                value: best-effort-medium
+                value: best-effort-large
               - name: volumes
                 value:
                   - name: vol-sq33
