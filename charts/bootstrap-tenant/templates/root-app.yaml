@@ -17,9 +17,5 @@ spec:
     # The terraform logic used: name = "supervisor-ns-${var.supervisor_namespace}"
     name: {{ default (printf "supervisor-ns-%s" .Release.Namespace) .Values.rootApp.destination.name }}
     namespace: {{ default .Release.Namespace .Values.rootApp.destination.namespace }}
-  syncPolicy:
-    automated:
-      enabled: false
-      prune: false
-      selfHeal: true
+  syncPolicy: {}
 {{- end }}
