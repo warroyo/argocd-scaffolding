@@ -40,7 +40,7 @@ spec:
     workers:
       machineDeployments:
         - class: node-pool
-          name: base-np-v9ti
+          name: base-np
           replicas: 1
           metadata:
             annotations:
