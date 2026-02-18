@@ -15,7 +15,7 @@ metadata:
     argocd.argoproj.io/sync-wave: '1'
 spec:
   packageRef:
-    refName: telegraf.tanzu.vmware.com
+    refName: telegraf.kubernetes.vmware.com
     versionSelection:
       constraints: 1.37.1+vmware.1-vks.1
       prereleases: {}

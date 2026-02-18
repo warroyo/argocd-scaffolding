@@ -102,7 +102,7 @@ metadata:
   name: prometheus
 spec:
   packageRef:
-    refName: prometheus.tanzu.vmware.com
+    refName: prometheus.kubernetes.vmware.com
     versionSelection:
       constraints: 3.5.0+vmware.3-vks.1
       prereleases: {}
