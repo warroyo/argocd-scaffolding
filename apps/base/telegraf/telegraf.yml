@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: telegraf-values
+  namespace: infra-packages
 stringData:
   values.yml: |
     domainName: cluster.local
@@ -11,6 +12,7 @@ apiVersion: packaging.carvel.dev/v1alpha1
 kind: PackageInstall
 metadata:
   name: telegraf
+  namespace: infra-packages
   annotations:
     argocd.argoproj.io/sync-wave: '1'
 spec:

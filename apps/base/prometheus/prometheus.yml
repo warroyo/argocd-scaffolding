@@ -2,6 +2,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: prometheus-values
+  namespace: infra-packages
 stringData:
   values.yml: |
     ---
@@ -78,6 +79,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: prometheus-remove-components
+  namespace: infra-packages
 stringData:
   remove.yml: |
     #@ load("@ytt:overlay", "overlay")
@@ -100,6 +102,7 @@ metadata:
     ext.packaging.carvel.dev/ytt-paths-from-secret-name.0: prometheus-remove-components
     argocd.argoproj.io/sync-wave: '1'
   name: prometheus
+  namespace: infra-packages
 spec:
   packageRef:
     refName: prometheus.kubernetes.vmware.com
