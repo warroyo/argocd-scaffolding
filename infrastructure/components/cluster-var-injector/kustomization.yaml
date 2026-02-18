@@ -87,7 +87,7 @@ replacements:
     targets:
       - select:
           kind: AddonConfig
-          labelSelector: "config.k8s.io/inject-cluster-name-prefix=true"
+          labelSelector: "app.kubernetes.io/name=ako"
         fieldPaths:
         - spec.values.AKOSettings.clusterName
       - select:

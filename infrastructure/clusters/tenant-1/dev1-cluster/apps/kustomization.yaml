@@ -4,7 +4,7 @@ resources:
 - ../../../../../apps/base/istio-ako-patch
 components:
 - ../../../../../apps/components/stacks/standard
-- ../../../../../apps/components/stacks/service-mesh
+#! - ../../../../../apps/components/stacks/service-mesh
 - ../../../../../apps/components/stacks/observability
 - ../../../../../apps/components/envs/dev
 

@@ -29,7 +29,7 @@ spec:
             enabled: true
             renewalDaysBeforeExpiry: 90
       - name: vmClass
-        value: best-effort-large
+        value: best-effort-xlarge
       - name: storageClass
         value: vsan-default-storage-policy
     controlPlane:

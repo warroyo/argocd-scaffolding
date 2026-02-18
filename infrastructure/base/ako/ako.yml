@@ -43,6 +43,8 @@ metadata:
   labels:
     app.kubernetes.io/name: ako
     config.k8s.io/inject-cluster-name-prefix: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
 spec:
   addonRef:
     name: ako

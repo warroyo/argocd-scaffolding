@@ -10,6 +10,7 @@ components:
 # - ../../../components/ha-control-plane
 - ../../../components/antrea-nsx
 - ../../../components/argocd-tenant-cluster
+- ../../../components/istio
 - ../../../components/ako
 - ../../../components/ako-istio
 - ../../../components/cluster-var-injector
@@ -17,7 +18,7 @@ components:
 - ../../../components/envs/dev
 
 
-
+## only enable is autoscaling is not enabled
 # patches:
 # - target:
 #     kind: Cluster
