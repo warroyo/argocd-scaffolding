@@ -21,7 +21,7 @@ stringData:
           requests:
             cpu: 100m
             memory: 100Mi
-      enableStrictMTLS: false
+      enableStrictMTLS: true
       gateways:
         egress:
           enabled: true
