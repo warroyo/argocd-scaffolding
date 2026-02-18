@@ -19,7 +19,7 @@ spec:
   packageRef:
     refName: telegraf.kubernetes.vmware.com
     versionSelection:
-      constraints: 1.37.1+vmware.1-vks.1
+      constraints: 1.36.4+vmware.1-vks.1
       prereleases: {}
   serviceAccountName: carvel-sa
   values:
