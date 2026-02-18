@@ -2,6 +2,8 @@ apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
   name: tenant-1
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   description: tenant-1
   clusterResourceWhitelist:

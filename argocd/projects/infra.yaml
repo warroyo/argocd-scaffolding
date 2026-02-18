@@ -2,6 +2,8 @@ apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
   name: infra
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   description: infra tenant
   sourceRepos:
