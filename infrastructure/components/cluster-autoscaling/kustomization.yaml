@@ -12,3 +12,5 @@ patches:
     - op: add
       path: /spec/topology/workers/machineDeployments/0/metadata/annotations/cluster.x-k8s.io~1cluster-api-autoscaler-node-group-min-size
       value: "3"
+    - op: remove
+      path: /spec/topology/workers/machineDeployments/0/replicas
