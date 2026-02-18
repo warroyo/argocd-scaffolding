@@ -19,6 +19,7 @@ spec:
     namespace: {{ default .Release.Namespace .Values.rootApp.destination.namespace }}
   syncPolicy:
     automated:
+      enabled: false
       prune: false
       selfHeal: true
 {{- end }}
