@@ -7,10 +7,11 @@ resources:
 - ./cluster-details.yaml
 - ../vars
 components:
-- ../../../components/ha-control-plane
+# - ../../../components/ha-control-plane
 - ../../../components/antrea-nsx
 - ../../../components/argocd-tenant-cluster
 - ../../../components/ako
 - ../../../components/ako-istio
 - ../../../components/cluster-var-injector
 - ../../../components/envs/dev
+
