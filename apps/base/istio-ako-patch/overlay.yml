@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: istio-overlay-ako
+  namespace: vmware-system-tkg
+stringData:
+  istio-overlay.yaml: |
+    #@ load("@ytt:overlay", "overlay")
+
+    #@overlay/match by=overlay.subset({"kind": "StatefulSet", "metadata": {"name": "ako"}})
+    ---
+    spec:
+      template:
+          spec:
+          #@overlay/match missing_ok=True
+            volumes:
+            #@overlay/append
+            - name: istio-certs
+              emptyDir:
+                medium: Memory
+
+    ---
+
+    #@overlay/match by=overlay.subset({"kind": "Namespace", "metadata": {"name": "avi-system"}})
+    ---
+    metadata:
+    #@overlay/match missing_ok=True
+      labels:
+          #@overlay/merge
+          istio-injection: enabled
+---
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageInstall
+metadata:
+  annotations:
+    ext.packaging.carvel.dev/ytt-paths-from-secret-name.0=istio-overlay-ako
+  name: cluster-ako
