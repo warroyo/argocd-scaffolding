@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: music-store 
+  labels:
+    istio-injection: enabled
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: metal-store
+spec:
+  parentRefs:
+    - name: metal-store
+  hostnames:
+    - "metalstore.will-org-apps.vcf.lab"
+  rules:
+    - filters:
+      - type: ExtensionRef
+        extensionRef:
+          group: ako.vmware.com
+          kind: L7Rule
+          name: toil7
+      backendRefs:
+        - name: music-store-1-service
+          port: 5000
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: metal-store
+spec:
+  gatewayClassName: avi-lb
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: "*.will-org-apps.vcf.lab"
+---
+apiVersion: ako.vmware.com/v1alpha2
+kind: L7Rule
+metadata:
+  name: toil7
+spec:
+  wafPolicy:
+    kind: AviRef
+    name: System-WAF-Policy 
+  analyticsPolicy:
+    fullClientLogs:
+      enabled: true
+      throttle: HIGH
+      duration: 0
+    logAllHeaders: true

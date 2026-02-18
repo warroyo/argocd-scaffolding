@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users-service
+  labels:
+    app: users-service
+    app-name: music-store
+    service-name: users
+    env: prod
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: users-service
+  template:
+    metadata:
+      labels:
+        app: users-service
+        app-name: music-store
+        service-name: users
+        env: prod
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: users-service
+        image: ghcr.io/niranec77/metal-music-store-users:1.0.64
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        ports:
+        - containerPort: 5003
+        env:
+        - name: USERS_DB_PATH
+          value: "/app/data/users.db"
+        - name: FLASK_ENV
+          value: "production"
+        volumeMounts:
+        - name: users-data
+          mountPath: /app/data
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5003
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5003
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: users-data
+        persistentVolumeClaim:
+          claimName: users-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: users-service
+  labels:
+    app: users-service
+    app-name: music-store
+    service-name: users
+    env: prod
+spec:
+  selector:
+    app: users-service
+  ports:
+  - protocol: TCP
+    port: 5003
+    targetPort: 5003
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: users-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi 

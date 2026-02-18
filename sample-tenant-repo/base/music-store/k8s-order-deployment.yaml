@@ -1,0 +1,80 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: order-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  # Updated with proper port names for ArgoCD validation
+spec:
+  selector:
+    app: order-service
+  ports:
+    - name: http
+      protocol: TCP
+      port: 5001
+      targetPort: 5001
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+        app-name: music-store
+        service-name: order
+        env: prod
+      annotations:
+        kubernetes.io/change-cause: "Updated styling - brighter background and metal theme"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: order-service
+        image: ghcr.io/niranec77/metal-music-store-order:1.0.64
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        ports:
+        - containerPort: 5001
+        env:
+        - name: STORE_SERVICE_URL
+          value: "http://music-store-1-service:5000"
+        - name: ORDER_DB_PATH
+          value: "/app/data/orders.db"
+        volumeMounts:
+        - name: order-data
+          mountPath: /app/data
+      volumes:
+      - name: order-data
+        persistentVolumeClaim:
+          claimName: order-pvc 

@@ -1,0 +1,146 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  # Updated with proper port names for ArgoCD validation
+spec:
+  selector:
+    app: postgres
+  ports:
+    - name: postgresql
+      protocol: TCP
+      port: 5432
+      targetPort: 5432
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+        app-name: music-store
+        service-name: database
+        env: prod
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: postgres
+        image: ghcr.io/niranec77/metal-music-store-database:1.0.64
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 999
+          runAsGroup: 999
+          seccompProfile:
+            type: RuntimeDefault
+        ports:
+        - containerPort: 5432
+        env:
+        - name: POSTGRES_DB
+          value: "music_store"
+        - name: POSTGRES_USER
+          value: "music_user"
+        - name: POSTGRES_PASSWORD
+          value: "music_password"
+        - name: PGDATA
+          value: "/var/lib/postgresql/data/pgdata"
+        # No hardcoded version - let database initialize naturally
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+        - name: init-script
+          mountPath: /docker-entrypoint-initdb.d
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+      - name: init-script
+        configMap:
+          name: postgres-init-script
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init-script
+data:
+  init.sql: |
+    -- Simple initialization - always recreate tables with latest data
+    DROP TABLE IF EXISTS albums CASCADE;
+
+    -- Create albums table
+    CREATE TABLE IF NOT EXISTS albums (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        artist VARCHAR(255) NOT NULL,
+        price DECIMAL(10,2) NOT NULL,
+        cover_url TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Create orders table
+    CREATE TABLE IF NOT EXISTS orders (
+        id SERIAL PRIMARY KEY,
+        album_id INTEGER NOT NULL,
+        quantity INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (album_id) REFERENCES albums(id) ON DELETE CASCADE
+    );
+
+    -- Create indexes for better performance
+    CREATE INDEX IF NOT EXISTS idx_albums_artist ON albums(artist);
+    CREATE INDEX IF NOT EXISTS idx_albums_price ON albums(price);
+    CREATE INDEX IF NOT EXISTS idx_orders_album_id ON orders(album_id);
+    CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+
+    -- Create trigger to update updated_at timestamp
+    CREATE OR REPLACE FUNCTION update_updated_at_column()
+    RETURNS TRIGGER AS $$
+    BEGIN
+        NEW.updated_at = CURRENT_TIMESTAMP;
+        RETURN NEW;
+    END;
+    $$ language 'plpgsql';
+
+    CREATE TRIGGER update_albums_updated_at 
+        BEFORE UPDATE ON albums 
+        FOR EACH ROW 
+        EXECUTE FUNCTION update_updated_at_column();
+
+    -- Insert some sample data with local album cover images
+    INSERT INTO albums (name, artist, price, cover_url) VALUES
+        ('Vulgar Display of Power', 'Pantera', 24.99, '/static/covers/Pantera-VulgarDisplayofPower.jpg'),
+        ('...And Justice for All', 'Metallica', 22.99, '/static/covers/Metallica_-_...And_Justice_for_All_cover.jpg'),
+        ('Superunknown', 'Soundgarden', 21.99, '/static/covers/Sound_garden-Superunknown.jpg'),
+        ('Colony', 'In Flames', 19.99, '/static/covers/Inflames_colony.jpeg'),
+        ('System of a Down', 'System of a Down', 20.99, '/static/covers/System_of_a_down-system_of_a_down.jpg'),
+        ('Somewhere in Time', 'Iron Maiden', 23.99, '/static/covers/Iron_Maiden-Somewhere_in_Time.jpg')
+    ON CONFLICT DO NOTHING; 

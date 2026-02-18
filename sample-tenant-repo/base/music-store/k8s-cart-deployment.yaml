@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cart-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cart-service
+  # Updated with proper port names for ArgoCD validation
+spec:
+  selector:
+    app: cart-service
+  ports:
+    - name: http
+      protocol: TCP
+      port: 5002
+      targetPort: 5002
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cart-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cart-service
+  template:
+    metadata:
+      labels:
+        app: cart-service
+        app-name: music-store
+        service-name: cart
+        env: prod
+      annotations:
+        kubernetes.io/change-cause: "Fixed cart clearing after purchase, updated success message"
+        date: "2024-01-$(date +%d)"
+        timestamp: "$(date +%s)"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: cart-service
+        image: ghcr.io/niranec77/metal-music-store-cart:1.0.64
+        imagePullPolicy: Always
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          runAsNonRoot: true
+          runAsUser: 1000
+          runAsGroup: 1000
+          seccompProfile:
+            type: RuntimeDefault
+        ports:
+        - containerPort: 5002
+        env:
+        - name: STORE_SERVICE_URL
+          value: "http://music-store-1-service:5000"
+        - name: ORDER_SERVICE_URL
+          value: "http://order-service:5001"
+        - name: CART_DB_PATH
+          value: "/app/data/cart.db"
+        volumeMounts:
+        - name: cart-data
+          mountPath: /app/data
+      volumes:
+      - name: cart-data
+        persistentVolumeClaim:
+          claimName: cart-pvc 
