@@ -11,9 +11,9 @@ stringData:
     ---
     spec:
       template:
-          spec:
+        spec:
           #@overlay/match missing_ok=True
-            volumes:
+          volumes:
             #@overlay/append
             - name: istio-certs
               emptyDir:
@@ -24,10 +24,10 @@ stringData:
     #@overlay/match by=overlay.subset({"kind": "Namespace", "metadata": {"name": "avi-system"}})
     ---
     metadata:
-    #@overlay/match missing_ok=True
+      #@overlay/match missing_ok=True
       labels:
-          #@overlay/merge
-          istio-injection: enabled
+        #@overlay/match missing_ok=True
+        istio-injection: enabled
 ---
 apiVersion: packaging.carvel.dev/v1alpha1
 kind: PackageInstall
