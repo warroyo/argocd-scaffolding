@@ -13,15 +13,17 @@ components:
 - ../../../components/ako
 - ../../../components/ako-istio
 - ../../../components/cluster-var-injector
+- ../../../components/cluster-autoscaling
 - ../../../components/envs/dev
 
 
-patches:
-- target:
-    kind: Cluster
-    group: cluster.x-k8s.io
-    version: v1beta1
-  patch: |
-    - op: replace
-      path: /spec/topology/workers/machineDeployments/0/replicas
-      value: 3
+
+# patches:
+# - target:
+#     kind: Cluster
+#     group: cluster.x-k8s.io
+#     version: v1beta1
+#   patch: |
+#     - op: replace
+#       path: /spec/topology/workers/machineDeployments/0/replicas
+#       value: 3
