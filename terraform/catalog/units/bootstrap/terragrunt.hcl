@@ -33,7 +33,7 @@ dependency "tenants" {
       }
     }
   }
-  # mock_outputs_merge_with_state = true
+  mock_outputs_merge_strategy_with_state = "no_merge"
   mock_outputs_allowed_terraform_commands = ["init","validate", "plan","destroy"]
 }
 

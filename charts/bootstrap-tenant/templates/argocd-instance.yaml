@@ -8,4 +8,8 @@ spec:
   applicationSet:
     enabled: true
   version: {{ .Values.argoInstance.version }}
+  controller:
+    resources:
+      limits:
+        cpu: 4
 {{- end }}
