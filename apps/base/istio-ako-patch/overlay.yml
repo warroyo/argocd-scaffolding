@@ -35,3 +35,4 @@ metadata:
   annotations:
     ext.packaging.carvel.dev/ytt-paths-from-secret-name.0=istio-overlay-ako
   name: dev1-cluster-ako
+  namespace: vmware-system-tkg
