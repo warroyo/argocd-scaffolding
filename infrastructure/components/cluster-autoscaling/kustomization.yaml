@@ -7,8 +7,8 @@ patches:
     kind: Cluster
   patch: |-
     - op: add
-      path: spec.topology.workers.machineDeployments.[0].metadata.annotations.['cluster.x-k8s.io/cluster-api-autoscaler-node-group-max-size']
-      value: 5
+      path: /spec/topology/workers/machineDeployments/0/metadata/annotations/cluster.x-k8s.io~1cluster-api-autoscaler-node-group-max-size
+      value: "5"
     - op: add
-      path: spec.topology.workers.machineDeployments.[0].metadata.annotations.['cluster.x-k8s.io/cluster-api-autoscaler-node-group-min-size']
-      value: 3
+      path: /spec/topology/workers/machineDeployments/0/metadata/annotations/cluster.x-k8s.io~1cluster-api-autoscaler-node-group-min-size
+      value: "3"
