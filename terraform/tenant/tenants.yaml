@@ -4,8 +4,9 @@ tenants:
     argo_namespace: "infra"
     namespaces:
       - name: "dev-1"
-        storage_limit: "20Gi"
-        mem_limit: "4Gi"
+        storage_limit: "200Gi"
+        mem_limit: "30Gi"
+        cpu_limit: "20000M"
       # - name: "dev-2"
       #   class_name: "small"
         argo_labels:

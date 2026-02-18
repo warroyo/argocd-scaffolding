@@ -104,7 +104,7 @@ spec:
   packageRef:
     refName: prometheus.tanzu.vmware.com
     versionSelection:
-      constraints: 2.45.0+vmware.1-tkg.3
+      constraints: 3.5.0+vmware.3-vks.1
       prereleases: {}
   serviceAccountName: carvel-sa
   values:
