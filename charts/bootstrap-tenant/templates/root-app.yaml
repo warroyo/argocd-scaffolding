@@ -4,6 +4,8 @@ kind: Application
 metadata:
   name: {{ .Values.rootApp.name }}
   namespace: {{ .Release.Namespace }}
+  finalizers:
+  - resources-finalizer.argocd.argoproj.io
 spec:
   project: {{ .Values.project }}
   source:

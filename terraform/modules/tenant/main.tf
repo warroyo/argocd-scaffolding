@@ -6,7 +6,7 @@ module "vpc" {
    source = "../vpc"
    project_name = var.project_name
    region_name = var.region_name
-
+   depends_on = [ module.project ]
 }
 
 module "svns" {

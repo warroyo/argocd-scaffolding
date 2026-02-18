@@ -22,6 +22,8 @@ spec:
   template:
     metadata:
       name: '{{.name}}-apps'
+      finalizers:
+      - resources-finalizer.argocd.argoproj.io
     spec:
       project: 'infra'
       source:

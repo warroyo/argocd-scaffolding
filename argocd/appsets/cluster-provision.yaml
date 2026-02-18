@@ -12,6 +12,8 @@ spec:
   template:
     metadata:
       name: '{{data.project}}-{{data.cluster_name}}-provision'
+      finalizers:
+      - resources-finalizer.argocd.argoproj.io
       labels:
         tenant: '{{data.project}}'
         type: "cluster-infrastructure"
