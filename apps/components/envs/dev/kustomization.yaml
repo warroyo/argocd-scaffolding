@@ -6,6 +6,8 @@ secretGenerator:
   namespace: infra-packages
   files:
   - values.yml=istio-values.yaml
+  options:
+      disableNameSuffixHash: true
 
 patches:
 - target:
