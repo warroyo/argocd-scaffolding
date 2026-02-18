@@ -1,0 +1,139 @@
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonConfig
+metadata:
+  name: cluster-istio
+  labels:
+    app.kubernetes.io/name: istio
+    config.k8s.io/inject-cluster-name-prefix: "true"
+spec:
+  addonConfigDefinitionRef:
+     name: istio.kubernetes.vmware.com.1.28.2+vmware.1-vks.1 # Ensure this matches your available version
+     namespace: vmware-system-vks-public
+  values:
+    istio:
+      namespace: "istio-system"
+      ambientMode:
+        enabled: false
+        ztunnel:
+          resources:
+            requests:
+              cpu: 200m
+              memory: 512Mi
+      istioCNI:
+        enabled: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+      enableStrictMTLS: true
+      gateways:
+        egress:
+          enabled: true
+          namespace: "istio-egress"
+          priorityClassName: ""
+          replicas: 1
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          autoscaling:
+            enabled: true
+            minReplicas: 1
+            maxReplicas: 5
+        ingress:
+          enabled: true
+          namespace: "istio-ingress"
+          priorityClassName: ""
+          replicas: 1
+          resources:
+            limits:
+              cpu: 2000m
+              memory: 1024Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          autoscaling:
+            enabled: true
+            minReplicas: 1
+            maxReplicas: 5
+      pilot:
+        priorityClassName: ""
+        replicas: 1
+        resources:
+          requests:
+            cpu: 500m
+            memory: 2048Mi
+        autoscaling:
+          enabled: true
+          minReplicas: 1
+          maxReplicas: 5
+      support:
+        priorityClassName: ""
+        resources:
+          requests:
+            cpu: 100m
+            memory: 64Mi
+          limits:
+            cpu: 250m
+            memory: 256Mi
+      meshConfig:
+        connectTimeout: "10s"
+        ingressControllerMode: "STRICT"
+        accessLogFile: ""
+        trustDomain: "cluster.local"
+        trustDomainAliases: []
+        enablePrometheusMerge: true
+        meshID: ""
+        meshMTLS:
+          minProtocolVersion: "TLSV1_2"
+        enableDNSProxy: false
+        proxy:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 2000m
+              memory: 1024Mi
+        waypoint:
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "2"
+              memory: 1Gi
+        enableTracing: true
+        extensionProviders:
+          - name: jaeger
+            opentelemetry:
+              port: 4317
+              service: jaeger-collector.istio-system.svc.cluster.local
+          - name: zipkin
+            zipkin:
+              port: 4317
+              service: jaeger-collector.istio-system.svc.cluster.local
+        defaultProviders:
+          tracing:
+            - jaeger
+---
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonInstall
+metadata:
+  name: cluster-istio-installer
+  labels:
+    app.kubernetes.io/name: istio
+    config.k8s.io/inject-cluster-name-prefix: "true"
+  annotations:
+    argocd.argoproj.io/sync-wave: '1'
+spec:
+  addonRef:
+    name: istio
+  clusters:
+  - selector:
+      matchLabels:
+        cluster.x-k8s.io/cluster-name: cluster 
+  paused: false
