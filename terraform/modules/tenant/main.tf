@@ -21,7 +21,7 @@ module "svns" {
   mem_limit = each.value.mem_limit
   cpu_limit = each.value.cpu_limit
   project_name = module.project.name
-  depends_on = [ module.project ]
+  depends_on = [ module.project,module.vpc ]
   storage_policy = each.value.storage_policy
 }
 
