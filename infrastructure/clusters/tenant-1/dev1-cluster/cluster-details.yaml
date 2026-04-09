@@ -5,7 +5,7 @@ metadata:
   annotations:
     config.kubernetes.io/local-config: "true"
 data:
-  argo_namespace: "infra-wdk4w"
-  namespace: "dev-1-shkrg"
+  argo_namespace: "infra-kyrtt"
+  namespace: "dev-1-4gqxg"
   cluster_name: "dev1-cluster"
   project: "tenant-1"
