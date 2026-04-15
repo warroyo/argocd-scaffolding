@@ -1,4 +1,5 @@
 terraform {
+  required_version = ">= 1.0"
   required_providers {
     vcfa = {
       source = "vmware/vcfa"
@@ -6,18 +7,18 @@ terraform {
     kubernetes = {
       source = "hashicorp/kubernetes"
     }
-     vra = {
+    vra = {
       source  = "vmware/vra"
       version = ">= 0.16.0"
     }
-}
+  }
 }
 
 provider "vra" {
   url           = var.vcfa_url
   refresh_token = var.vcfa_refresh_token
   insecure      = true
-  organization = var.vcfa_org
+  organization  = var.vcfa_org
 }
 
 provider "vcfa" {
@@ -27,11 +28,11 @@ provider "vcfa" {
   auth_type            = "api_token"
   api_token            = var.vcfa_refresh_token
 }
+
 data "vcfa_kubeconfig" "org" {}
 
-
 provider "kubernetes" {
-  alias = "vcfa-org"
+  alias    = "vcfa-org"
   host     = data.vcfa_kubeconfig.org.host
   insecure = data.vcfa_kubeconfig.org.insecure_skip_tls_verify
   token    = data.vcfa_kubeconfig.org.token

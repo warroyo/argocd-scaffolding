@@ -1,8 +1,8 @@
 locals {
   tenant_config = yamldecode(file("${path.module}/tenants.yaml"))
-  
-  tenant_map = { 
-    for t in local.tenant_config.tenants : "${t.name}" => t 
+
+  tenant_map = {
+    for t in local.tenant_config.tenants : "${t.name}" => t
   }
 
   infra_tenants = {
@@ -26,9 +26,9 @@ locals {
         ns_name        = ns_val.name
         project_id     = t_mod.project_id
         deploy_argo    = ns_val.deploy_argo
-        
+
         argo_namespace = local.infra_tenant_name != null ? [
-          for infra_ns_key, infra_ns_val in module.tenant[local.infra_tenant_name].namespaces : infra_ns_val.name 
+          for infra_ns_key, infra_ns_val in module.tenant[local.infra_tenant_name].namespaces : infra_ns_val.name
           if infra_ns_val.deploy_argo == true && infra_ns_key == local.tenant_map[t_name].argo_namespace
         ][0] : "argocd"
 
