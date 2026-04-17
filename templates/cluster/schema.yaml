@@ -1,0 +1,12 @@
+#@data/values-schema
+---
+cluster_name: ""
+project: ""
+namespace_ref: ""
+env: "dev"
+features:
+  istio: false
+  autoscaling: false
+  ha_control_plane: false
+  service_mesh: false
+  observability: false

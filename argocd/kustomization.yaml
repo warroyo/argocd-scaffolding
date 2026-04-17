@@ -4,3 +4,27 @@ kind: Kustomization
 resources:
   - ./projects
   - ./appsets
+  - ./repo-config.yaml
+
+# Inject repoURL from repo-config.yaml into all ApplicationSets.
+# To use this repo elsewhere, update argocd/repo-config.yaml only.
+replacements:
+  - source:
+      kind: ConfigMap
+      name: argocd-repo-config
+      fieldPath: data.repoURL
+    targets:
+      # cluster-provisioning: top-level git generator + source
+      - select:
+          kind: ApplicationSet
+          name: cluster-provisioning
+        fieldPaths:
+          - spec.generators.0.git.repoURL
+          - spec.template.spec.source.repoURL
+      # cluster-apps: git generator nested inside matrix + source
+      - select:
+          kind: ApplicationSet
+          name: cluster-apps
+        fieldPaths:
+          - spec.generators.0.matrix.generators.1.git.repoURL
+          - spec.template.spec.source.repoURL

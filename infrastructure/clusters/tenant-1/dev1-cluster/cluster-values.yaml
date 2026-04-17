@@ -1,0 +1,12 @@
+#@data/values
+---
+cluster_name: dev1-cluster
+project: tenant-1
+namespace_ref: dev-1
+env: dev
+features:
+  istio: true
+  autoscaling: true
+  ha_control_plane: false
+  service_mesh: false
+  observability: true

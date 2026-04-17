@@ -1,0 +1,48 @@
+name: Generate
+
+on:
+  push:
+    paths:
+      - 'terraform/infra/tenants.yaml'
+      - 'infrastructure/clusters/**/cluster-values.yaml'
+      - 'templates/cluster/**'
+      - 'scripts/generate-bootstrap.py'
+      - 'scripts/generate-infra.py'
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Python dependencies
+        run: pip install pyyaml
+
+      - name: Install ytt
+        uses: carvel-dev/setup-action@v2
+        with:
+          only: ytt
+
+      - name: Generate files
+        run: make generate
+
+      - name: Commit generated files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add \
+            terraform/bootstrap/providers.tf \
+            terraform/bootstrap/main.tf \
+            argocd/projects/ \
+            infrastructure/clusters/
+          git diff --staged --quiet || \
+            git commit -m "chore: regenerate from source config [skip ci]" && \
+            git push

@@ -52,6 +52,7 @@ module "bootstrap_{alias}" {{
   deploy_argo         = {str(ns.get("deploy_argo", False)).lower()}
   argo_namespace      = "{t.get('argo_namespace', 'argocd')}"
   argo_password       = var.argo_password
+  root_app_url        = var.repo_url
   argo_cluster_labels = {{
 {labels}
   }}

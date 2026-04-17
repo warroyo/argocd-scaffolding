@@ -1,0 +1,27 @@
+#@ load("@ytt:data", "data")
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../../base/vks-cluster
+  - ../../../base/cluster-argocd-attach
+  - ./cluster-details.yaml
+  - ../vars
+
+components:
+  - ../../../components/antrea-nsx
+  - ../../../components/argocd-tenant-cluster
+  - ../../../components/ako
+  #@ if data.values.features.istio:
+  - ../../../components/istio
+  - ../../../components/ako-istio
+  #@ end
+  - ../../../components/cluster-var-injector
+  #@ if data.values.features.autoscaling:
+  - ../../../components/cluster-autoscaling
+  #@ end
+  #@ if data.values.features.ha_control_plane:
+  - ../../../components/ha-control-plane
+  #@ end
+  - #@ "../../../components/envs/" + data.values.env

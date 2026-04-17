@@ -4,84 +4,120 @@ This repository contains the infrastructure and application configuration for ma
 
 ## Overview
 
-The project follows a **GitOps** workflow where the entire state of the infrastructure and applications is defined in this repository.
+The project follows a **GitOps** workflow where the entire state of the infrastructure and applications is defined in this repository. There are two distinct lifecycles:
+
+- **Tenant management** — driven by `terraform/infra/tenants.yaml` and Terraform. Provisions supervisor namespaces, quotas, and bootstraps the ArgoCD instance.
+- **Cluster management** — driven by GitOps. Cluster directories under `infrastructure/clusters/` are auto-discovered by ArgoCD ApplicationSets.
 
 ### Key Technologies
-*   **Terraform/Terragrunt**: Used for bootstrapping the initial tenant infrastructure (Namespace, ArgoCD instance, RBAC).
-*   **ArgoCD**: The GitOps engine that manages the lifecycle of clusters and applications.
-*   **Helm**: Used by Terraform to deploy the initial bootstrap components.
-*   **Kustomize**: Used for structuring and managing Kubernetes manifests with high reusability and composability (Base/Overlays pattern).
-*   **AKO (Avi Kubernetes Operator)**: Configured as an infrastructure addon for load balancing.
+
+- **Terraform**: Provisions vSphere supervisor namespaces and bootstraps ArgoCD via Helm.
+- **Helm**: Used by Terraform to deploy the `bootstrap-tenant` chart (ArgoCD instance + root app).
+- **ArgoCD**: GitOps engine managing the lifecycle of clusters and applications via the App of Apps pattern.
+- **Kustomize**: Structures Kubernetes manifests using Base/Overlays with variable injection.
+- **ytt**: Generates cluster Kustomize files from a single `cluster-values.yaml` per cluster.
+- **Python scripts**: Code generation from `tenants.yaml` (ArgoCD projects, Terraform providers/modules, tenant vars).
+- **GitHub Actions**: CI/CD for running `make generate` on config changes and `make apply` on tenant changes.
+- **AKO (Avi Kubernetes Operator)**: Configured as an infrastructure addon for load balancing.
 
 ## Directory Structure
 
-*   `terraform/`: Terragrunt configurations for bootstrapping tenants and infrastructure.
-    *   `modules/bootstrap-helm`: Terraform module that wraps the bootstrap Helm chart.
-*   `charts/bootstrap-tenant/`: A local Helm chart used by Terraform to deploy:
-    *   ArgoCD Instance
-    *   Tenant Namespace
-    *   Root App of Apps
-*   `argocd/`: ArgoCD configuration for the "App of Apps" pattern.
-    *   `appsets/`: ApplicationSets that dynamically discover and deploy clusters and apps.
-    *   `projects/`: ArgoCD AppProject definitions (e.g., `infra`, `tenant-1`).
-*   `infrastructure/`: Cluster infrastructure definitions (Clusters, Addons, CNIs).
-    *   `base/`: Reusable base configurations (e.g., `ako`, `antrea`, `vks-cluster`).
-    *   `components/`: Kustomize components for specific features or overlays.
-        *   `ako/`: Base AKO component.
-        *   `ako-istio/`: Overlay to enable Istio support in AKO.
-        *   `envs/`: Environment-specific overlays (e.g., `dev` for AKO settings).
-        *   `cluster-var-injector/`: Component to inject cluster variables into resources.
-    *   `clusters/`: Cluster-specific definitions (e.g., `tenant-1/dev1-cluster`).
-*   `apps/`: Application definitions.
-    *   `base/`: Base application manifests.
-    *   `components/`: Reusable application components and stacks.
-    *   `clusters/`: Cluster-specific application aggregations.
+- `terraform/`
+  - `infra/`: Provisions vSphere supervisor namespaces and outputs kubeconfigs. Reads `tenants.yaml`.
+  - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. Generated from `tenants.yaml`.
+  - `modules/bootstrap-helm/`: Terraform module wrapping the bootstrap Helm chart.
+  - `modules/tenant/`, `modules/svns/`, `modules/vpc/`: vSphere infrastructure modules.
+- `charts/bootstrap-tenant/`: Helm chart that deploys ArgoCD instance + root Application.
+- `scripts/`
+  - `generate-bootstrap.py`: Generates `terraform/bootstrap/providers.tf` and `main.tf` from `tenants.yaml`.
+  - `generate-infra.py`: Generates ArgoCD AppProject files (via ytt `templates/tenant/project.yaml`) and `argocd/projects/kustomization.yaml` (via ytt `templates/tenant/kustomization.yaml`) and `infrastructure/clusters/{tenant}/vars/kustomization.yaml` stubs from `tenants.yaml`.
+  - `generate-details.py`: Post-Terraform — populates `tenant-vars.yaml` and fills `namespace`/`argo_namespace` in `cluster-details.yaml` from Terraform outputs.
+- `templates/cluster/`: ytt templates for cluster files. Processed per cluster from `cluster-values.yaml`.
+- `templates/tenant/`: ytt templates for tenant ArgoCD AppProject files. Rendered by `generate-infra.py`.
+- `argocd/`
+  - `appsets/`: ApplicationSets that discover and deploy clusters and apps.
+  - `projects/`: ArgoCD AppProject definitions (generated from `tenants.yaml`).
+  - `root/`: Root Application bootstrapped by Terraform.
+  - `repo-config.yaml`: Single source of truth for the GitOps repo URL.
+- `infrastructure/`
+  - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`).
+  - `components/`: Kustomize components for optional features and environment overlays.
+  - `clusters/`: Per-cluster definitions. Each cluster has a `cluster-values.yaml` (source) and generated files.
+- `apps/`
+  - `base/`: Base application manifests.
+  - `components/stacks/`: Application stacks (e.g., `standard`, `observability`, `service-mesh`).
+  - `clusters/`: Cluster-specific app aggregations.
+- `.github/workflows/`
+  - `generate.yml`: Runs `make generate` on config changes and commits results.
+  - `apply.yml`: Runs `make apply` on tenant changes and commits auto-generated namespace IDs.
+
+## Tenant Types
+
+- **`type: infra`** — The platform tenant that hosts the ArgoCD instance. Generates an unrestricted ArgoCD project (`namespaceResourceWhitelist: */*`). Only one infra tenant is supported, but it may have multiple namespaces each with `deploy_argo: true`. The `infra` project owns all cluster provisioning (ApplicationSets use `project: infra`).
+- **`type: tenant`** — Developer tenants. Each gets a locked-down ArgoCD project for deploying apps into their clusters.
 
 ## Workflows
 
 ### 1. Bootstrapping a New Tenant
 
-1.  **Define Tenant**: Create a new directory in `terraform/tenants/<new-tenant>`.
-2.  **Configure Terragrunt**: specific the `terragrunt.hcl` with tenant details (Namespace, ArgoCD settings).
-3.  **Apply Terraform**: Run `terragrunt apply` to:
-    *   Create the tenant namespace.
-    *   Deploy the `bootstrap-tenant` Helm chart.
-    *   This installs a dedicated ArgoCD instance and the "Root App".
+1. Add a new entry to `terraform/infra/tenants.yaml`.
+2. Run `make generate` (or push — GitHub Actions runs it automatically) to regenerate:
+   - `terraform/bootstrap/providers.tf` and `main.tf`
+   - `argocd/projects/{tenant}.yaml`
+   - `infrastructure/clusters/{tenant}/vars/kustomization.yaml`
+3. Run `make apply` to provision the supervisor namespace and deploy the bootstrap Helm chart.
+   - After Terraform completes, `make generate-details` runs automatically to populate `tenant-vars.yaml` with the auto-generated `tenant_uuid` and `vpc_name`.
 
 ### 2. Provisioning a New Cluster
 
-1.  **Define Cluster**: Create a new directory `infrastructure/clusters/<tenant>/<cluster-name>`.
-2.  **Cluster Config**: Create `cluster-details.yaml` and `kustomize.yaml`.
-    *   `cluster-details.yaml`: Contains cluster-specific variables (e.g., `cluster_name`, `ako_controller_host`).
-3.  **ArgoCD Discovery**: The `cluster-provisioning` ApplicationSet in `argocd/appsets` watches for `cluster-details.yaml` files.
-4.  **Auto-Deployment**: ArgoCD automatically creates an Application to deploy the infrastructure defined in your new directory.
+1. Create `infrastructure/clusters/{tenant}/{cluster}/cluster-values.yaml`:
+   ```yaml
+   #@data/values
+   ---
+   cluster_name: my-cluster
+   project: tenant-1
+   namespace_ref: dev-1       # matches a namespace name in tenants.yaml
+   env: dev
+   features:
+     istio: true
+     autoscaling: false
+     ha_control_plane: false
+     service_mesh: false
+     observability: true
+   ```
+2. Run `make generate` (or push) to render the cluster's `kustomization.yaml`, `apps/kustomization.yaml`, and `cluster-details.yaml` via ytt.
+3. Run `make generate-details` (or `make apply-infra`) to fill in the vSphere-generated `namespace` and `argo_namespace` fields in `cluster-details.yaml`.
+4. Commit the generated files. The `cluster-provisioning` ApplicationSet detects the new `cluster-details.yaml` and creates the cluster automatically.
 
 ### 3. Deploying Applications
 
-1.  **Define Apps**: Create application bases in `apps/base`.
-2.  **Compose Stacks**: Group apps into stacks in `apps/components/stacks`.
-3.  **Assign to Cluster**: In `apps/clusters/<tenant>/<cluster-name>/kustomization.yaml`, reference the desired stacks (e.g., `observability`, `service-mesh`).
-4.  **ArgoCD Sync**: The `cluster-apps` ApplicationSet discovers the cluster configuration and deploys the assigned applications.
+1. Define app bases in `apps/base/`.
+2. Group apps into stacks in `apps/components/stacks/`.
+3. Enable stacks for a cluster by setting feature flags in `cluster-values.yaml` and re-running `make generate`.
+4. ArgoCD syncs the `cluster-apps` ApplicationSet and deploys the assigned apps.
 
 ## AKO Configuration
 
-AKO is configured as a modular component in the infrastructure layer.
+AKO is configured as a modular Kustomize component.
 
-*   **Base**: `infrastructure/base/ako` defines the core `AddonConfig` and `AddonInstall`.
-*   **Variable Injection**:
-    *   `cluster-var-injector` injects `cluster_name` from `cluster-details.yaml`.
-    *   `cluster-var-injector` injects `tenant_uuid` and `vpc_name` from `tenant-1/vars/tenant-vars.yaml`.
-*   **Environment Overlays**: `infrastructure/components/envs/<env>` patches environment-specific settings (Controller Host, Cloud Name, etc.).
-*   **Istio Integration**: `infrastructure/components/ako-istio` optionally enables Istio support.
+- **Base**: `infrastructure/base/ako` defines `AddonConfig` and `AddonInstall`.
+- **Variable injection**: `cluster-var-injector` injects `cluster_name` (from `cluster-details.yaml`) and `tenant_uuid`/`vpc_name` (from `tenant-vars.yaml`).
+- **Environment overlays**: `infrastructure/components/envs/{env}` patches environment-specific settings.
+- **Istio integration**: `infrastructure/components/ako-istio` enables Istio support (enabled via `features.istio: true` in `cluster-values.yaml`).
 
-### Enabling AKO for a Cluster
+## Auto-Generated Values
 
-In your cluster's `kustomization.yaml` (`infrastructure/clusters/<tenant>/<cluster>/kustomization.yaml`):
+Some values are only known after Terraform runs and are populated by `scripts/generate-details.py`:
 
-```yaml
-components:
-  - ../../../components/ako               # Base AKO
-  - ../../../components/ako-istio         # Optional: Istio Support
-  - ../../../components/cluster-var-injector # Required: Variable Injection
-  - ../../../components/envs/dev          # Required: Environment Settings
-```
+| Value | Source | Written to |
+|-------|--------|-----------|
+| `namespace` | vSphere-generated supervisor namespace ID | `cluster-details.yaml` |
+| `argo_namespace` | vSphere-generated infra namespace ID | `cluster-details.yaml` |
+| `tenant_uuid` | K8s UID of the vSphere Project CRD | `tenant-vars.yaml` |
+| `vpc_name` | `{tenant}-{region}-vpc` | `tenant-vars.yaml` |
+
+## Repo URL Configuration
+
+The GitOps repo URL is defined in one place: `argocd/repo-config.yaml`. Kustomize replacements inject it into all ApplicationSets at apply time. When forking or moving this repo, update only that file.
+
+For the bootstrap Helm chart, set `TF_VAR_repo_url` before running `make apply-bootstrap`.

@@ -8,6 +8,11 @@ variable "kubeconfigs" {
   sensitive   = true
 }
 
+variable "repo_url" {
+  type        = string
+  description = "URL of the GitOps repo — used as repoURL in the root ArgoCD Application. Set via TF_VAR_repo_url."
+}
+
 variable "argo_password" {
   type        = string
   description = "ArgoCD admin password (bcrypt hash required by chart if used)"

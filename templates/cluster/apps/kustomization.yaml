@@ -1,0 +1,18 @@
+#@ load("@ytt:data", "data")
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+#@ if data.values.features.istio:
+resources:
+  - ../../../../../apps/base/istio-ako-patch
+#@ end
+
+components:
+  - ../../../../../apps/components/stacks/standard
+  #@ if data.values.features.observability:
+  - ../../../../../apps/components/stacks/observability
+  #@ end
+  #@ if data.values.features.service_mesh:
+  - ../../../../../apps/components/stacks/service-mesh
+  #@ end
+  - #@ "../../../../../apps/components/envs/" + data.values.env

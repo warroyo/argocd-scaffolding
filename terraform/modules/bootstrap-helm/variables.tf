@@ -36,8 +36,7 @@ variable "argo_cluster_labels" {
 
 variable "root_app_url" {
   type        = string
-  description = "URL of the root app repo"
-  default     = "https://github.com/warroyo/argocd-scaffolding"
+  description = "URL of the GitOps repo (used as repoURL in the root ArgoCD Application)"
 }
 
 variable "root_app_path" {

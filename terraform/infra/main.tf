@@ -85,6 +85,16 @@ output "kubeconfigs" {
   sensitive = true
 }
 
+output "tenants_config" {
+  description = "Per-tenant project ID and VPC name — consumed by scripts/generate-details.py"
+  value = {
+    for t_name, t_mod in module.tenant : t_name => {
+      project_id = t_mod.project_id
+      vpc_name   = "${t_name}-${var.region_name}-vpc"
+    }
+  }
+}
+
 output "namespaces_config" {
   description = "Map of namespace name to bootstrap configuration"
   value = {

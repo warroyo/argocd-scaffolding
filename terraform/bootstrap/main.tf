@@ -11,6 +11,7 @@ module "bootstrap_tenant_1_dev_1" {
   deploy_argo         = false
   argo_namespace      = "infra"
   argo_password       = var.argo_password
+  root_app_url        = var.repo_url
   argo_cluster_labels = {
     type = "supervisor-ns"
   }
@@ -30,6 +31,7 @@ module "bootstrap_infra_1_infra" {
   deploy_argo         = true
   argo_namespace      = "infra"
   argo_password       = var.argo_password
+  root_app_url        = var.repo_url
   argo_cluster_labels = {
     type = "supervisor-ns"
   }

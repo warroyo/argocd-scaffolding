@@ -9,34 +9,60 @@ BOOTSTRAP_DIR := $(REPO_ROOT)/terraform/bootstrap
 #   export TF_VAR_ako_username=...
 #   export TF_VAR_ako_password=...
 #   export TF_VAR_ako_ca_data=...
+#   export TF_VAR_repo_url=https://github.com/your-org/argocd-scaffolding
 #
 # Non-sensitive variables can be set in a terraform.tfvars file (gitignored)
 # placed inside terraform/infra/ and terraform/bootstrap/ respectively,
 # or passed via additional TF_VAR_* exports.
+#
+# Backend config (local dev):
+#   Create terraform/infra/backend-local.hcl with: path = "terraform.tfstate"
+#   Then: make apply-infra BACKEND_CONFIG=terraform/infra/backend-local.hcl
+# Backend config (CI): pass via BACKEND_CONFIG env var pointing to a config file,
+#   or set TF_BACKEND_* env vars understood by the chosen backend.
 
-.PHONY: generate \
+BACKEND_CONFIG ?=
+
+.PHONY: generate generate-details \
         init-infra plan-infra apply-infra output-infra \
         init-bootstrap plan-bootstrap apply-bootstrap \
-        apply destroy-bootstrap destroy-infra
+        apply destroy-bootstrap destroy-infra destroy
 
 # ── Code generation ────────────────────────────────────────────────────────────
 
-## Regenerate terraform/bootstrap/providers.tf and main.tf from tenants.yaml.
-## Run this after every change to terraform/infra/tenants.yaml.
+## Regenerate all static configs from source YAML (tenants.yaml + cluster-values.yaml).
+## Run this after every change to terraform/infra/tenants.yaml or any cluster-values.yaml.
 generate:
 	@echo "==> Generating bootstrap Terraform files..."
 	python3 $(REPO_ROOT)/scripts/generate-bootstrap.py
+	@echo "==> Generating ArgoCD projects and tenant dirs..."
+	python3 $(REPO_ROOT)/scripts/generate-infra.py
+	@echo "==> Generating cluster files from ytt templates..."
+	@find $(REPO_ROOT)/infrastructure/clusters -name 'cluster-values.yaml' | \
+	  while read f; do \
+	    dir=$$(dirname $$f); \
+	    echo "  ytt -> $$dir"; \
+	    ytt -f $(REPO_ROOT)/templates/cluster/ -f $$f --output-files $$dir/; \
+	  done
+
+## Populate auto-generated namespace IDs and tenant UUIDs after Terraform apply.
+## Requires terraform/infra to be initialized with state (run apply-infra first).
+generate-details:
+	@echo "==> Populating auto-generated values from Terraform outputs..."
+	python3 $(REPO_ROOT)/scripts/generate-details.py
 
 # ── Infra module ───────────────────────────────────────────────────────────────
 
 init-infra:
-	terraform -chdir=$(INFRA_DIR) init
+	terraform -chdir=$(INFRA_DIR) init \
+	  $(if $(BACKEND_CONFIG),-backend-config=$(BACKEND_CONFIG),)
 
 plan-infra: init-infra
 	terraform -chdir=$(INFRA_DIR) plan
 
 apply-infra: init-infra generate
 	terraform -chdir=$(INFRA_DIR) apply
+	$(MAKE) generate-details
 
 ## Print the kubeconfigs output (sensitive — not shown in plain text by default).
 output-infra: init-infra
@@ -45,7 +71,8 @@ output-infra: init-infra
 # ── Bootstrap module ───────────────────────────────────────────────────────────
 
 init-bootstrap: generate
-	terraform -chdir=$(BOOTSTRAP_DIR) init
+	terraform -chdir=$(BOOTSTRAP_DIR) init \
+	  $(if $(BACKEND_CONFIG),-backend-config=$(BACKEND_CONFIG),)
 
 plan-bootstrap: init-bootstrap
 	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
@@ -59,7 +86,7 @@ apply-bootstrap: init-bootstrap
 
 # ── Combined ───────────────────────────────────────────────────────────────────
 
-## Full apply: infra first, then bootstrap.
+## Full apply: infra first (includes generate + generate-details), then bootstrap.
 apply: apply-infra apply-bootstrap
 
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).

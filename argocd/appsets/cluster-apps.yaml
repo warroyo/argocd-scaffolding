@@ -17,7 +17,7 @@ spec:
             values:
               project: '{{index .metadata.labels "project"}}'
         - git:
-            repoURL: https://github.com/warroyo/argocd-scaffolding
+            repoURL: ARGOCD_REPO_URL
             revision: main
             files:
             - path: infrastructure/clusters/{{.values.project}}/{{.name}}/cluster-details.yaml
@@ -29,7 +29,7 @@ spec:
     spec:
       project: 'infra'
       source:
-        repoURL: https://github.com/warroyo/argocd-scaffolding
+        repoURL: ARGOCD_REPO_URL
         targetRevision: main
         path: infrastructure/clusters/{{.values.project}}/{{.name}}/apps
       destination:

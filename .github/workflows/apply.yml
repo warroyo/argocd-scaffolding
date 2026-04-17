@@ -1,0 +1,62 @@
+name: Apply
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/infra/tenants.yaml'
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Python dependencies
+        run: pip install pyyaml
+
+      - name: Install ytt
+        uses: carvel-dev/setup-action@v2
+        with:
+          only: ytt
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Apply infra (runs generate + generate-details automatically)
+        run: make apply-infra
+        env:
+          TF_VAR_vcfa_refresh_token: ${{ secrets.VCFA_REFRESH_TOKEN }}
+          TF_VAR_vcfa_url: ${{ secrets.VCFA_URL }}
+          TF_VAR_vcfa_org: ${{ secrets.VCFA_ORG }}
+          TF_VAR_region_name: ${{ secrets.REGION_NAME }}
+          BACKEND_CONFIG: ${{ secrets.INFRA_BACKEND_CONFIG_PATH }}
+
+      - name: Apply bootstrap
+        run: make apply-bootstrap
+        env:
+          TF_VAR_argo_password: ${{ secrets.ARGO_PASSWORD }}
+          TF_VAR_repo_url: ${{ secrets.REPO_URL }}
+          TF_VAR_ako_username: ${{ secrets.AKO_USERNAME }}
+          TF_VAR_ako_password: ${{ secrets.AKO_PASSWORD }}
+          TF_VAR_ako_ca_data: ${{ secrets.AKO_CA_DATA }}
+          BACKEND_CONFIG: ${{ secrets.BOOTSTRAP_BACKEND_CONFIG_PATH }}
+
+      - name: Commit auto-generated namespace IDs and tenant UUIDs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add \
+            infrastructure/clusters/*/vars/tenant-vars.yaml \
+            infrastructure/clusters/*/*/cluster-details.yaml
+          git diff --staged --quiet || \
+            git commit -m "chore: populate auto-generated namespace IDs [skip ci]" && \
+            git push
