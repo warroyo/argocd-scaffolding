@@ -30,10 +30,11 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 - `charts/bootstrap-tenant/`: Helm chart that deploys ArgoCD instance + root Application.
 - `scripts/`
   - `generate-bootstrap.py`: Generates `terraform/bootstrap/providers.tf` and `main.tf` from `tenants.yaml`.
-  - `generate-infra.py`: Generates ArgoCD AppProject files (via ytt `templates/tenant/project.yaml`) and `argocd/projects/kustomization.yaml` (via ytt `templates/tenant/kustomization.yaml`) and `infrastructure/clusters/{tenant}/vars/kustomization.yaml` stubs from `tenants.yaml`.
+  - `generate-tenants.py`: Generates ArgoCD AppProject files (via ytt `templates/tenant/project.yaml`) and `argocd/projects/kustomization.yaml` (via ytt `templates/tenant/kustomization.yaml`) and `infrastructure/clusters/{tenant}/vars/kustomization.yaml` stubs from `tenants.yaml`.
+  - `generate-clusters.py`: Renders cluster kustomization files via ytt (`templates/cluster/`) for each cluster. Preserves `namespace`/`argo_namespace` in `cluster-details.yaml` across regenerations.
   - `generate-details.py`: Post-Terraform — populates `tenant-vars.yaml` and fills `namespace`/`argo_namespace` in `cluster-details.yaml` from Terraform outputs.
 - `templates/cluster/`: ytt templates for cluster files. Processed per cluster from `cluster-values.yaml`.
-- `templates/tenant/`: ytt templates for tenant ArgoCD AppProject files. Rendered by `generate-infra.py`.
+- `templates/tenant/`: ytt templates for tenant ArgoCD AppProject files. Rendered by `generate-tenants.py`.
 - `argocd/`
   - `appsets/`: ApplicationSets that discover and deploy clusters and apps.
   - `projects/`: ArgoCD AppProject definitions (generated from `tenants.yaml`).
@@ -85,7 +86,7 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
      service_mesh: false
      observability: true
    ```
-2. Run `make generate` (or push) to render the cluster's `kustomization.yaml`, `apps/kustomization.yaml`, and `cluster-details.yaml` via ytt.
+2. Run `make generate` (or push) to render the cluster's `kustomization.yaml`, `apps/kustomization.yaml`, and `cluster-details.yaml` (via `generate-clusters.py`).
 3. Run `make generate-details` (or `make apply-infra`) to fill in the vSphere-generated `namespace` and `argo_namespace` fields in `cluster-details.yaml`.
 4. Commit the generated files. The `cluster-provisioning` ApplicationSet detects the new `cluster-details.yaml` and creates the cluster automatically.
 

@@ -7,7 +7,7 @@ on:
       - 'infrastructure/clusters/**/cluster-values.yaml'
       - 'templates/cluster/**'
       - 'scripts/generate-bootstrap.py'
-      - 'scripts/generate-infra.py'
+      - 'scripts/generate-tenants.py'
 
 jobs:
   generate:

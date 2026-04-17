@@ -36,14 +36,9 @@ generate:
 	@echo "==> Generating bootstrap Terraform files..."
 	python3 $(REPO_ROOT)/scripts/generate-bootstrap.py
 	@echo "==> Generating ArgoCD projects and tenant dirs..."
-	python3 $(REPO_ROOT)/scripts/generate-infra.py
+	python3 $(REPO_ROOT)/scripts/generate-tenants.py
 	@echo "==> Generating cluster files from ytt templates..."
-	@find $(REPO_ROOT)/infrastructure/clusters -name 'cluster-values.yaml' | \
-	  while read f; do \
-	    dir=$$(dirname $$f); \
-	    echo "  ytt -> $$dir"; \
-	    ytt -f $(REPO_ROOT)/templates/cluster/ -f $$f --output-files $$dir/; \
-	  done
+	python3 $(REPO_ROOT)/scripts/generate-clusters.py
 
 ## Populate auto-generated namespace IDs and tenant UUIDs after Terraform apply.
 ## Requires terraform/infra to be initialized with state (run apply-infra first).

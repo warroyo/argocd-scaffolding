@@ -3,9 +3,9 @@ kind: ConfigMap
 metadata:
   name: vars
   annotations:
-    config.kubernetes.io/local-config: "true"
+    config.kubernetes.io/local-config: 'true'
 data:
   cluster_name: dev1-cluster
   project: tenant-1
-  namespace: ""
-  argo_namespace: ""
+  namespace: dev-1-4gqxg
+  argo_namespace: infra-kyrtt
