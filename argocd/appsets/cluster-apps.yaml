@@ -19,8 +19,8 @@ spec:
         - git:
             repoURL: ARGOCD_REPO_URL
             revision: main
-            files:
-            - path: infrastructure/clusters/{{.values.project}}/{{.name}}/cluster-details.yaml
+            directories:
+            - path: 'infrastructure/clusters/{{.values.project}}/*/{{.name}}/apps'
   template:
     metadata:
       name: '{{.name}}-apps'
@@ -31,7 +31,7 @@ spec:
       source:
         repoURL: ARGOCD_REPO_URL
         targetRevision: main
-        path: infrastructure/clusters/{{.values.project}}/{{.name}}/apps
+        path: '{{.path}}'
       destination:
         server: '{{.server}}'
         namespace: default

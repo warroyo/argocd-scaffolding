@@ -1,0 +1,21 @@
+{% for t in tenants %}{% for ns in t.namespaces %}{% set alias = (t.name + "-" + ns.name) | tf_id %}{% set key = t.name + "-" + ns.name %}
+module "bootstrap_{{ alias }}" {
+  source = "../modules/bootstrap-helm"
+
+  providers = { helm = helm.{{ alias }} }
+
+  namespace           = "{{ ns.name }}"
+  tenant_name         = "{{ t.name }}"
+  deploy_argo         = {{ ns.get('deploy_argo', False) | tf_bool }}
+  argo_namespace      = "{{ t.get('argo_namespace', 'argocd') }}"
+  argo_password       = var.argo_password
+  root_app_url        = var.repo_url
+  argo_cluster_labels = {
+{% for k, v in ns.get('argo_labels', {}).items() %}    {{ k }} = "{{ v }}"
+{% endfor %}  }
+  ako_secret_enabled  = var.ako_secret_enabled
+  ako_username        = var.ako_username
+  ako_password        = var.ako_password
+  ako_ca_data         = var.ako_ca_data
+}
+{% endfor %}{% endfor %}

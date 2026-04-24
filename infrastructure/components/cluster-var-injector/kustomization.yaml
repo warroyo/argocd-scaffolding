@@ -4,13 +4,13 @@ kind: Component
 replacements:
   - source:
       kind: ConfigMap
-      name: vars
+      name: cluster-id
       fieldPath: data.cluster_name
 
     targets:
       - select:
           labelSelector: "config.k8s.io/inject-cluster-name-prefix=true"
-        fieldPaths: 
+        fieldPaths:
         - metadata.name
         options:
           delimiter: '-'
@@ -63,26 +63,26 @@ replacements:
           index: 6
   - source:
       kind: ConfigMap
-      name: vars
-      fieldPath: data.project
+      name: namespace-details
+      fieldPath: data.tenant
     targets:
       - select:
           kind: ArgoCluster
-        fieldPaths: 
+        fieldPaths:
         - spec.project
         - spec.clusterLabels.project
   - source:
       kind: ConfigMap
-      name: vars
+      name: namespace-details
       fieldPath: data.argo_namespace
     targets:
       - select:
           kind: ArgoCluster
-        fieldPaths: 
+        fieldPaths:
         - spec.argoNamespace
   - source:
       kind: ConfigMap
-      name: vars
+      name: cluster-id
       fieldPath: data.cluster_name
     targets:
       - select:

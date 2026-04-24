@@ -1,0 +1,10 @@
+{% for t in tenants %}{% for ns in t.namespaces %}{% set alias = (t.name + "-" + ns.name) | tf_id %}{% set key = t.name + "-" + ns.name %}
+provider "helm" {
+  alias = "{{ alias }}"
+  kubernetes {
+    host     = var.kubeconfigs["{{ key }}"].host
+    token    = var.kubeconfigs["{{ key }}"].token
+    insecure = var.kubeconfigs["{{ key }}"].insecure_skip_tls_verify
+  }
+}
+{% endfor %}{% endfor %}

@@ -1,6 +1,7 @@
 REPO_ROOT     := $(shell git rev-parse --show-toplevel)
 INFRA_DIR     := $(REPO_ROOT)/terraform/infra
 BOOTSTRAP_DIR := $(REPO_ROOT)/terraform/bootstrap
+GENERATE_DIR  := $(REPO_ROOT)/terraform/generate
 
 # Sensitive variables — set these in your environment before running:
 #
@@ -23,28 +24,21 @@ BOOTSTRAP_DIR := $(REPO_ROOT)/terraform/bootstrap
 
 BACKEND_CONFIG ?=
 
-.PHONY: generate generate-details \
+.PHONY: generate \
         init-infra plan-infra apply-infra output-infra \
         init-bootstrap plan-bootstrap apply-bootstrap \
         apply destroy-bootstrap destroy-infra destroy
 
 # ── Code generation ────────────────────────────────────────────────────────────
 
-## Regenerate all static configs from source YAML (tenants.yaml + cluster-values.yaml).
-## Run this after every change to terraform/infra/tenants.yaml or any cluster-values.yaml.
+## Regenerate all static configs from source YAML (tenants.yaml).
+## Run this after every change to terraform/infra/tenants.yaml.
 generate:
 	@echo "==> Generating bootstrap Terraform files..."
 	python3 $(REPO_ROOT)/scripts/generate-bootstrap.py
 	@echo "==> Generating ArgoCD projects and tenant dirs..."
-	python3 $(REPO_ROOT)/scripts/generate-tenants.py
-	@echo "==> Generating cluster files from ytt templates..."
-	python3 $(REPO_ROOT)/scripts/generate-clusters.py
-
-## Populate auto-generated namespace IDs and tenant UUIDs after Terraform apply.
-## Requires terraform/infra to be initialized with state (run apply-infra first).
-generate-details:
-	@echo "==> Populating auto-generated values from Terraform outputs..."
-	python3 $(REPO_ROOT)/scripts/generate-details.py
+	terraform -chdir=$(GENERATE_DIR) init -upgrade -input=false
+	terraform -chdir=$(GENERATE_DIR) apply -auto-approve -input=false
 
 # ── Infra module ───────────────────────────────────────────────────────────────
 
@@ -57,7 +51,6 @@ plan-infra: init-infra
 
 apply-infra: init-infra generate
 	terraform -chdir=$(INFRA_DIR) apply
-	$(MAKE) generate-details
 
 ## Print the kubeconfigs output (sensitive — not shown in plain text by default).
 output-infra: init-infra
@@ -81,7 +74,7 @@ apply-bootstrap: init-bootstrap
 
 # ── Combined ───────────────────────────────────────────────────────────────────
 
-## Full apply: infra first (includes generate + generate-details), then bootstrap.
+## Full apply: infra first (includes generate + namespace-details/tenant-vars via TF), then bootstrap.
 apply: apply-infra apply-bootstrap
 
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).

@@ -5,29 +5,31 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   generators:
   - git:
       repoURL: ARGOCD_REPO_URL
       revision: main
-      files:
-      - path: infrastructure/clusters/*/*/cluster-details.yaml
+      directories:
+      - path: infrastructure/clusters/*/*/*
   template:
     metadata:
-      name: '{{data.project}}-{{data.cluster_name}}-provision'
+      name: '{{ index (splitList "/" .path) 2 }}-{{ .path.basename }}-provision'
       finalizers:
       - resources-finalizer.argocd.argoproj.io
       labels:
-        tenant: '{{data.project}}'
+        tenant: '{{ index (splitList "/" .path) 2 }}'
         type: "cluster-infrastructure"
     spec:
       project: infra
       source:
         repoURL: ARGOCD_REPO_URL
         targetRevision: main
-        path: '{{path}}'
+        path: '{{ .path }}'
       destination:
-        name:  'supervisor-ns-{{data.namespace}}'
-        namespace: '{{data.namespace}}'
+        name: 'supervisor-ns-{{ index (splitList "/" .path) 3 }}'
+        namespace: '{{ index (splitList "/" .path) 3 }}'
       syncPolicy:
         automated:
           prune: true
