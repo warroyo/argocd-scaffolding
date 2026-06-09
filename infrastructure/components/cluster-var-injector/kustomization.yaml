@@ -73,12 +73,12 @@ replacements:
         - spec.clusterLabels.project
   - source:
       kind: ConfigMap
-      name: vars
+      name: tenant-vars
       fieldPath: data.argo_namespace
     targets:
       - select:
           kind: ArgoCluster
-        fieldPaths: 
+        fieldPaths:
         - spec.argoNamespace
   - source:
       kind: ConfigMap

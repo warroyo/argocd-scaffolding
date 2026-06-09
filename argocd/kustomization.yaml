@@ -14,12 +14,12 @@ replacements:
       name: argocd-repo-config
       fieldPath: data.repoURL
     targets:
-      # cluster-provisioning: top-level git generator + source
+      # cluster-provisioning: git generator nested inside matrix + source
       - select:
           kind: ApplicationSet
           name: cluster-provisioning
         fieldPaths:
-          - spec.generators.0.git.repoURL
+          - spec.generators.0.matrix.generators.1.git.repoURL
           - spec.template.spec.source.repoURL
       # cluster-apps: git generator nested inside matrix + source
       - select:

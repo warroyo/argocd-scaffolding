@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../../../base/vks-cluster
+- ../../../../base/cluster-argocd-attach
+- ./cluster-details.yaml
+- ../../vars                # per-tenant tenant-vars ConfigMap (tenant_uuid, vpc_name, argo_namespace)
+components:
+- ../../../../components/antrea-nsx
+- ../../../../components/argocd-tenant-cluster
+- ../../../../components/ako
+# --- Optional: Istio (include both lines together) ---
+# - ../../../../components/istio
+# - ../../../../components/ako-istio
+# -----------------------------------------------------
+- ../../../../components/cluster-var-injector
+# --- Optional add-ons ---
+# - ../../../../components/cluster-autoscaling
+# - ../../../../components/ha-control-plane
+# Pick the environment overlay for this cluster:
+- ../../../../components/envs/dev

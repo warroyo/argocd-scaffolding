@@ -23,28 +23,13 @@ BOOTSTRAP_DIR := $(REPO_ROOT)/terraform/bootstrap
 
 BACKEND_CONFIG ?=
 
-.PHONY: generate generate-details \
-        init-infra plan-infra apply-infra output-infra \
+.PHONY: init-infra plan-infra apply-infra output-infra \
         init-bootstrap plan-bootstrap apply-bootstrap \
         apply destroy-bootstrap destroy-infra destroy
 
-# ── Code generation ────────────────────────────────────────────────────────────
-
-## Regenerate all static configs from source YAML (tenants.yaml + cluster-values.yaml).
-## Run this after every change to terraform/infra/tenants.yaml or any cluster-values.yaml.
-generate:
-	@echo "==> Generating bootstrap Terraform files..."
-	python3 $(REPO_ROOT)/scripts/generate-bootstrap.py
-	@echo "==> Generating ArgoCD projects and tenant dirs..."
-	python3 $(REPO_ROOT)/scripts/generate-tenants.py
-	@echo "==> Generating cluster files from ytt templates..."
-	python3 $(REPO_ROOT)/scripts/generate-clusters.py
-
-## Populate auto-generated namespace IDs and tenant UUIDs after Terraform apply.
-## Requires terraform/infra to be initialized with state (run apply-infra first).
-generate-details:
-	@echo "==> Populating auto-generated values from Terraform outputs..."
-	python3 $(REPO_ROOT)/scripts/generate-details.py
+# All config generation now happens inside the infra Terraform run (local_file):
+# ArgoCD AppProjects, the tenant-vars handoff, and the bootstrap providers/main.tf
+# wiring consumed by the second run. There is no separate generate step.
 
 # ── Infra module ───────────────────────────────────────────────────────────────
 
@@ -55,9 +40,10 @@ init-infra:
 plan-infra: init-infra
 	terraform -chdir=$(INFRA_DIR) plan
 
-apply-infra: init-infra generate
+## Provisions namespaces and renders all generated config (AppProjects,
+## tenant-vars, and terraform/bootstrap/{providers,main}.tf). Commit the result.
+apply-infra: init-infra
 	terraform -chdir=$(INFRA_DIR) apply
-	$(MAKE) generate-details
 
 ## Print the kubeconfigs output (sensitive — not shown in plain text by default).
 output-infra: init-infra
@@ -65,7 +51,7 @@ output-infra: init-infra
 
 # ── Bootstrap module ───────────────────────────────────────────────────────────
 
-init-bootstrap: generate
+init-bootstrap:
 	terraform -chdir=$(BOOTSTRAP_DIR) init \
 	  $(if $(BACKEND_CONFIG),-backend-config=$(BACKEND_CONFIG),)
 
@@ -81,7 +67,8 @@ apply-bootstrap: init-bootstrap
 
 # ── Combined ───────────────────────────────────────────────────────────────────
 
-## Full apply: infra first (includes generate + generate-details), then bootstrap.
+## Full apply: infra first (provisions + renders all generated files),
+## then bootstrap. Commit the files rendered by apply-infra before apply-bootstrap.
 apply: apply-infra apply-bootstrap
 
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).
