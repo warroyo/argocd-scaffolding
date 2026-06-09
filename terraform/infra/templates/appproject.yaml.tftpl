@@ -4,11 +4,11 @@
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: tenant-1
+  name: ${name}
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
-  description: tenant-1
+  description: ${name}
   sourceRepos:
   - '*'
   destinations:
@@ -17,3 +17,8 @@ spec:
   clusterResourceWhitelist:
   - group: '*'
     kind: '*'
+%{ if type == "infra" ~}
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+%{ endif ~}

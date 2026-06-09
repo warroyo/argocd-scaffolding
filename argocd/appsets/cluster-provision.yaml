@@ -5,29 +5,48 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
   generators:
-  - git:
-      repoURL: ARGOCD_REPO_URL
-      revision: main
-      files:
-      - path: infrastructure/clusters/*/*/cluster-details.yaml
+    # Matrix join: each supervisor-namespace ArgoCD cluster (discovered by label)
+    # is paired ONLY with the cluster directories under its own
+    # {project}/{namespace_ref}/ path, so the git glob performs an exact join and
+    # the vcfa-suffixed namespace name never has to live in git.
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchLabels:
+                  type: supervisor-ns
+              values:
+                project: '{{index .metadata.labels "gitops.platform/project"}}'
+                namespaceRef: '{{index .metadata.labels "gitops.platform/namespace-ref"}}'
+                namespace: '{{index .metadata.labels "gitops.platform/namespace"}}'
+          - git:
+              repoURL: ARGOCD_REPO_URL
+              revision: main
+              files:
+                - path: infrastructure/clusters/{{.values.project}}/{{.values.namespaceRef}}/*/cluster-details.yaml
   template:
     metadata:
-      name: '{{data.project}}-{{data.cluster_name}}-provision'
+      name: '{{.values.project}}-{{.cluster_name}}-provision'
       finalizers:
       - resources-finalizer.argocd.argoproj.io
       labels:
-        tenant: '{{data.project}}'
+        tenant: '{{.values.project}}'
         type: "cluster-infrastructure"
     spec:
       project: infra
       source:
         repoURL: ARGOCD_REPO_URL
         targetRevision: main
-        path: '{{path}}'
+        path: '{{.path.path}}'
       destination:
-        name:  'supervisor-ns-{{data.namespace}}'
-        namespace: '{{data.namespace}}'
+        # Resolved from the supervisor-namespace cluster registration, not git:
+        # .name is the ArgoCD cluster name (supervisor-ns-<suffixed>) and
+        # .values.namespace is the suffixed namespace from the cluster label.
+        name: '{{.name}}'
+        namespace: '{{.values.namespace}}'
       syncPolicy:
         automated:
           prune: true

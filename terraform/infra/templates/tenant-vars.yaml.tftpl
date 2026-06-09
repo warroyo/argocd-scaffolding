@@ -8,6 +8,6 @@ metadata:
   annotations:
     config.kubernetes.io/local-config: "true"
 data:
-  tenant_uuid: "4289de50-c88c-44d4-a137-34ed63c29968"
-  vpc_name: "tenant-1-us-west-vpc"
-  argo_namespace: "infra-kyrtt"
+  tenant_uuid: "${tenant_uuid}"
+  vpc_name: "${vpc_name}"
+  argo_namespace: "${argo_namespace}"

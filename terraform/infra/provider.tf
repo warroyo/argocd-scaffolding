@@ -11,6 +11,9 @@ terraform {
       source  = "vmware/vra"
       version = ">= 0.16.0"
     }
+    local = {
+      source = "hashicorp/local"
+    }
   }
 }
 

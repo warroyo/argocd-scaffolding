@@ -7,34 +7,32 @@ terraform {
 }
 
 resource "helm_release" "bootstrap" {
-  name       = "bootstrap-tenant"
-  chart      = "../../charts/bootstrap-tenant"
-  namespace  = var.namespace
+  name             = "bootstrap-tenant"
+  chart            = "../../charts/bootstrap-tenant"
+  namespace        = var.config.namespace
   create_namespace = false # Assumed created by tenants job
 
   values = [
     yamlencode({
-      deployArgo    = var.deploy_argo
-      argoNamespace = var.argo_namespace
-      tenantName    = var.tenant_name
-      
+      deployArgo    = var.config.deploy_argo
+      argoNamespace = var.config.argo_namespace
+      tenantName    = var.config.tenant_name
+
       argoInstance = {
-        password = var.deploy_argo ? bcrypt(var.argo_password) : ""
+        password = var.config.deploy_argo ? bcrypt(var.config.argo_password) : ""
       }
-      
-      clusterLabels = var.argo_cluster_labels
-      
+
+      clusterLabels = var.config.cluster_labels
+
       rootApp = {
-        repoURL        = var.root_app_url
-        path           = var.root_app_path
-        targetRevision = var.root_app_revision
+        repoURL = var.config.repo_url
       }
 
       akoSecret = {
-        enabled                  = var.ako_secret_enabled
-        username                 = var.ako_username
-        password                 = var.ako_password
-        certificateAuthorityData = var.ako_ca_data
+        enabled                  = var.config.ako.enabled
+        username                 = var.config.ako.username
+        password                 = var.config.ako.password
+        certificateAuthorityData = var.config.ako.ca_data
       }
     })
   ]
