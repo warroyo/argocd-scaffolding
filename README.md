@@ -14,7 +14,7 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 - **Terraform**: Provisions vSphere supervisor namespaces, bootstraps ArgoCD via Helm, and renders all generated config from `tenants.yaml` via `local_file`/`templatefile` (no Python, no ytt).
 - **Helm**: Used by Terraform to deploy the `bootstrap-tenant` chart (ArgoCD instance + root app).
 - **ArgoCD**: GitOps engine managing the lifecycle of clusters and applications via the App of Apps pattern.
-- **Kustomize**: Structures Kubernetes manifests using Base/Overlays with variable injection. Cluster directories are hand-authored from shared components for full flexibility.
+- **Kustomize**: Structures Kubernetes manifests using Base/Components/Profiles with variable injection. Clusters inherit an environment **profile** and add only their own deltas, so fleet-wide changes happen in one place while per-cluster overrides stay easy.
 - **GitHub Actions**: CI/CD for running `make apply` on tenant changes (which also renders + commits generated files).
 - **AKO (Avi Kubernetes Operator)**: Configured as an infrastructure addon for load balancing.
 
@@ -32,16 +32,19 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `root/`: Root Application bootstrapped by Terraform.
   - `repo-config.yaml`: Single source of truth for the GitOps repo URL.
 - `infrastructure/`
-  - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`).
-  - `components/`: Kustomize components for optional features and environment overlays.
-  - `clusters/{project}/{namespace_ref}/{cluster}/`: Hand-authored per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`.
+  - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`). Bases carry `replace-me` placeholders for environment values.
+  - `components/`: Kustomize components for optional features and environment overlays (`envs/{env}` carries the real per-environment values).
+  - `profiles/{env}/`: The inherited default set for an environment — bases + always-on components + the env overlay. Clusters reference a profile instead of enumerating everything.
+  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`.
 - `apps/`
   - `base/`: Base application manifests.
   - `components/stacks/`: Application stacks (e.g., `standard`, `observability`, `service-mesh`).
-  - `clusters/`: Cluster-specific app aggregations.
+  - `components/envs/{env}/`: Feature-scoped per-environment app tuning (e.g., `envs/dev/istio`), included only alongside the matching stack.
+  - `profiles/{env}/`: The inherited default app stack for an environment.
 - `docs/examples/cluster-template/`: Copy-me template for onboarding a new cluster.
 - `.github/workflows/`
   - `apply.yml`: On tenant changes, runs `make apply-infra` (provisions + renders generated files), commits them, then runs `make apply-bootstrap`.
+  - `validate.yml`: On PRs and pushes to `main`, renders every cluster (infra + apps) and the argocd root with kustomize, and checks each `cluster-details.yaml` matches its directory path.
 
 ## Tenant Types
 
@@ -70,9 +73,13 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
    ```
 2. Edit `cluster-details.yaml` so `cluster_name`, `project`, and `namespace_ref`
    match the directory path (`namespace_ref` matches a namespace `name` in
-   `tenants.yaml` and must be unique per project).
-3. Edit `kustomization.yaml` / `apps/kustomization.yaml` to include the shared
-   components and app stacks you want — full control, no generation step.
+   `tenants.yaml` and must be unique per project). The `validate.yml` workflow
+   enforces this match on every PR.
+3. Set the environment by referencing the right profile (`profiles/{env}`) in
+   both `kustomization.yaml` and `apps/kustomization.yaml`. Add only the optional
+   feature components / app stacks this cluster needs, and any override patches —
+   everything else is inherited from the profile. Keep `cluster-var-injector`
+   **last** in the infra component list.
 4. Commit. The `cluster-provisioning` ApplicationSet joins the directory to its
    supervisor namespace by label (`gitops.platform/project` +
    `gitops.platform/namespace-ref`) and provisions it. The vcfa-generated
@@ -85,13 +92,32 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 3. Enable stacks for a cluster by editing its `apps/kustomization.yaml`.
 4. ArgoCD syncs the `cluster-apps` ApplicationSet and deploys the assigned apps.
 
+## Inheritance model (profiles, components, overrides)
+
+A cluster does not enumerate its whole stack. It references an environment
+**profile** and layers deltas on top:
+
+- **Profile** (`infrastructure/profiles/{env}`, `apps/profiles/{env}`): the
+  always-on set for an environment — bases + always-on feature components + the
+  env overlay that carries the real per-environment values. Change something for
+  every cluster in an environment by editing the profile once.
+- **Deltas**: a cluster adds optional feature components (`istio`, `ako-istio`,
+  `cluster-autoscaling`, …) and app stacks (`observability`, `service-mesh`) that
+  aren't part of the baseline.
+- **Overrides**: anything inherited can be overridden per-cluster with a
+  `patches:` block in the cluster `kustomization.yaml` (escape hatch).
+
+Because everything resolves through plain Kustomize, `kustomize build <cluster-dir>`
+reproduces exactly what ArgoCD deploys — env selection is an explicit profile
+reference, never injected at sync time.
+
 ## AKO Configuration
 
 AKO is configured as a modular Kustomize component.
 
-- **Base**: `infrastructure/base/ako` defines `AddonConfig` and `AddonInstall`.
-- **Variable injection**: `cluster-var-injector` injects `cluster_name`/`project` (from `cluster-details.yaml`) and `tenant_uuid`/`vpc_name`/`argo_namespace` (from `tenant-vars.yaml`).
-- **Environment overlays**: `infrastructure/components/envs/{env}` patches environment-specific settings (included by the cluster's hand-authored `kustomization.yaml`).
+- **Base**: `infrastructure/base/ako` defines `AddonConfig` and `AddonInstall` with `replace-me` placeholders for environment values.
+- **Variable injection**: `cluster-var-injector` injects `cluster_name`/`project` (from `cluster-details.yaml`) and `tenant_uuid`/`vpc_name`/`argo_namespace` (from `tenant-vars.yaml`). It must run **last** so it rewrites resources pulled in by the profile and the feature components.
+- **Environment overlays**: `infrastructure/components/envs/{env}` owns the real `controllerHost`/`cloudName` values and is applied via the profile, so a cluster that skips it fails loudly instead of running on stale defaults.
 - **Istio integration**: `infrastructure/components/ako-istio` enables Istio support (include `istio` + `ako-istio` in the cluster `kustomization.yaml`).
 
 ## Label-based provisioning (decision model)

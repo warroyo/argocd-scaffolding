@@ -37,7 +37,9 @@ kustomization.
 | File | Controls |
 |------|---------|
 | `terraform/infra/tenants.yaml` | Tenants, namespaces (incl. `environment`), ArgoCD bootstrap, cluster labels |
-| `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml` |
+| `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | The inherited default set per environment (bases + always-on components + env overlay). Edit to change every cluster in an environment at once. |
+| `infrastructure/components/envs/{env}/` | Real per-environment values (bases hold only `replace-me` placeholders) |
+| `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
 | `terraform/bootstrap/locals.tf` | Per-namespace bootstrap config + the `gitops.platform/*` label taxonomy |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
 | `docs/examples/cluster-template/` | Copy-me template for a new cluster |
@@ -63,7 +65,16 @@ the directory path `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/
 
 ### Adding a new cluster
 1. `cp -r docs/examples/cluster-template infrastructure/clusters/{project}/{namespace_ref}/{cluster}`
-2. Edit `cluster-details.yaml` (`cluster_name`, `project`, `namespace_ref`) and the
-   `kustomization.yaml` / `apps/kustomization.yaml` to include the components you want.
-3. Commit. The `cluster-provisioning` ApplicationSet picks it up via label join — the
+2. Edit `cluster-details.yaml` (`cluster_name`, `project`, `namespace_ref` — must match
+   the directory path; `validate.yml` enforces this).
+3. In `kustomization.yaml` / `apps/kustomization.yaml`, reference the environment
+   profile (`profiles/{env}`) and add only the optional feature components / app
+   stacks and any override patches. Keep `cluster-var-injector` **last** in the infra
+   component list (it rewrites resources brought in by the profile and the components).
+4. Commit. The `cluster-provisioning` ApplicationSet picks it up via label join — the
    vcfa-generated namespace name is resolved from the cluster registration, not git.
+
+### Changing every cluster in an environment
+Edit `infrastructure/profiles/{env}` (or `apps/profiles/{env}`) — every cluster that
+references that profile inherits the change. Real per-environment values live in
+`infrastructure/components/envs/{env}`.

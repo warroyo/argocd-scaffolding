@@ -1,16 +1,30 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
+
 resources:
-- ../../../../base/vks-cluster
-- ../../../../base/cluster-argocd-attach
+# Inherit the dev environment defaults (bases + always-on components + env values).
+- ../../../../profiles/dev
+# Cluster identity (this cluster's vars ConfigMap) and the per-tenant tenant-vars.
 - ./cluster-details.yaml
 - ../../vars
+
 components:
-- ../../../../components/antrea-nsx
-- ../../../../components/argocd-tenant-cluster
-- ../../../../components/ako
+# --- Optional per-cluster features (deltas on top of the profile) ---
 - ../../../../components/istio
 - ../../../../components/ako-istio
-- ../../../../components/cluster-var-injector
 - ../../../../components/cluster-autoscaling
-- ../../../../components/envs/dev
+# - ../../../../components/ha-control-plane
+# --- Variable injection MUST be last ---
+# It rewrites names/IDs across every resource accumulated above (from the profile
+# AND the feature components), so anything that contributes resources has to come
+# before it.
+- ../../../../components/cluster-var-injector
+
+# Override anything inherited from the profile here, e.g.:
+# patches:
+# - target:
+#     kind: Cluster
+#   patch: |-
+#     - op: replace
+#       path: /spec/topology/controlPlane/replicas
+#       value: 3

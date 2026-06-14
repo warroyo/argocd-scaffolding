@@ -1,0 +1,56 @@
+name: Validate
+
+# Renders every cluster (and the argocd root) with kustomize and checks that each
+# cluster-details.yaml agrees with its directory path. Catches broken overlays and
+# mis-joined clusters at PR time instead of at sync time.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  kustomize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz" \
+            | tar xz -C /usr/local/bin
+
+      - name: Build argocd
+        run: kustomize build argocd >/dev/null
+
+      - name: Build every cluster (infra + apps) and check identity
+        run: |
+          set -euo pipefail
+          rc=0
+          while IFS= read -r details; do
+            dir="$(dirname "$details")"
+            # infrastructure/clusters/{project}/{namespace_ref}/{cluster}
+            project="$(echo "$dir" | awk -F/ '{print $3}')"
+            nsref="$(echo "$dir" | awk -F/ '{print $4}')"
+            cluster="$(echo "$dir" | awk -F/ '{print $5}')"
+
+            got_project="$(awk '/project:/{print $2; exit}' "$details" | tr -d '"')"
+            got_nsref="$(awk '/namespace_ref:/{print $2; exit}' "$details" | tr -d '"')"
+            got_cluster="$(awk '/cluster_name:/{print $2; exit}' "$details" | tr -d '"')"
+
+            for pair in "project:$project:$got_project" \
+                        "namespace_ref:$nsref:$got_nsref" \
+                        "cluster_name:$cluster:$got_cluster"; do
+              field="${pair%%:*}"; rest="${pair#*:}"; want="${rest%%:*}"; have="${rest#*:}"
+              if [ "$want" != "$have" ]; then
+                echo "::error file=$details::$field is '$have' but path implies '$want'"
+                rc=1
+              fi
+            done
+
+            echo "building $dir"
+            kustomize build "$dir" >/dev/null
+            if [ -d "$dir/apps" ]; then
+              kustomize build "$dir/apps" >/dev/null
+            fi
+          done < <(find infrastructure/clusters -name cluster-details.yaml)
+          exit $rc
