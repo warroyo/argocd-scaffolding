@@ -18,8 +18,11 @@ resource "helm_release" "bootstrap" {
       argoNamespace = var.config.argo_namespace
       tenantName    = var.config.tenant_name
 
+      # argo_password must already be a bcrypt hash (see variables.tf). It is NOT
+      # hashed here: bcrypt() is non-deterministic and would rewrite the secret on
+      # every apply, and the chart's secret template stores the value as-is.
       argoInstance = {
-        password = var.config.deploy_argo ? bcrypt(var.config.argo_password) : ""
+        password = var.config.deploy_argo ? var.config.argo_password : ""
       }
 
       clusterLabels = var.config.cluster_labels

@@ -11,6 +11,10 @@ spec:
   argoNamespace: "default"
   clusterLabels:
     provider: "vks"
+    # Coarse selector (patched to "tenant" by the argocd-tenant-cluster
+    # component) plus the decision-model join keys, mirroring the supervisor-ns
+    # taxonomy. cluster-var-injector fills project / namespace-ref.
     type: ""
-    project: default
+    gitops.platform/project: default
+    gitops.platform/namespace-ref: default
   project: "default"

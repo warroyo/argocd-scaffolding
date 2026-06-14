@@ -1,4 +1,0 @@
----
-istio:
-  pilot:
-    replicas: 2

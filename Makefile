@@ -57,12 +57,14 @@ init-bootstrap:
 
 plan-bootstrap: init-bootstrap
 	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
-	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' \
+	$(eval NS_CONFIG := $(shell terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) plan
 
 apply-bootstrap: init-bootstrap
 	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
-	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' \
+	$(eval NS_CONFIG := $(shell terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) apply
 
 # ── Combined ───────────────────────────────────────────────────────────────────
@@ -74,7 +76,8 @@ apply: apply-infra apply-bootstrap
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).
 destroy-bootstrap: init-bootstrap
 	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
-	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' \
+	$(eval NS_CONFIG := $(shell terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) destroy
 
 destroy-infra: init-infra

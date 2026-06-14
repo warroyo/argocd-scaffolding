@@ -4,12 +4,10 @@ kind: Kustomization
 resources:
 # Inherit the app baseline for this environment (swap `dev` as needed).
 - ../../../../../../apps/profiles/dev
-# Include only if this cluster runs istio + AKO (sidecar integration patch):
+# Include only if this cluster runs istio (via the supervisor addon) + AKO,
+# to apply the AKO-sidecar integration patch:
 # - ../../../../../../apps/base/istio-ako-patch
 
 components:
 # --- Optional per-cluster app stacks (deltas on top of the profile) ---
 # - ../../../../../../apps/components/stacks/observability
-# Install istio as a workload package (include the env-scoped values with it):
-# - ../../../../../../apps/components/stacks/service-mesh
-# - ../../../../../../apps/components/envs/dev/istio

@@ -10,7 +10,3 @@ resources:
 components:
 # --- Optional per-cluster app stacks (deltas on top of the profile) ---
 - ../../../../../../apps/components/stacks/observability
-# --- Optional: install istio as a workload package (instead of the supervisor
-#     AddonConfig path). Include the env-scoped istio values alongside it: ---
-# - ../../../../../../apps/components/stacks/service-mesh
-# - ../../../../../../apps/components/envs/dev/istio

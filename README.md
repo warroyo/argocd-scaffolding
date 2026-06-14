@@ -22,14 +22,13 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 
 - `terraform/`
   - `infra/`: Provisions vSphere supervisor namespaces, outputs kubeconfigs, and renders all generated config from `tenants.yaml` (`generate.tf` + `templates/*.tftpl`).
-  - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) reads `tenants.yaml` for per-namespace config + the `gitops.platform/*` labels.
+  - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) merges secrets into the infra run's `namespace_config` output (which carries the suffixed namespace names + `gitops.platform/*` labels).
   - `modules/bootstrap-helm/`: Terraform module wrapping the bootstrap Helm chart (single `config` object input).
   - `modules/tenant/`, `modules/svns/`, `modules/vpc/`: vSphere infrastructure modules.
 - `charts/bootstrap-tenant/`: Helm chart that deploys the `ArgoNamespace` registration, ArgoCD instance + root Application.
 - `argocd/`
   - `appsets/`: ApplicationSets that discover and deploy clusters and apps (label-based join).
-  - `projects/`: ArgoCD AppProject definitions (per-tenant files rendered by the infra run; `infra.yaml` is static).
-  - `root/`: Root Application bootstrapped by Terraform.
+  - `projects/`: ArgoCD AppProject definitions, all rendered by the infra run (the `infra`-type tenant's project is rendered as `infra.yaml`, the project the ApplicationSets target).
   - `repo-config.yaml`: Single source of truth for the GitOps repo URL.
 - `infrastructure/`
   - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`). Bases carry `replace-me` placeholders for environment values.
@@ -38,10 +37,12 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`.
 - `apps/`
   - `base/`: Base application manifests.
-  - `components/stacks/`: Application stacks (e.g., `standard`, `observability`, `service-mesh`).
+  - `components/stacks/`: Application stacks (e.g., `standard`, `observability`).
   - `components/envs/{env}/`: Feature-scoped per-environment app tuning (e.g., `envs/dev/istio`), included only alongside the matching stack.
   - `profiles/{env}/`: The inherited default app stack for an environment.
-- `docs/examples/cluster-template/`: Copy-me template for onboarding a new cluster.
+- `docs/examples/`
+  - `cluster-template/`: Copy-me template for onboarding a new cluster.
+  - `sample-tenant-repo/`: Example of what a tenant keeps in their **own** app repo (not deployed by this platform).
 - `.github/workflows/`
   - `apply.yml`: On tenant changes, runs `make apply-infra` (provisions + renders generated files), commits them, then runs `make apply-bootstrap`.
   - `validate.yml`: On PRs and pushes to `main`, renders every cluster (infra + apps) and the argocd root with kustomize, and checks each `cluster-details.yaml` matches its directory path.
@@ -49,7 +50,7 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 ## Tenant Types
 
 - **`type: infra`** — The platform tenant that hosts the ArgoCD instance. Generates an unrestricted ArgoCD project (`namespaceResourceWhitelist: */*`). Only one infra tenant is supported, but it may have multiple namespaces each with `deploy_argo: true`. The `infra` project owns all cluster provisioning (ApplicationSets use `project: infra`).
-- **`type: tenant`** — Developer tenants. Each gets a locked-down ArgoCD project for deploying apps into their clusters.
+- **`type: tenant`** — Developer tenants. Each gets a dedicated ArgoCD project for deploying apps into their clusters. (The current template grants broad permissions; tightening `sourceRepos`/resource whitelists per tenant is a recommended follow-up.)
 
 ## Workflows
 
@@ -102,8 +103,8 @@ A cluster does not enumerate its whole stack. It references an environment
   env overlay that carries the real per-environment values. Change something for
   every cluster in an environment by editing the profile once.
 - **Deltas**: a cluster adds optional feature components (`istio`, `ako-istio`,
-  `cluster-autoscaling`, …) and app stacks (`observability`, `service-mesh`) that
-  aren't part of the baseline.
+  `cluster-autoscaling`, …) and app stacks (`observability`) that aren't part of
+  the baseline.
 - **Overrides**: anything inherited can be overridden per-cluster with a
   `patches:` block in the cluster `kustomization.yaml` (escape hatch).
 
@@ -123,11 +124,12 @@ AKO is configured as a modular Kustomize component.
 ## Label-based provisioning (decision model)
 
 Each supervisor namespace registers to ArgoCD with `clusterLabels` (computed in
-`terraform/bootstrap/locals.tf`):
+`terraform/infra/main.tf` and passed to the bootstrap run via the
+`namespace_config` output):
 
 | Label | Source | Role |
 |-------|--------|------|
-| `type: supervisor-ns` | `argo_labels` | coarse selector |
+| `type: supervisor-ns` | computed | coarse selector |
 | `gitops.platform/project` | tenant name | join key (== top dir) |
 | `gitops.platform/namespace-ref` | namespace name | join key (== 2nd dir); unique per project |
 | `gitops.platform/environment` | namespace `environment` | decision dimension |
@@ -136,7 +138,9 @@ Each supervisor namespace registers to ArgoCD with `clusterLabels` (computed in
 A cluster directory `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/`
 is provisioned into the supervisor namespace whose labels match its
 `(project, namespace_ref)`. The `cluster-provisioning` ApplicationSet templates the
-git path with those label values, so the match is exact and collision-free.
+git path with those label values, so the match is exact and collision-free. The
+workload `ArgoCluster` registrations carry the same join keys (plus
+`type: tenant`), so `cluster-apps` joins exactly too.
 
 ## Auto-Generated Values
 

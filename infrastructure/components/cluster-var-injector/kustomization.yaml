@@ -68,9 +68,18 @@ replacements:
     targets:
       - select:
           kind: ArgoCluster
-        fieldPaths: 
+        fieldPaths:
         - spec.project
-        - spec.clusterLabels.project
+        - spec.clusterLabels.[gitops.platform/project]
+  - source:
+      kind: ConfigMap
+      name: vars
+      fieldPath: data.namespace_ref
+    targets:
+      - select:
+          kind: ArgoCluster
+        fieldPaths:
+        - spec.clusterLabels.[gitops.platform/namespace-ref]
   - source:
       kind: ConfigMap
       name: tenant-vars

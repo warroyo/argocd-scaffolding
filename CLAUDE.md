@@ -28,9 +28,10 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 | `terraform/bootstrap/providers.tf` | `terraform/infra` → `templates/bootstrap-providers.tf.tftpl` |
 | `terraform/bootstrap/main.tf` | `terraform/infra` → `templates/bootstrap-main.tf.tftpl` |
 
-Note: `argocd/projects/infra.yaml` (the static `infra` AppProject used by the
-ApplicationSets) is hand-authored and intentionally not in the generated
-kustomization.
+Note: the `infra`-type tenant's AppProject is always rendered as
+`argocd/projects/infra.yaml` (named `infra` — the project the ApplicationSets
+target), regardless of the tenant's name. There is no separate hand-authored
+`infra` AppProject.
 
 ## Source of truth files — edit these, not the generated output
 
@@ -40,7 +41,7 @@ kustomization.
 | `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | The inherited default set per environment (bases + always-on components + env overlay). Edit to change every cluster in an environment at once. |
 | `infrastructure/components/envs/{env}/` | Real per-environment values (bases hold only `replace-me` placeholders) |
 | `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
-| `terraform/bootstrap/locals.tf` | Per-namespace bootstrap config + the `gitops.platform/*` label taxonomy |
+| `terraform/bootstrap/locals.tf` | Merges secrets (repo_url, argo_password, AKO) into the per-namespace config from the infra run's `namespace_config` output. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
 | `docs/examples/cluster-template/` | Copy-me template for a new cluster |
 
@@ -54,6 +55,12 @@ directory to its supervisor namespace on `(project, namespace_ref)` — which is
 the directory path `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/`.
 `namespace_ref` must be unique per project (enforced by a precondition in
 `terraform/infra/generate.tf`).
+
+The workload `ArgoCluster` registrations mirror this taxonomy (`type: tenant` as
+the coarse selector, plus `gitops.platform/project` and
+`gitops.platform/namespace-ref` injected by `cluster-var-injector`). The
+`cluster-apps` ApplicationSet uses both join keys, so its git path is exact —
+`infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` — not a wildcard.
 
 ## Workflows
 
