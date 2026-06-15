@@ -15,14 +15,16 @@ spec:
               matchLabels:
                 type: 'tenant'
             values:
-              project: '{{index .metadata.labels "project"}}'
+              project: '{{index .metadata.labels "gitops.platform/project"}}'
+              namespaceRef: '{{index .metadata.labels "gitops.platform/namespace-ref"}}'
         - git:
             repoURL: ARGOCD_REPO_URL
             revision: main
             files:
-            # {{.name}} is the workload cluster name (unique per project); the
-            # wildcard spans the namespace_ref directory level.
-            - path: infrastructure/clusters/{{.values.project}}/*/{{.name}}/cluster-details.yaml
+            # Exact join: project + namespace_ref come from the cluster labels and
+            # {{.name}} is the workload cluster name, so the path is unambiguous
+            # (mirrors the cluster-provisioning ApplicationSet).
+            - path: infrastructure/clusters/{{.values.project}}/{{.values.namespaceRef}}/{{.name}}/cluster-details.yaml
   template:
     metadata:
       name: '{{.name}}-apps'

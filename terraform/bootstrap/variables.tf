@@ -8,6 +8,17 @@ variable "kubeconfigs" {
   sensitive   = true
 }
 
+variable "namespace_config" {
+  type = map(object({
+    namespace      = string
+    tenant_name    = string
+    deploy_argo    = bool
+    argo_namespace = string
+    cluster_labels = map(string)
+  }))
+  description = "Per-namespace structural config (suffixed names + decision-model labels) — output of the infra run. Passed automatically by the Makefile via TF_VAR_namespace_config."
+}
+
 variable "repo_url" {
   type        = string
   description = "URL of the GitOps repo — used as repoURL in the root ArgoCD Application. Set via TF_VAR_repo_url."

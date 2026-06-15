@@ -7,21 +7,10 @@ terraform {
     kubernetes = {
       source = "hashicorp/kubernetes"
     }
-    vra = {
-      source  = "vmware/vra"
-      version = ">= 0.16.0"
-    }
     local = {
       source = "hashicorp/local"
     }
   }
-}
-
-provider "vra" {
-  url           = var.vcfa_url
-  refresh_token = var.vcfa_refresh_token
-  insecure      = true
-  organization  = var.vcfa_org
 }
 
 provider "vcfa" {

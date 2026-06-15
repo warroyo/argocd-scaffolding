@@ -28,17 +28,20 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 | `terraform/bootstrap/providers.tf` | `terraform/infra` → `templates/bootstrap-providers.tf.tftpl` |
 | `terraform/bootstrap/main.tf` | `terraform/infra` → `templates/bootstrap-main.tf.tftpl` |
 
-Note: `argocd/projects/infra.yaml` (the static `infra` AppProject used by the
-ApplicationSets) is hand-authored and intentionally not in the generated
-kustomization.
+Note: the `infra`-type tenant's AppProject is always rendered as
+`argocd/projects/infra.yaml` (named `infra` — the project the ApplicationSets
+target), regardless of the tenant's name. There is no separate hand-authored
+`infra` AppProject.
 
 ## Source of truth files — edit these, not the generated output
 
 | File | Controls |
 |------|---------|
 | `terraform/infra/tenants.yaml` | Tenants, namespaces (incl. `environment`), ArgoCD bootstrap, cluster labels |
-| `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml` |
-| `terraform/bootstrap/locals.tf` | Per-namespace bootstrap config + the `gitops.platform/*` label taxonomy |
+| `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | The inherited default set per environment (bases + always-on components + env overlay). Edit to change every cluster in an environment at once. |
+| `infrastructure/components/envs/{env}/` | Real per-environment values (bases hold only `replace-me` placeholders) |
+| `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
+| `terraform/bootstrap/locals.tf` | Merges secrets (repo_url, argo_password, AKO) into the per-namespace config from the infra run's `namespace_config` output. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
 | `docs/examples/cluster-template/` | Copy-me template for a new cluster |
 
@@ -53,6 +56,18 @@ the directory path `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/
 `namespace_ref` must be unique per project (enforced by a precondition in
 `terraform/infra/generate.tf`).
 
+The workload `ArgoCluster` registrations mirror this taxonomy (`type: tenant` as
+the coarse selector, plus `gitops.platform/project` and
+`gitops.platform/namespace-ref` injected by `cluster-var-injector`). The
+`cluster-apps` ApplicationSet uses both join keys, so its git path is exact —
+`infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` — not a wildcard.
+
+## Local testing
+
+Run `make validate` (or `./scripts/validate.sh`) before pushing — it build-tests every
+kustomize entrypoint (argocd root + each cluster's infra and `apps/` dirs) and checks each
+`cluster-details.yaml` against its directory path. CI runs the same script. Requires `kustomize`.
+
 ## Workflows
 
 ### Adding a new tenant
@@ -63,7 +78,16 @@ the directory path `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/
 
 ### Adding a new cluster
 1. `cp -r docs/examples/cluster-template infrastructure/clusters/{project}/{namespace_ref}/{cluster}`
-2. Edit `cluster-details.yaml` (`cluster_name`, `project`, `namespace_ref`) and the
-   `kustomization.yaml` / `apps/kustomization.yaml` to include the components you want.
-3. Commit. The `cluster-provisioning` ApplicationSet picks it up via label join — the
+2. Edit `cluster-details.yaml` (`cluster_name`, `project`, `namespace_ref` — must match
+   the directory path; `validate.yml` enforces this).
+3. In `kustomization.yaml` / `apps/kustomization.yaml`, reference the environment
+   profile (`profiles/{env}`) and add only the optional feature components / app
+   stacks and any override patches. Keep `cluster-var-injector` **last** in the infra
+   component list (it rewrites resources brought in by the profile and the components).
+4. Commit. The `cluster-provisioning` ApplicationSet picks it up via label join — the
    vcfa-generated namespace name is resolved from the cluster registration, not git.
+
+### Changing every cluster in an environment
+Edit `infrastructure/profiles/{env}` (or `apps/profiles/{env}`) — every cluster that
+references that profile inherits the change. Real per-environment values live in
+`infrastructure/components/envs/{env}`.

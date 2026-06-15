@@ -6,8 +6,15 @@
 # AppProjects and the post-apply tenant-vars handoff.
 
 locals {
-  # Tenant names (also the argocd/projects file names).
+  # Tenant names.
   tenant_names = keys(local.tenant_map)
+
+  # ArgoCD AppProject name per tenant. The infra tenant's project is always named
+  # "infra" (the project the ApplicationSets target), regardless of tenant name,
+  # so there is no separate hand-authored infra AppProject to keep in sync.
+  project_names = {
+    for k, v in local.tenant_map : k => lookup(v, "type", "") == "infra" ? "infra" : v.name
+  }
 
   # Per-tenant managing ArgoCD namespace (vcfa-suffixed), taken from any of the
   # tenant's namespace deployments — they all share the same argo_namespace.
@@ -35,6 +42,10 @@ resource "terraform_data" "validate_namespace_refs" {
       condition     = length(local.all_ns_refs) == length(distinct(local.all_ns_refs))
       error_message = "Each (project, namespace_ref) must be unique across tenants.yaml — duplicate found."
     }
+    precondition {
+      condition     = local.infra_count == 1
+      error_message = "Exactly one tenant of type 'infra' is required. Found: ${local.infra_count}."
+    }
   }
 }
 
@@ -42,9 +53,9 @@ resource "terraform_data" "validate_namespace_refs" {
 
 resource "local_file" "appproject" {
   for_each = local.tenant_map
-  filename = "${path.module}/../../argocd/projects/${each.key}.yaml"
+  filename = "${path.module}/../../argocd/projects/${local.project_names[each.key]}.yaml"
   content = templatefile("${path.module}/templates/appproject.yaml.tftpl", {
-    name = each.value.name
+    name = local.project_names[each.key]
     type = lookup(each.value, "type", "tenant")
   })
 }
@@ -52,7 +63,7 @@ resource "local_file" "appproject" {
 resource "local_file" "projects_kustomization" {
   filename = "${path.module}/../../argocd/projects/kustomization.yaml"
   content = templatefile("${path.module}/templates/projects-kustomization.yaml.tftpl", {
-    projects = local.tenant_names
+    projects = sort(values(local.project_names))
   })
 }
 

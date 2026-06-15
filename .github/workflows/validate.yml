@@ -1,0 +1,24 @@
+name: Validate
+
+# Runs scripts/validate.sh — the same build-test developers run locally via
+# `make validate`. It renders every cluster (and the argocd root) with kustomize
+# and checks each cluster-details.yaml against its directory path, catching broken
+# overlays and mis-joined clusters at PR time instead of at sync time.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  kustomize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install kustomize
+        run: |
+          curl -sL "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv5.4.3/kustomize_v5.4.3_linux_amd64.tar.gz" \
+            | tar xz -C /usr/local/bin
+
+      - name: Validate
+        run: ./scripts/validate.sh

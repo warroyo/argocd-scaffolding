@@ -28,9 +28,12 @@ spec:
       istioEnabled: false
 
     ControllerSettings:
-      controllerHost: "10.0.0.150"  
-      cloudName: "nsx-wld-cloud"    
-      tenantName: "replace-me"     
+      # Placeholders — the env overlay (infrastructure/components/envs/{env})
+      # supplies controllerHost/cloudName, and the cluster-var-injector supplies
+      # tenantName. A cluster that skips the env overlay fails loudly.
+      controllerHost: "replace-me"
+      cloudName: "replace-me"
+      tenantName: "replace-me"
 
     NetworkSettings:
   

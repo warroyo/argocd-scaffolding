@@ -13,9 +13,7 @@ locals {
     for mod in module.tenant : mod.project_id
   ]
 
-  infra_count           = length(local.infra_tenants)
-  validate_single_infra = local.infra_count != 1 ? file("ERROR: Exactly one tenant of type 'infra' is required. Found: ${local.infra_count}") : true
-
+  infra_count       = length(local.infra_tenants)
   infra_tenant_name = local.infra_count == 1 ? keys(local.infra_tenants)[0] : null
 
   ns_deployments = merge([
@@ -23,18 +21,29 @@ locals {
       for ns_key, ns_val in t_mod.namespaces :
       "${t_name}-${ns_key}" => {
         tenant_name = t_name
+        # ns_key is the logical namespace name from tenants.yaml (e.g. "dev-1").
+        # ns_name is the vcfa-suffixed name actually created (e.g. "dev-1-abcde").
+        ns_ref      = ns_key
         ns_name     = ns_val.name
         project_id  = t_mod.project_id
         deploy_argo = ns_val.deploy_argo
 
+        # Suffixed name of the namespace running the managing ArgoCD instance.
         argo_namespace = local.infra_tenant_name != null ? [
           for infra_ns_key, infra_ns_val in module.tenant[local.infra_tenant_name].namespaces : infra_ns_val.name
           if infra_ns_val.deploy_argo == true && infra_ns_key == local.tenant_map[t_name].argo_namespace
         ][0] : "argocd"
 
-        cluster_labels = try(
-          [for ns in local.tenant_map[t_name].namespaces : lookup(ns, "argo_labels", {}) if ns.name == ns_key][0],
-          {}
+        # Decision-model labels, computed once here (the chart adds the suffixed
+        # gitops.platform/namespace label at install time from .Release.Namespace).
+        cluster_labels = merge(
+          try([for ns in local.tenant_map[t_name].namespaces : lookup(ns, "argo_labels", {}) if ns.name == ns_key][0], {}),
+          {
+            "type"                          = "supervisor-ns"
+            "gitops.platform/project"       = t_name
+            "gitops.platform/namespace-ref" = ns_key
+            "gitops.platform/environment"   = try([for ns in local.tenant_map[t_name].namespaces : lookup(ns, "environment", "dev") if ns.name == ns_key][0], "dev")
+          }
         )
       }
     }
@@ -85,6 +94,21 @@ output "kubeconfigs" {
   sensitive = true
 }
 
-# tenants_config / namespaces_config outputs were consumed only by the deleted
-# scripts/generate-details.py. The same data is now rendered directly into the
-# GitOps tree by the local_file resources in generate.tf.
+# Per-namespace bootstrap config consumed by the second Terraform run. This is
+# the single terraform -> bootstrap contract: it carries the vcfa-SUFFIXED
+# namespace names (not knowable until infra applies) and the decision-model
+# labels, so the bootstrap stack never has to re-parse tenants.yaml or guess the
+# suffixed names. The Makefile passes it as TF_VAR_namespace_config; secrets
+# (repo_url, passwords, AKO) are merged in on the bootstrap side.
+output "namespace_config" {
+  description = "Per-namespace bootstrap config keyed by '<tenant>-<namespace_ref>'."
+  value = {
+    for key, ns in local.ns_deployments : key => {
+      namespace      = ns.ns_name
+      tenant_name    = ns.tenant_name
+      deploy_argo    = ns.deploy_argo
+      argo_namespace = ns.argo_namespace
+      cluster_labels = ns.cluster_labels
+    }
+  }
+}
