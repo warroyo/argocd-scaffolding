@@ -6,12 +6,12 @@ resource "vcfa_supervisor_namespace" "supervisor_namespace" {
   region_name  = var.region_name
   vpc_name     = var.vpc_name
 
-  storage_classes_initial_class_config_overrides {
+  storage_classes_class_config_overrides {
     limit = var.storage_limit
     name  = var.storage_policy
   }
 
-  zones_initial_class_config_overrides {
+  zones_class_config_overrides {
     cpu_limit          = var.cpu_limit
     cpu_reservation    = "0M"
     memory_limit       = var.mem_limit
