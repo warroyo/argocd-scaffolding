@@ -5,6 +5,7 @@ tenants:
     namespaces:
       - name: "dev-1"
         environment: dev
+        zone_name: "zone1"   # always set explicitly — default exists but varies per region
         storage_limit: "200Gi"
         mem_limit: "30Gi"
         cpu_limit: "20000M"
@@ -19,6 +20,7 @@ tenants:
     namespaces:
       - name: "infra"
         environment: prod
+        zone_name: "zone1"   # always set explicitly — default exists but varies per region
         deploy_argo: true
         storage_limit: "20Gi"
         mem_limit: "4Gi"

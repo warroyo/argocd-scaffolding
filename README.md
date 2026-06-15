@@ -144,7 +144,9 @@ each `cluster-details.yaml` matches its directory path. Requires `kustomize` on 
 
 ### 1. Bootstrapping a New Tenant
 
-1. Add a new entry to `terraform/infra/tenants.yaml` (include a per-namespace `environment`).
+1. Add a new entry to `terraform/infra/tenants.yaml`. Required per-namespace fields:
+   - `environment` — selects the Kustomize profile (`dev`, `prod`, …)
+   - `zone_name` — vSphere zone for the namespace (a default of `zone1` exists but **always set this explicitly** — zone names vary per region)
 2. Run `make apply` (or push to `main` — the Apply workflow runs it). `apply-infra`:
    - provisions the supervisor namespace(s), and
    - renders `argocd/projects/{tenant}.yaml`, the projects kustomization,
