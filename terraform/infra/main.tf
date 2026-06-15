@@ -55,6 +55,7 @@ module "tenant" {
   for_each     = local.tenant_map
   source       = "../modules/tenant"
   region_name  = var.region_name
+  avi_enabled  = var.avi_enabled
   project_name = each.value.name
   providers = {
     kubernetes = kubernetes.vcfa-org

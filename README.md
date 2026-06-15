@@ -2,6 +2,83 @@
 
 This repository contains the infrastructure and application configuration for managing a multi-tenant Kubernetes environment using ArgoCD, Terraform, and Kustomize.
 
+## Getting Started
+
+### Prerequisites
+
+| Tool | Purpose |
+|------|---------|
+| `terraform` >= 1.0 | Provisions namespaces, renders generated files, bootstraps ArgoCD |
+| `kustomize` | Local validation (`make validate`) — same version CI uses |
+| `make` | Orchestrates the two-phase Terraform workflow |
+| VCF Automation access | `vcfa_url`, `vcfa_org`, and an API refresh token |
+
+### Required Variables
+
+Set these **before** running `make apply`. All sensitive values go via `TF_VAR_*` exports; non-sensitive values can go in `terraform/infra/terraform.tfvars` (gitignored).
+
+**Required for `apply-infra`:**
+
+| Variable | How to set | Description |
+|----------|-----------|-------------|
+| `vcfa_refresh_token` | `export TF_VAR_vcfa_refresh_token=...` | VCF Automation API token (sensitive) |
+| `vcfa_url` | tfvars or `export TF_VAR_vcfa_url=...` | VCF Automation URL (e.g. `https://vcfa.example.com`) |
+| `vcfa_org` | tfvars or `export TF_VAR_vcfa_org=...` | VCF Automation org name |
+| `region_name` | tfvars or `export TF_VAR_region_name=...` | Region used to name VPCs (`{tenant}-{region}-vpc`) |
+| `avi_enabled` | tfvars or `export TF_VAR_avi_enabled=false` | `true` (default) for AVI LB regions; `false` for NSX_LB regions — omits `loadBalancerVPCEndpoint` from VPC spec |
+
+**Required for `apply-bootstrap`** (`kubeconfigs` and `namespace_config` are passed automatically by the Makefile from infra outputs):
+
+| Variable | How to set | Description |
+|----------|-----------|-------------|
+| `repo_url` | `export TF_VAR_repo_url=https://github.com/your-org/argocd-scaffolding` | GitOps repo URL injected into the root ArgoCD Application |
+| `argo_password` | `export TF_VAR_argo_password=...` | ArgoCD admin password (bcrypt hash); optional, defaults to `""` |
+
+**Optional — enable AKO secret:**
+
+| Variable | How to set | Description |
+|----------|-----------|-------------|
+| `ako_secret_enabled` | tfvars or `export TF_VAR_ako_secret_enabled=true` | Create the AKO secret in each namespace |
+| `ako_username` | `export TF_VAR_ako_username=...` | Base64-encoded AVI username |
+| `ako_password` | `export TF_VAR_ako_password=...` | Base64-encoded AVI password |
+| `ako_ca_data` | `export TF_VAR_ako_ca_data=...` | Base64-encoded Root CA for AVI |
+
+### Backend Configuration
+
+The infra Terraform run uses a partial backend — supply the rest at `init` time.
+
+**Local dev** — create `terraform/infra/backend-local.hcl`:
+```hcl
+path = "terraform.tfstate"
+```
+Then pass it to make:
+```sh
+make apply-infra BACKEND_CONFIG=terraform/infra/backend-local.hcl
+```
+
+**CI** — set `BACKEND_CONFIG` to a path or use `TF_BACKEND_*` env vars understood by your backend.
+
+### First-time Setup
+
+1. Clone this repo and `cd` into it.
+2. Edit `terraform/infra/tenants.yaml` — add your infra tenant and at least one namespace with `deploy_argo: true`.
+3. Update `argocd/repo-config.yaml` with your GitOps repo URL.
+4. Export required env vars (or create `terraform/infra/terraform.tfvars` for non-sensitive ones).
+5. Run:
+   ```sh
+   make apply-infra BACKEND_CONFIG=terraform/infra/backend-local.hcl
+   ```
+   This provisions namespaces and renders generated files (`argocd/projects/`, `infrastructure/clusters/*/vars/`, `terraform/bootstrap/{providers,main}.tf`).
+6. Commit the rendered files.
+7. Run:
+   ```sh
+   make apply-bootstrap BACKEND_CONFIG=terraform/infra/backend-local.hcl
+   ```
+   This deploys the ArgoCD Helm chart and root Application into each namespace with `deploy_argo: true`.
+8. Verify with `make validate` — build-tests every Kustomize entrypoint.
+
+---
+
 ## Overview
 
 The project follows a **GitOps** workflow where the entire state of the infrastructure and applications is defined in this repository. There are two distinct lifecycles:

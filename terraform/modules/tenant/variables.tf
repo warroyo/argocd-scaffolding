@@ -24,3 +24,9 @@ variable "namespaces" {
 variable "argo_namespace" {
    type = string
 }
+
+variable "avi_enabled" {
+  type        = bool
+  description = "Whether the region uses AVI as its load balancer."
+  default     = true
+}
