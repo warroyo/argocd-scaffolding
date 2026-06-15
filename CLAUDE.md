@@ -62,6 +62,12 @@ the coarse selector, plus `gitops.platform/project` and
 `cluster-apps` ApplicationSet uses both join keys, so its git path is exact —
 `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` — not a wildcard.
 
+## Local testing
+
+Run `make validate` (or `./scripts/validate.sh`) before pushing — it build-tests every
+kustomize entrypoint (argocd root + each cluster's infra and `apps/` dirs) and checks each
+`cluster-details.yaml` against its directory path. CI runs the same script. Requires `kustomize`.
+
 ## Workflows
 
 ### Adding a new tenant

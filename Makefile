@@ -23,13 +23,20 @@ BOOTSTRAP_DIR := $(REPO_ROOT)/terraform/bootstrap
 
 BACKEND_CONFIG ?=
 
-.PHONY: init-infra plan-infra apply-infra output-infra \
+.PHONY: validate \
+        init-infra plan-infra apply-infra output-infra \
         init-bootstrap plan-bootstrap apply-bootstrap \
         apply destroy-bootstrap destroy-infra destroy
 
 # All config generation now happens inside the infra Terraform run (local_file):
 # ArgoCD AppProjects, the tenant-vars handoff, and the bootstrap providers/main.tf
 # wiring consumed by the second run. There is no separate generate step.
+
+# ── Local testing ────────────────────────────────────────────────────────────────
+
+## Build-test every kustomize entrypoint locally (same script CI runs). Requires kustomize.
+validate:
+	@$(REPO_ROOT)/scripts/validate.sh
 
 # ── Infra module ───────────────────────────────────────────────────────────────
 

@@ -45,7 +45,18 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `sample-tenant-repo/`: Example of what a tenant keeps in their **own** app repo (not deployed by this platform).
 - `.github/workflows/`
   - `apply.yml`: On tenant changes, runs `make apply-infra` (provisions + renders generated files), commits them, then runs `make apply-bootstrap`.
-  - `validate.yml`: On PRs and pushes to `main`, renders every cluster (infra + apps) and the argocd root with kustomize, and checks each `cluster-details.yaml` matches its directory path.
+  - `validate.yml`: On PRs and pushes to `main`, runs `scripts/validate.sh` — the same build-test you run locally with `make validate` (renders every cluster (infra + apps) and the argocd root with kustomize, and checks each `cluster-details.yaml` matches its directory path).
+
+## Local Testing
+
+Before pushing, build-test every kustomize entrypoint the same way CI does:
+
+```sh
+make validate        # or: ./scripts/validate.sh
+```
+
+It renders the argocd root and every cluster (infra + `apps/`) with kustomize and verifies
+each `cluster-details.yaml` matches its directory path. Requires `kustomize` on your PATH.
 
 ## Tenant Types
 
