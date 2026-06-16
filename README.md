@@ -67,13 +67,6 @@ run with `-backend-config=backend-k8s.hcl`. The helper re-reads the kubeconfig l
 run, so the token is never stale. `make state-backend` needs the same vcfa `TF_VAR_*` as
 `apply-infra`.
 
-**Migrating existing local state** — once, per root:
-```sh
-make state-backend
-terraform -chdir=terraform/infra     init -migrate-state -backend-config=backend-k8s.hcl
-terraform -chdir=terraform/bootstrap init -migrate-state -backend-config=backend-k8s.hcl
-```
-
 **Override** — set `BACKEND_CONFIG` to a different `-backend-config` file to bypass the
 generated one (e.g. a local `path = "terraform.tfstate"` for throwaway local runs).
 
