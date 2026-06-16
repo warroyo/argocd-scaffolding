@@ -73,21 +73,29 @@ generated one (e.g. a local `path = "terraform.tfstate"` for throwaway local run
 ### First-time Setup
 
 1. Clone this repo and `cd` into it.
-2. Edit `terraform/infra/tenants.yaml` — add your infra tenant and at least one namespace with `deploy_argo: true`.
-3. Update `argocd/repo-config.yaml` with your GitOps repo URL.
-4. Export required env vars (or create `terraform/infra/terraform.tfvars` for non-sensitive ones).
-5. Run:
+2. Export the required env vars (vcfa creds + the secrets listed above; or create
+   `terraform/infra/terraform.tfvars` for non-sensitive ones).
+3. **Bootstrap the Terraform state namespace** (one-time) — follow
+   [Backend Configuration](#backend-configuration): `vcf context use`, create the project +
+   state namespace, write the generated name into
+   `terraform/state-backend/namespace.auto.tfvars`, and commit it. Required before any
+   `make apply-*`, since `init` stores state in that namespace.
+4. Edit `terraform/infra/tenants.yaml` — add your infra tenant and at least one namespace with `deploy_argo: true`.
+5. Update `argocd/repo-config.yaml` with your GitOps repo URL.
+6. Run:
    ```sh
-   make apply-infra BACKEND_CONFIG=terraform/infra/backend-local.hcl
+   make apply-infra
    ```
-   This provisions namespaces and renders generated files (`argocd/projects/`, `infrastructure/clusters/*/vars/`, `terraform/bootstrap/{providers,main}.tf`).
-6. Commit the rendered files.
-7. Run:
+   `init` auto-runs `make state-backend` (renders `backend-k8s.hcl`) and uses the Kubernetes
+   backend. This provisions namespaces and renders generated files (`argocd/projects/`,
+   `infrastructure/clusters/*/vars/`, `terraform/bootstrap/{providers,main}.tf`).
+7. Commit the rendered files.
+8. Run:
    ```sh
-   make apply-bootstrap BACKEND_CONFIG=terraform/infra/backend-local.hcl
+   make apply-bootstrap
    ```
    This deploys the ArgoCD Helm chart and root Application into each namespace with `deploy_argo: true`.
-8. Verify with `make validate` — build-tests every Kustomize entrypoint.
+9. Verify with `make validate` — build-tests every Kustomize entrypoint.
 
 ---
 
@@ -112,6 +120,8 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 - `terraform/`
   - `infra/`: Provisions vSphere supervisor namespaces, outputs kubeconfigs, and renders all generated config from `tenants.yaml` (`generate.tf` + `templates/*.tftpl`).
   - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) merges secrets into the infra run's `namespace_config` output (which carries the suffixed namespace names + `gitops.platform/*` labels).
+  - `state-namespace/`: Committed `Project` + `SupervisorNamespace` manifests for the Terraform state backend, applied once out-of-band (see [Backend Configuration](#backend-configuration)).
+  - `state-backend/`: Stateless helper that pulls the state-namespace kubeconfig and renders the gitignored `backend-k8s.hcl` for the infra/bootstrap Kubernetes backends. `namespace.auto.tfvars` holds the captured namespace name.
   - `modules/bootstrap-helm/`: Terraform module wrapping the bootstrap Helm chart (single `config` object input).
   - `modules/tenant/`, `modules/svns/`, `modules/vpc/`: vSphere infrastructure modules.
 - `charts/bootstrap-tenant/`: Helm chart that deploys the `ArgoNamespace` registration, ArgoCD instance + root Application.
