@@ -45,18 +45,37 @@ Set these **before** running `make apply`. All sensitive values go via `TF_VAR_*
 
 ### Backend Configuration
 
-The infra Terraform run uses a partial backend — supply the rest at `init` time.
+Both Terraform roots (`terraform/infra`, `terraform/bootstrap`) use the **Kubernetes
+backend** — state is stored as a `Secret` in a dedicated supervisor namespace, so runs
+are portable across machines/CI. The two roots use distinct `secret_suffix` values
+(`infra`, `bootstrap`) and share one namespace.
 
-**Local dev** — create `terraform/infra/backend-local.hcl`:
-```hcl
-path = "terraform.tfstate"
-```
-Then pass it to make:
+**One-time bootstrap** — create the project + state namespace out-of-band against the
+org CCI kubeconfig (the supervisor namespace uses `generateName`, so use `create`, not
+`apply`, and capture the generated name):
 ```sh
-make apply-infra BACKEND_CONFIG=terraform/infra/backend-local.hcl
+kubectl --kubeconfig <org-CCI-kubeconfig> apply -f terraform/state-namespace/project.yaml
+NAME=$(kubectl --kubeconfig <org-CCI-kubeconfig> create \
+  -f terraform/state-namespace/state-namespace.yaml -o jsonpath='{.metadata.name}')
+echo "namespace = \"$NAME\"" > terraform/state-backend/namespace.auto.tfvars   # commit this
 ```
 
-**CI** — set `BACKEND_CONFIG` to a path or use `TF_BACKEND_*` env vars understood by your backend.
+**How init works** — `make init-infra` / `init-bootstrap` first run `make state-backend`
+(the stateless `terraform/state-backend` helper), which pulls a fresh namespace kubeconfig
+and renders the gitignored `terraform/{infra,bootstrap}/backend-k8s.hcl`. `init` is then
+run with `-backend-config=backend-k8s.hcl`. The helper re-reads the kubeconfig live each
+run, so the token is never stale. `make state-backend` needs the same vcfa `TF_VAR_*` as
+`apply-infra`.
+
+**Migrating existing local state** — once, per root:
+```sh
+make state-backend
+terraform -chdir=terraform/infra     init -migrate-state -backend-config=backend-k8s.hcl
+terraform -chdir=terraform/bootstrap init -migrate-state -backend-config=backend-k8s.hcl
+```
+
+**Override** — set `BACKEND_CONFIG` to a different `-backend-config` file to bypass the
+generated one (e.g. a local `path = "terraform.tfstate"` for throwaway local runs).
 
 ### First-time Setup
 
@@ -134,6 +153,28 @@ make validate        # or: ./scripts/validate.sh
 
 It renders the argocd root and every cluster (infra + `apps/`) with kustomize and verifies
 each `cluster-details.yaml` matches its directory path. Requires `kustomize` on your PATH.
+
+### Running the GitHub Actions workflows locally with `act`
+
+You can run the workflows in `.github/workflows/` locally with
+[`act`](https://github.com/nektos/act) (requires Docker). Repo defaults live in
+`.actrc` (pins the `catthehacker/ubuntu:act-latest` runner image).
+
+```sh
+# validate.yml — safe, no secrets (mirrors `make validate`)
+act pull_request -W .github/workflows/validate.yml
+
+# apply.yml — runs real terraform apply against live infrastructure
+act push -W .github/workflows/apply.yml --secret-file .secrets
+```
+
+`apply.yml` needs the same secrets CI uses — copy them into `.secrets` (gitignored;
+see the placeholders in that file). State now lives in the Kubernetes backend, so the
+state-namespace must already exist and `terraform/state-backend/namespace.auto.tfvars`
+must hold its name (see **Backend Configuration**); the workflow's `state-backend` step
+fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_TOKEN` in
+`.secrets` to let the workflow's `git push` step push regenerated files. **`act push` on
+`apply.yml` mutates live infrastructure.**
 
 ## Tenant Types
 

@@ -1,8 +1,9 @@
 terraform {
-  # Backend type only — actual config passed at init time via -backend-config flag or TF_BACKEND_* env vars.
-  # Local dev: terraform init -backend-config=backend-local.hcl  (or set BACKEND_CONFIG in Makefile)
-  # CI: pass TF_BACKEND_* env vars or a backend config file via BACKEND_CONFIG secret.
-  # Example backend-local.hcl:
-  #   path = "terraform.tfstate"
-  backend "local" {}
+  # State is stored as a Kubernetes Secret in the dedicated state supervisor namespace.
+  # Backend config (host/token/namespace/secret_suffix) is rendered by the
+  # terraform/state-backend helper into backend-k8s.hcl (gitignored) and supplied at init:
+  #   make init-bootstrap    (auto-runs `make state-backend`, then init -backend-config=backend-k8s.hcl)
+  # First migration from prior local state:
+  #   terraform -chdir=terraform/bootstrap init -migrate-state -backend-config=backend-k8s.hcl
+  backend "kubernetes" {}
 }

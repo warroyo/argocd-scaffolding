@@ -1,0 +1,36 @@
+# Supervisor namespace that stores Terraform state (as Kubernetes Secrets written by
+# the `backend "kubernetes"` of terraform/infra and terraform/bootstrap).
+#
+# Created ONCE, out-of-band, against the org CCI kubeconfig. SupervisorNamespace requires
+# `generateName` — the API assigns the real name (e.g. tf-state-bh7q6), so use `create`
+# (NOT `apply`) and capture the generated name into terraform/state-backend/namespace.auto.tfvars:
+#
+#   NAME=$(kubectl --kubeconfig <org-CCI-kubeconfig> create \
+#     -f terraform/state-namespace/state-namespace.yaml -o jsonpath='{.metadata.name}')
+#   echo "namespace = \"$NAME\"" > terraform/state-backend/namespace.auto.tfvars
+#
+# Re-running `create` provisions a SECOND namespace — this is a deliberate one-time step.
+#
+# Sized minimally: this namespace only holds tiny tfstate Secrets.
+# Adjust regionName / vpcName / zone name to match your environment.
+apiVersion: infrastructure.cci.vmware.com/v1alpha3
+kind: SupervisorNamespace
+metadata:
+  generateName: tf-state
+  namespace: tf-state          # the CCI Project's namespace (see project.yaml)
+spec:
+  className: small
+  description: Terraform state backend
+  regionName: us-east-a
+  vpcName: default-us-east-a
+  classConfigOverrides:
+    storageClasses:
+      - name: vsan-default-storage-policy
+        limit: 5000Mi
+    zones:
+      - name: z-wld-a
+        cpuLimit: 1000M
+        cpuReservation: 0M
+        memoryLimit: 1000Mi
+        memoryReservation: 0Mi
+        vmClassReservations: []

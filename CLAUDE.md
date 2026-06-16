@@ -27,6 +27,7 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 | `infrastructure/clusters/*/vars/kustomization.yaml` | `terraform/infra` → `templates/vars-kustomization.yaml.tftpl` |
 | `terraform/bootstrap/providers.tf` | `terraform/infra` → `templates/bootstrap-providers.tf.tftpl` |
 | `terraform/bootstrap/main.tf` | `terraform/infra` → `templates/bootstrap-main.tf.tftpl` |
+| `terraform/{infra,bootstrap}/backend-k8s.hcl` | `terraform/state-backend` → `local_sensitive_file` in `generate.tf` (holds the state-namespace token; **gitignored**, never commit) |
 
 Note: the `infra`-type tenant's AppProject is always rendered as
 `argocd/projects/infra.yaml` (named `infra` — the project the ApplicationSets
@@ -44,6 +45,8 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `terraform/bootstrap/locals.tf` | Merges secrets (repo_url, argo_password, AKO) into the per-namespace config from the infra run's `namespace_config` output. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
 | `docs/examples/cluster-template/` | Copy-me template for a new cluster |
+| `terraform/state-namespace/{project,state-namespace}.yaml` | CCI `Project` + `SupervisorNamespace` CRs for the Terraform-state backend. Applied once out-of-band with `kubectl` (see README → Backend Configuration). |
+| `terraform/state-backend/namespace.auto.tfvars` | The captured (generated) state-namespace name fed to the stateless `terraform/state-backend` helper. Non-secret; committed. |
 
 ## Decision model (label-based targeting)
 

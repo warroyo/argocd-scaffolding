@@ -1,6 +1,7 @@
-REPO_ROOT     := $(shell git rev-parse --show-toplevel)
-INFRA_DIR     := $(REPO_ROOT)/terraform/infra
-BOOTSTRAP_DIR := $(REPO_ROOT)/terraform/bootstrap
+REPO_ROOT         := $(shell git rev-parse --show-toplevel)
+INFRA_DIR         := $(REPO_ROOT)/terraform/infra
+BOOTSTRAP_DIR     := $(REPO_ROOT)/terraform/bootstrap
+STATE_BACKEND_DIR := $(REPO_ROOT)/terraform/state-backend
 
 # Sensitive variables — set these in your environment before running:
 #
@@ -23,7 +24,7 @@ BOOTSTRAP_DIR := $(REPO_ROOT)/terraform/bootstrap
 
 BACKEND_CONFIG ?=
 
-.PHONY: validate \
+.PHONY: validate state-backend \
         init-infra plan-infra apply-infra output-infra \
         init-bootstrap plan-bootstrap apply-bootstrap \
         apply destroy-bootstrap destroy-infra destroy
@@ -38,11 +39,21 @@ BACKEND_CONFIG ?=
 validate:
 	@$(REPO_ROOT)/scripts/validate.sh
 
+# ── State backend ────────────────────────────────────────────────────────────────
+
+## Refresh the state-namespace kubeconfig and render the (gitignored) backend-k8s.hcl
+## for infra + bootstrap. Stateless helper — re-reads the kubeconfig live each run so the
+## token is never stale. Requires the same vcfa TF_VAR_* as apply-infra and a populated
+## terraform/state-backend/namespace.auto.tfvars (the one-time captured namespace name).
+state-backend:
+	terraform -chdir=$(STATE_BACKEND_DIR) init
+	terraform -chdir=$(STATE_BACKEND_DIR) apply -auto-approve
+
 # ── Infra module ───────────────────────────────────────────────────────────────
 
-init-infra:
+init-infra: state-backend
 	terraform -chdir=$(INFRA_DIR) init \
-	  $(if $(BACKEND_CONFIG),-backend-config=$(BACKEND_CONFIG),)
+	  -backend-config=$(if $(BACKEND_CONFIG),$(BACKEND_CONFIG),$(INFRA_DIR)/backend-k8s.hcl)
 
 plan-infra: init-infra
 	terraform -chdir=$(INFRA_DIR) plan
@@ -58,9 +69,9 @@ output-infra: init-infra
 
 # ── Bootstrap module ───────────────────────────────────────────────────────────
 
-init-bootstrap:
+init-bootstrap: state-backend
 	terraform -chdir=$(BOOTSTRAP_DIR) init \
-	  $(if $(BACKEND_CONFIG),-backend-config=$(BACKEND_CONFIG),)
+	  -backend-config=$(if $(BACKEND_CONFIG),$(BACKEND_CONFIG),$(BOOTSTRAP_DIR)/backend-k8s.hcl)
 
 plan-bootstrap: init-bootstrap
 	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
