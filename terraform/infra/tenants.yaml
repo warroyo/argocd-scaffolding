@@ -2,6 +2,7 @@ tenants:
   - name: "tenant-1"
     type: tenant
     argo_namespace: "infra"
+    # vpc_connectivity_profile_name: "default--us-east-a"  # optional — default is looked up via data source if unset
     namespaces:
       - name: "dev-1"
         environment: dev

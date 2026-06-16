@@ -3,11 +3,12 @@ module "project" {
   name =  var.project_name
 }
 module "vpc" {
-   source       = "../vpc"
-   project_name = var.project_name
-   region_name  = var.region_name
-   avi_enabled  = var.avi_enabled
-   depends_on   = [ module.project ]
+   source                         = "../vpc"
+   project_name                   = var.project_name
+   region_name                    = var.region_name
+   avi_enabled                    = var.avi_enabled
+   vpc_connectivity_profile_name  = var.vpc_connectivity_profile_name
+   depends_on                     = [ module.project ]
 }
 
 module "svns" {

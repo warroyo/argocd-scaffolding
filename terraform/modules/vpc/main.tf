@@ -1,5 +1,15 @@
+data "kubernetes_resources" "vpc_connectivity_profiles" {
+  count       = var.vpc_connectivity_profile_name == null ? 1 : 0
+  api_version = "vpc.nsx.vmware.com/v1alpha1"
+  kind        = "VPCConnectivityProfile"
+}
+
 locals {
   vpc_name = "${var.project_name}-${var.region_name}-vpc"
+  vpc_connectivity_profile_name = var.vpc_connectivity_profile_name != null ? var.vpc_connectivity_profile_name : [
+    for o in data.kubernetes_resources.vpc_connectivity_profiles[0].objects :
+    o.metadata.name if o.spec.regionName == var.region_name && o.spec.isDefault
+  ][0]
   vpc_manifest = {
     apiVersion = "vpc.nsx.vmware.com/v1alpha1"
     kind       = "VPC"
@@ -23,7 +33,7 @@ locals {
     }
     spec = {
       regionName                  = var.region_name
-      vpcConnectivityProfileName  = "default@${var.region_name}"
+      vpcConnectivityProfileName  = local.vpc_connectivity_profile_name
       vpcName                     = local.vpc_name
     }
   }

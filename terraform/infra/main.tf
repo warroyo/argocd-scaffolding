@@ -57,6 +57,7 @@ module "tenant" {
   region_name  = var.region_name
   avi_enabled  = var.avi_enabled
   project_name = each.value.name
+  vpc_connectivity_profile_name = lookup(each.value, "vpc_connectivity_profile_name", null)
   providers = {
     kubernetes = kubernetes.vcfa-org
   }
@@ -64,7 +65,7 @@ module "tenant" {
   namespaces = {
     for ns in lookup(each.value, "namespaces", []) : ns.name => {
       name           = ns.name
-      zone_name      = lookup(ns, "zone_name", "zone1")
+      zone_name      = lookup(ns, "zone_name", "z-wld-a")
       deploy_argo    = lookup(ns, "deploy_argo", false)
       storage_limit  = lookup(ns, "storage_limit", "102400Mi")
       class_name     = lookup(ns, "class_name", "small")

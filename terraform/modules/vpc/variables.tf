@@ -12,3 +12,9 @@ variable "avi_enabled" {
   description = "Whether the region uses AVI as its load balancer."
   default     = false
 }
+
+variable "vpc_connectivity_profile_name" {
+  type        = string
+  description = "Name of the VPCConnectivityProfile to attach the VPC to. If unset, the default profile for region_name is looked up via the kubernetes_resources data source."
+  default     = null
+}

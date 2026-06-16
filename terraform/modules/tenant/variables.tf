@@ -10,7 +10,7 @@ variable "project_name" {
 variable "namespaces" {
   type = map(object({
     name          = string
-    zone_name     = optional(string,"zone1")
+    zone_name     = optional(string,"z-wld-a")
     storage_limit = optional(string, "102400Mi")
     class_name    = optional(string, "small")
     mem_limit     = optional(string, "10000Mi")
@@ -29,4 +29,10 @@ variable "avi_enabled" {
   type        = bool
   description = "Whether the region uses AVI as its load balancer."
   default     = true
+}
+
+variable "vpc_connectivity_profile_name" {
+  type        = string
+  description = "Name of the VPCConnectivityProfile to attach the tenant VPC to. If unset, the default profile for region_name is looked up via a data source."
+  default     = null
 }
