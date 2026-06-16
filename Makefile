@@ -101,4 +101,9 @@ destroy-bootstrap: init-bootstrap
 destroy-infra: init-infra
 	terraform -chdir=$(INFRA_DIR) destroy
 
-destroy: destroy-bootstrap destroy-infra
+## Destroy bootstrap fully (helm releases) BEFORE infra (namespaces/projects).
+## Uses sequential sub-makes so the order holds even under `make -j` — infra must
+## still exist while bootstrap is destroyed (bootstrap reads infra's kubeconfigs).
+destroy:
+	$(MAKE) destroy-bootstrap
+	$(MAKE) destroy-infra
