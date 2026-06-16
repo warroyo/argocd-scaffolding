@@ -1,0 +1,10 @@
+# Dedicated CCI Project that hosts the Terraform-state supervisor namespace.
+# Created once, out-of-band, against the org CCI kubeconfig:
+#   kubectl --kubeconfig <org-CCI-kubeconfig> apply -f terraform/state-namespace/project.yaml
+# Project names are deterministic (fixed metadata.name), so `apply` is idempotent.
+apiVersion: project.cci.vmware.com/v1alpha2
+kind: Project
+metadata:
+  name: tf-state
+spec:
+  description: Project hosting the Terraform state supervisor namespace

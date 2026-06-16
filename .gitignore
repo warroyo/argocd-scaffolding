@@ -6,6 +6,8 @@ vendor
 .vscode
 *.tfstate
 *.tfstate.backup
+# Rendered by terraform/state-backend — holds a token, never commit.
+terraform/*/backend-k8s.hcl
 *.out
 .terragrunt-cache
 .bundle
@@ -17,6 +19,7 @@ terragrunt
 .devcontainer.json
 .cursor/
 .env
+.secrets
 .licensei.cache
 bin
 
