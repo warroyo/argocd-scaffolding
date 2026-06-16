@@ -31,7 +31,7 @@ Set these **before** running `make apply`. All sensitive values go via `TF_VAR_*
 
 | Variable | How to set | Description |
 |----------|-----------|-------------|
-| `repo_url` | `export TF_VAR_repo_url=https://github.com/your-org/argocd-scaffolding` | GitOps repo URL injected into the root ArgoCD Application |
+| `repo_url` | `export TF_VAR_repo_url=https://github.com/your-org/argocd-scaffolding` | GitOps repo URL injected into the root ArgoCD Application; defaults to `https://github.com/warroyo/argocd-scaffolding` (same default as the Helm chart) — **set this before running terraform if you forked/moved the repo** |
 | `argo_password` | `export TF_VAR_argo_password=...` | ArgoCD admin password (bcrypt hash); optional, defaults to `""` |
 
 **Optional — enable AKO secret:**
@@ -250,4 +250,4 @@ as the `gitops.platform/namespace` cluster label and consumed at sync time.
 
 The GitOps repo URL is defined in one place: `argocd/repo-config.yaml`. Kustomize replacements inject it into all ApplicationSets at apply time. When forking or moving this repo, update only that file.
 
-For the bootstrap Helm chart, set `TF_VAR_repo_url` before running `make apply-bootstrap`.
+For the bootstrap Helm chart, set `TF_VAR_repo_url` **before** running `make apply-bootstrap` (defaults to `https://github.com/warroyo/argocd-scaffolding`, same as `charts/bootstrap-tenant/values.yaml`'s `repoURL` — both must be updated together when forking).

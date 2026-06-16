@@ -21,7 +21,8 @@ variable "namespace_config" {
 
 variable "repo_url" {
   type        = string
-  description = "URL of the GitOps repo — used as repoURL in the root ArgoCD Application. Set via TF_VAR_repo_url."
+  description = "URL of the GitOps repo — used as repoURL in the root ArgoCD Application. Set via TF_VAR_repo_url before running terraform if forking/moving this repo."
+  default     = "https://github.com/warroyo/argocd-scaffolding"
 }
 
 variable "argo_password" {
