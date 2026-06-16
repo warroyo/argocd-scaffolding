@@ -11,6 +11,8 @@ resource "helm_release" "bootstrap" {
   chart            = "../../charts/bootstrap-tenant"
   namespace        = var.config.namespace
   create_namespace = false # Assumed created by tenants job
+  atomic           = true  # auto-rollback/uninstall on failed install so a retry doesn't hit "name still in use"
+  cleanup_on_fail  = true
 
   values = [
     yamlencode({
