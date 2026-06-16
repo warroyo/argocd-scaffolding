@@ -37,6 +37,17 @@ locals {
       vpcName                     = local.vpc_name
     }
   }
+  load_balancer_manifest = {
+    apiVersion = "vpc.nsx.vmware.com/v1alpha1"
+    kind       = "LoadBalancer"
+    metadata = {
+      name = "${local.vpc_name}:default"
+    }
+    spec = {
+      regionName = var.region_name
+      vpcName    = local.vpc_name
+    }
+  }
 }
 
 resource "kubernetes_manifest" "vpc" {
@@ -47,6 +58,13 @@ resource "kubernetes_manifest" "vpc" {
 resource "kubernetes_manifest" "vpc-connectivity" {
 
   manifest = local.vpc_attach_manifest
+  depends_on = [ kubernetes_manifest.vpc ]
+}
+
+resource "kubernetes_manifest" "load_balancer" {
+  count = var.avi_enabled ? 0 : 1
+
+  manifest   = local.load_balancer_manifest
   depends_on = [ kubernetes_manifest.vpc ]
 }
 
