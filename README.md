@@ -50,13 +50,13 @@ backend** — state is stored as a `Secret` in a dedicated supervisor namespace,
 are portable across machines/CI. The two roots use distinct `secret_suffix` values
 (`infra`, `bootstrap`) and share one namespace.
 
-**One-time bootstrap** — create the project + state namespace out-of-band against the
-org CCI kubeconfig (the supervisor namespace uses `generateName`, so use `create`, not
-`apply`, and capture the generated name):
+**One-time bootstrap** — point the `vcf` CLI at your vCFA endpoint, then create the
+project + state namespace (the supervisor namespace uses `generateName`, so use `create`,
+not `apply`, and capture the generated name):
 ```sh
-kubectl --kubeconfig <org-CCI-kubeconfig> apply -f terraform/state-namespace/project.yaml
-NAME=$(kubectl --kubeconfig <org-CCI-kubeconfig> create \
-  -f terraform/state-namespace/state-namespace.yaml -o jsonpath='{.metadata.name}')
+vcf context use <vcfa-context>   # sets the kube context; no --kubeconfig needed below
+kubectl apply -f terraform/state-namespace/project.yaml
+NAME=$(kubectl create -f terraform/state-namespace/state-namespace.yaml -o jsonpath='{.metadata.name}')
 echo "namespace = \"$NAME\"" > terraform/state-backend/namespace.auto.tfvars   # commit this
 ```
 

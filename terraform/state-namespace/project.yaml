@@ -1,6 +1,7 @@
 # Dedicated CCI Project that hosts the Terraform-state supervisor namespace.
-# Created once, out-of-band, against the org CCI kubeconfig:
-#   kubectl --kubeconfig <org-CCI-kubeconfig> apply -f terraform/state-namespace/project.yaml
+# Created once, out-of-band. Point the vcf CLI at the endpoint first, then apply:
+#   vcf context use <vcfa-context>
+#   kubectl apply -f terraform/state-namespace/project.yaml
 # Project names are deterministic (fixed metadata.name), so `apply` is idempotent.
 apiVersion: project.cci.vmware.com/v1alpha2
 kind: Project
