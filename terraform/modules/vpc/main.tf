@@ -64,8 +64,11 @@ resource "kubernetes_manifest" "vpc-connectivity" {
 resource "kubernetes_manifest" "load_balancer" {
   count = var.avi_enabled ? 0 : 1
 
-  manifest   = local.load_balancer_manifest
-  depends_on = [ kubernetes_manifest.vpc ]
+  manifest = local.load_balancer_manifest
+  # Depend on the attachment (not just the VPC) so destroy order is
+  # LB -> attachment -> VPC. NSX rejects deleting a VPCAttachment while a
+  # North-South LoadBalancer service is still configured under the VPC.
+  depends_on = [ kubernetes_manifest.vpc-connectivity ]
 }
 
 
