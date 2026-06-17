@@ -14,11 +14,12 @@ export ENV_FILE    := $(REPO_ROOT)/.env
 export BASH_ENV    := $(REPO_ROOT)/scripts/load-env.sh
 
 # Kubernetes backend creds: `make state-backend` renders a gitignored kubeconfig with the
-# live state-namespace credentials, and we point KUBECONFIG at it. Exporting it here makes
-# it visible to every recipe AND to the make-time $(shell ...) calls below (which read the
-# infra state from the same backend) — so terraform reaches the backend without secrets in
-# -backend-config. Testing showed KUBECONFIG works where the individual KUBE_* vars did not.
-export KUBECONFIG := $(REPO_ROOT)/.kube-backend.config
+# live state-namespace credentials, and we point the backend at it via KUBE_CONFIG_PATH (the
+# kubernetes backend's own config-path env var). Exporting it here makes it visible to every
+# recipe AND to the make-time $(shell ...) calls below (which read the infra state from the
+# same backend) — so terraform reaches the backend without secrets in -backend-config.
+# Testing showed a kubeconfig works where the individual KUBE_* creds vars did not.
+export KUBE_CONFIG_PATH := $(REPO_ROOT)/.kube-backend.config
 
 .PHONY: validate state-backend \
         init-infra plan-infra apply-infra output-infra \
@@ -38,7 +39,7 @@ validate:
 # ── State backend ────────────────────────────────────────────────────────────────
 
 ## Refresh the state-namespace kubeconfig and render the (gitignored) .kube-backend.config
-## (the kubeconfig KUBECONFIG points at). Stateless helper — re-reads the kubeconfig live each
+## (the kubeconfig KUBE_CONFIG_PATH points at). Stateless helper — re-reads the kubeconfig live each
 ## run so the token is never stale. Requires the same vcfa TF_VAR_* as apply-infra and a populated
 ## terraform/state-backend/namespace.auto.tfvars (the one-time captured namespace name).
 state-backend:

@@ -1,8 +1,8 @@
 # Renders a gitignored kubeconfig with the live state-namespace credentials. The Makefile
-# points the KUBECONFIG env var at this file for every recipe, so the infra/bootstrap
+# points the KUBE_CONFIG_PATH env var at this file for every recipe, so the infra/bootstrap
 # Kubernetes backends authenticate from it. Testing showed the individual KUBE_* env vars
 # (KUBE_HOST/KUBE_TOKEN/KUBE_INSECURE/KUBE_NAMESPACE) were not reliably honored by
-# `terraform init`; a kubeconfig referenced via KUBECONFIG is. The state namespace is the
+# `terraform init`; a kubeconfig referenced via KUBE_CONFIG_PATH is. The state namespace is the
 # context's namespace, so the backend writes its Secret there. Credentials stay on disk in
 # this gitignored file — never in -backend-config, .terraform, or plan files. `secret_suffix`
 # is the only backend setting that can't come from the kubeconfig; it's a literal in each
