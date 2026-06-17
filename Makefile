@@ -3,16 +3,15 @@ INFRA_DIR         := $(REPO_ROOT)/terraform/infra
 BOOTSTRAP_DIR     := $(REPO_ROOT)/terraform/bootstrap
 STATE_BACKEND_DIR := $(REPO_ROOT)/terraform/state-backend
 
-# Load variables from a gitignored .env (if present) and export them, so EVERY terraform
-# root — infra, bootstrap, AND state-backend — sees the same vcfa creds. This is the fix
-# for the state-backend prompting for vars: tfvars only apply to their own dir, env vars
-# apply everywhere. Copy .env.example to .env and fill it in.
-#
-# .env keys (KEY=value, no quotes/spaces; see .env.example):
-#   TF_VAR_vcfa_refresh_token, TF_VAR_vcfa_url, TF_VAR_vcfa_org, TF_VAR_region_name
-#   TF_VAR_argo_password, TF_VAR_repo_url, TF_VAR_ako_username, TF_VAR_ako_password, TF_VAR_ako_ca_data
--include .env
-export
+# Load a gitignored .env into EVERY recipe so all terraform roots — infra, bootstrap, AND
+# state-backend — see the same vcfa creds (tfvars only apply to their own dir, which is why
+# state-backend prompted for vars). Recipes run under bash, and bash auto-sources the file
+# named by BASH_ENV for non-interactive shells — so scripts/load-env.sh sources .env with
+# normal shell parsing (quotes, spaces, comments all handled). No var list, no duplication.
+# Copy .env.example to .env and fill it in.
+SHELL := bash
+export ENV_FILE  := $(REPO_ROOT)/.env
+export BASH_ENV  := $(REPO_ROOT)/scripts/load-env.sh
 
 # State lives in the Kubernetes backend (see README -> Backend Configuration); bootstrap
 # the state namespace once before apply. BACKEND_CONFIG can override the generated
