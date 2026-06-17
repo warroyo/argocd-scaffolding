@@ -6,8 +6,8 @@ vendor
 .vscode
 *.tfstate
 *.tfstate.backup
-# Rendered by terraform/state-backend — holds a token, never commit.
-.kube-backend.env
+# Rendered by terraform/state-backend — kubeconfig holding a token, never commit.
+.kube-backend.config
 terraform/*/backend-k8s.hcl
 *.out
 .terragrunt-cache

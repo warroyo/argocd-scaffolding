@@ -62,12 +62,14 @@ echo "namespace = \"$NAME\"" > terraform/state-backend/namespace.auto.tfvars   #
 
 **How init works** — `make init-infra` / `init-bootstrap` first run `make state-backend`
 (the stateless `terraform/state-backend` helper), which pulls a fresh namespace kubeconfig
-and renders the gitignored `.kube-backend.env` (`KUBE_HOST`/`KUBE_TOKEN`/`KUBE_INSECURE`/
-`KUBE_NAMESPACE`). The Makefile sources that into every recipe, so terraform reaches the
-backend via env vars — credentials never land in `-backend-config`, `.terraform`, or plan
-files. `secret_suffix` (`infra` / `bootstrap`) is the one non-env setting and is a literal
-in each root's `backend.tf`. The helper re-reads the kubeconfig live each run, so the token
-is never stale. `make state-backend` needs the same vcfa `TF_VAR_*` as `apply-infra`.
+and renders the gitignored `.kube-backend.config` kubeconfig (server + token, with the state
+namespace as the context's namespace). The Makefile points `KUBE_CONFIG_PATH` at that file for
+every recipe, so terraform authenticates to the backend from it — credentials never land in
+`-backend-config`, `.terraform`, or plan files. (A kubeconfig referenced via `KUBE_CONFIG_PATH`
+is what `terraform init` reliably honors; the individual `KUBE_*` env vars did not work.)
+`secret_suffix` (`infra` / `bootstrap`) is the one setting not in the kubeconfig and is a
+literal in each root's `backend.tf`. The helper re-reads the kubeconfig live each run, so the
+token is never stale. `make state-backend` needs the same vcfa `TF_VAR_*` as `apply-infra`.
 
 ### First-time Setup
 
@@ -87,7 +89,7 @@ is never stale. `make state-backend` needs the same vcfa `TF_VAR_*` as `apply-in
    ```sh
    make apply-infra
    ```
-   `init` auto-runs `make state-backend` (renders `.kube-backend.env`) and uses the Kubernetes
+   `init` auto-runs `make state-backend` (renders `.kube-backend.config`) and uses the Kubernetes
    backend. This provisions namespaces and renders generated files (`argocd/projects/`,
    `infrastructure/clusters/*/vars/`, `terraform/bootstrap/{providers,main}.tf`).
 7. Commit the rendered files.
@@ -122,7 +124,7 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `infra/`: Provisions vSphere supervisor namespaces, outputs kubeconfigs, and renders all generated config from `tenants.yaml` (`generate.tf` + `templates/*.tftpl`).
   - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) merges secrets into the infra run's `namespace_config` output (which carries the suffixed namespace names + `gitops.platform/*` labels).
   - `state-namespace/`: Committed `Project` + `SupervisorNamespace` manifests for the Terraform state backend, applied once out-of-band (see [Backend Configuration](#backend-configuration)).
-  - `state-backend/`: Stateless helper that pulls the state-namespace kubeconfig and renders the gitignored `.kube-backend.env` (KUBE_* creds) the Makefile sources for the infra/bootstrap Kubernetes backends. `namespace.auto.tfvars` holds the captured namespace name.
+  - `state-backend/`: Stateless helper that pulls the state-namespace kubeconfig and renders the gitignored `.kube-backend.config` kubeconfig the Makefile points `KUBE_CONFIG_PATH` at for the infra/bootstrap Kubernetes backends. `namespace.auto.tfvars` holds the captured namespace name.
   - `modules/bootstrap-helm/`: Terraform module wrapping the bootstrap Helm chart (single `config` object input).
   - `modules/tenant/`, `modules/svns/`, `modules/vpc/`: vSphere infrastructure modules.
 - `charts/bootstrap-tenant/`: Helm chart that deploys the `ArgoNamespace` registration, ArgoCD instance + root Application.
