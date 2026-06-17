@@ -10,13 +10,17 @@ STATE_BACKEND_DIR := $(REPO_ROOT)/terraform/state-backend
 # normal shell parsing (quotes, spaces, comments all handled). No var list, no duplication.
 # Copy .env.example to .env and fill it in.
 SHELL := bash
-export ENV_FILE  := $(REPO_ROOT)/.env
-export BASH_ENV  := $(REPO_ROOT)/scripts/load-env.sh
+export ENV_FILE    := $(REPO_ROOT)/.env
+export BASH_ENV    := $(REPO_ROOT)/scripts/load-env.sh
 
-# State lives in the Kubernetes backend (see README -> Backend Configuration); bootstrap
-# the state namespace once before apply. BACKEND_CONFIG can override the generated
-# backend-k8s.hcl for throwaway local runs.
-BACKEND_CONFIG ?=
+# Kubernetes backend creds (KUBE_HOST/KUBE_TOKEN/KUBE_INSECURE/KUBE_NAMESPACE) are rendered
+# by `make state-backend` into this gitignored file and sourced into every recipe by
+# load-env.sh — so terraform reaches the backend without secrets in -backend-config.
+export BACKEND_ENV := $(REPO_ROOT)/.kube-backend.env
+
+# Prefix for make-time $(shell) calls that read the k8s backend (they run under /bin/sh,
+# which doesn't get BASH_ENV) — sources the KUBE_* creds first.
+SRC_BACKEND := set -a; [ -f $(BACKEND_ENV) ] && . $(BACKEND_ENV); set +a;
 
 .PHONY: validate state-backend \
         init-infra plan-infra apply-infra output-infra \
@@ -35,8 +39,8 @@ validate:
 
 # ── State backend ────────────────────────────────────────────────────────────────
 
-## Refresh the state-namespace kubeconfig and render the (gitignored) backend-k8s.hcl
-## for infra + bootstrap. Stateless helper — re-reads the kubeconfig live each run so the
+## Refresh the state-namespace kubeconfig and render the (gitignored) .kube-backend.env
+## (KUBE_* backend creds). Stateless helper — re-reads the kubeconfig live each run so the
 ## token is never stale. Requires the same vcfa TF_VAR_* as apply-infra and a populated
 ## terraform/state-backend/namespace.auto.tfvars (the one-time captured namespace name).
 state-backend:
@@ -46,8 +50,7 @@ state-backend:
 # ── Infra module ───────────────────────────────────────────────────────────────
 
 init-infra: state-backend
-	terraform -chdir=$(INFRA_DIR) init \
-	  -backend-config=$(if $(BACKEND_CONFIG),$(BACKEND_CONFIG),$(INFRA_DIR)/backend-k8s.hcl)
+	terraform -chdir=$(INFRA_DIR) init
 
 plan-infra: init-infra
 	terraform -chdir=$(INFRA_DIR) plan
@@ -64,18 +67,17 @@ output-infra: init-infra
 # ── Bootstrap module ───────────────────────────────────────────────────────────
 
 init-bootstrap: state-backend
-	terraform -chdir=$(BOOTSTRAP_DIR) init \
-	  -backend-config=$(if $(BACKEND_CONFIG),$(BACKEND_CONFIG),$(BOOTSTRAP_DIR)/backend-k8s.hcl)
+	terraform -chdir=$(BOOTSTRAP_DIR) init
 
 plan-bootstrap: init-bootstrap
-	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
-	$(eval NS_CONFIG := $(shell terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
+	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) plan
 
 apply-bootstrap: init-bootstrap
-	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
-	$(eval NS_CONFIG := $(shell terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
+	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) apply
 
@@ -87,8 +89,8 @@ apply: apply-infra apply-bootstrap
 
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).
 destroy-bootstrap: init-bootstrap
-	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
-	$(eval NS_CONFIG := $(shell terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
+	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) destroy
 

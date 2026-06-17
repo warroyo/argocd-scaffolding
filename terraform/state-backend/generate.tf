@@ -1,26 +1,19 @@
-# Renders the gitignored `backend-k8s.hcl` for each consuming root. Each carries the
-# live host/token plus a distinct secret_suffix, so terraform/infra and
-# terraform/bootstrap store separate state Secrets in the one namespace.
+# Renders a gitignored env file with the live state-namespace credentials as the
+# Kubernetes backend's environment variables (KUBE_HOST/KUBE_TOKEN/KUBE_INSECURE/
+# KUBE_NAMESPACE). The Makefile sources this into every recipe (see scripts/load-env.sh),
+# so infra/bootstrap init+apply reach the backend. Credentials stay in the environment —
+# never in -backend-config, .terraform, or plan files. `secret_suffix` is the only
+# backend setting that can't come from an env var; it's a literal in each root's backend.tf.
 #
-# These files contain a token — they are gitignored and must not be committed.
+# Contains a token — gitignored, never commit.
 
-locals {
-  # Roots that store state in the namespace, keyed by their secret_suffix.
-  state_consumers = {
-    infra     = "${path.module}/../infra/backend-k8s.hcl"
-    bootstrap = "${path.module}/../bootstrap/backend-k8s.hcl"
-  }
-}
-
-resource "local_sensitive_file" "backend_config" {
-  for_each        = local.state_consumers
-  filename        = each.value
+resource "local_sensitive_file" "backend_env" {
+  filename        = "${path.module}/../../.kube-backend.env"
   file_permission = "0600"
   content         = <<-EOT
-    host          = "${data.vcfa_kubeconfig.state.host}"
-    token         = "${data.vcfa_kubeconfig.state.token}"
-    insecure      = ${data.vcfa_kubeconfig.state.insecure_skip_tls_verify}
-    namespace     = "${var.namespace}"
-    secret_suffix = "${each.key}"
+    export KUBE_HOST='${data.vcfa_kubeconfig.state.host}'
+    export KUBE_TOKEN='${data.vcfa_kubeconfig.state.token}'
+    export KUBE_INSECURE='${data.vcfa_kubeconfig.state.insecure_skip_tls_verify}'
+    export KUBE_NAMESPACE='${var.namespace}'
   EOT
 }

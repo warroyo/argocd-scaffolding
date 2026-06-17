@@ -7,6 +7,7 @@ vendor
 *.tfstate
 *.tfstate.backup
 # Rendered by terraform/state-backend — holds a token, never commit.
+.kube-backend.env
 terraform/*/backend-k8s.hcl
 *.out
 .terragrunt-cache

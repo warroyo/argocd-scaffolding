@@ -27,7 +27,7 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 | `infrastructure/clusters/*/vars/kustomization.yaml` | `terraform/infra` → `templates/vars-kustomization.yaml.tftpl` |
 | `terraform/bootstrap/providers.tf` | `terraform/infra` → `templates/bootstrap-providers.tf.tftpl` |
 | `terraform/bootstrap/main.tf` | `terraform/infra` → `templates/bootstrap-main.tf.tftpl` |
-| `terraform/{infra,bootstrap}/backend-k8s.hcl` | `terraform/state-backend` → `local_sensitive_file` in `generate.tf` (holds the state-namespace token; **gitignored**, never commit) |
+| `.kube-backend.env` | `terraform/state-backend` → `local_sensitive_file` in `generate.tf` (KUBE_* creds for the kubernetes backend, sourced by the Makefile; holds a token; **gitignored**, never commit) |
 
 Note: the `infra`-type tenant's AppProject is always rendered as
 `argocd/projects/infra.yaml` (named `infra` — the project the ApplicationSets
