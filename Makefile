@@ -13,13 +13,16 @@ SHELL := bash
 export ENV_FILE    := $(REPO_ROOT)/.env
 export BASH_ENV    := $(REPO_ROOT)/scripts/load-env.sh
 
-# Kubernetes backend creds: `make state-backend` renders a gitignored kubeconfig with the
-# live state-namespace credentials, and we point the backend at it via KUBE_CONFIG_PATH (the
-# kubernetes backend's own config-path env var). Exporting it here makes it visible to every
-# recipe AND to the make-time $(shell ...) calls below (which read the infra state from the
-# same backend) — so terraform reaches the backend without secrets in -backend-config.
-# Testing showed a kubeconfig works where the individual KUBE_* creds vars did not.
-export KUBE_CONFIG_PATH := $(REPO_ROOT)/.kube-backend.config
+# Kubernetes backend creds: `make state-backend` renders two gitignored files from the live
+# state-namespace credentials. The kubeconfig (.kube-backend.config) carries host + token and
+# each root's backend.tf points config_path at it (alongside literal insecure + secret_suffix).
+# The backend does NOT read the target namespace from the kubeconfig, so it comes from
+# KUBE_NAMESPACE in .kube-backend.env, sourced into every recipe by load-env.sh.
+export BACKEND_ENV := $(REPO_ROOT)/.kube-backend.env
+
+# Prefix for make-time $(shell) calls that read the k8s backend (they run under /bin/sh,
+# which doesn't get BASH_ENV) — sources KUBE_NAMESPACE first.
+SRC_BACKEND := set -a; [ -f $(BACKEND_ENV) ] && . $(BACKEND_ENV); set +a;
 
 .PHONY: validate state-backend \
         init-infra plan-infra apply-infra output-infra \
@@ -38,9 +41,10 @@ validate:
 
 # ── State backend ────────────────────────────────────────────────────────────────
 
-## Refresh the state-namespace kubeconfig and render the (gitignored) .kube-backend.config
-## (the kubeconfig KUBE_CONFIG_PATH points at). Stateless helper — re-reads the kubeconfig live each
-## run so the token is never stale. Requires the same vcfa TF_VAR_* as apply-infra and a populated
+## Refresh the state-namespace creds: render the (gitignored) .kube-backend.config kubeconfig
+## (config_path in each backend.tf points at it) and .kube-backend.env (KUBE_NAMESPACE).
+## Stateless helper — re-reads the kubeconfig live each run so the token is never stale.
+## Requires the same vcfa TF_VAR_* as apply-infra and a populated
 ## terraform/state-backend/namespace.auto.tfvars (the one-time captured namespace name).
 state-backend:
 	terraform -chdir=$(STATE_BACKEND_DIR) init
@@ -69,14 +73,14 @@ init-bootstrap: state-backend
 	terraform -chdir=$(BOOTSTRAP_DIR) init
 
 plan-bootstrap: init-bootstrap
-	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
-	$(eval NS_CONFIG := $(shell terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
+	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) plan
 
 apply-bootstrap: init-bootstrap
-	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
-	$(eval NS_CONFIG := $(shell terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
+	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) apply
 
@@ -88,8 +92,8 @@ apply: apply-infra apply-bootstrap
 
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).
 destroy-bootstrap: init-bootstrap
-	$(eval KUBECONFIGS := $(shell terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
-	$(eval NS_CONFIG := $(shell terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
+	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) destroy
 
