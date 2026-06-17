@@ -1,9 +1,12 @@
 terraform {
   # State is stored as a Kubernetes Secret in the dedicated state supervisor namespace.
-  # Credentials come from the generated .kube-backend.config kubeconfig, which the Makefile
-  # points KUBE_CONFIG_PATH at (see terraform/state-backend). The state namespace is the
-  # kubeconfig context's namespace. secret_suffix can't come from it, so it's a literal here.
+  # Host + token come from the generated .kube-backend.config kubeconfig (rendered by
+  # terraform/state-backend; gitignored). config_path is relative to this root dir under
+  # `-chdir`, so ../../ is the repo root. The backend does NOT read the target namespace from
+  # the kubeconfig, so it comes from KUBE_NAMESPACE (.kube-backend.env, sourced by the Makefile).
   backend "kubernetes" {
     secret_suffix = "infra"
+    config_path   = "../../.kube-backend.config"
+    insecure      = true
   }
 }

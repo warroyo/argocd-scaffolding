@@ -1,14 +1,18 @@
-# Renders a gitignored kubeconfig with the live state-namespace credentials. The Makefile
-# points the KUBE_CONFIG_PATH env var at this file for every recipe, so the infra/bootstrap
-# Kubernetes backends authenticate from it. Testing showed the individual KUBE_* env vars
-# (KUBE_HOST/KUBE_TOKEN/KUBE_INSECURE/KUBE_NAMESPACE) were not reliably honored by
-# `terraform init`; a kubeconfig referenced via KUBE_CONFIG_PATH is. The state namespace is the
-# context's namespace, so the backend writes its Secret there. Credentials stay on disk in
-# this gitignored file — never in -backend-config, .terraform, or plan files. `secret_suffix`
-# is the only backend setting that can't come from the kubeconfig; it's a literal in each
-# root's backend.tf.
+# Renders, from the live state-namespace credentials, the two gitignored files the
+# infra/bootstrap Kubernetes backends need:
 #
-# Contains a token — gitignored, never commit.
+#   .kube-backend.config  — a kubeconfig (server + token). Each root's backend.tf points
+#                           config_path at it; the backend reads the host and token here.
+#   .kube-backend.env     — KUBE_NAMESPACE. The kubernetes backend only takes host/token from
+#                           the kubeconfig — the target namespace is NOT read from it, so it
+#                           must be supplied as an env var. The Makefile sources this into
+#                           every recipe.
+#
+# Splitting it this way is what testing showed actually works: a kubeconfig for auth (the
+# individual KUBE_HOST/KUBE_TOKEN were not reliably honored by `terraform init`) plus the
+# namespace direct. config_path, insecure, and secret_suffix are literals in each backend.tf.
+#
+# Both files hold a token / point at one — gitignored, never commit.
 
 resource "local_sensitive_file" "backend_kubeconfig" {
   filename        = "${path.module}/../../.kube-backend.config"
@@ -32,5 +36,13 @@ resource "local_sensitive_file" "backend_kubeconfig" {
           user: state-backend
           namespace: ${var.namespace}
     current-context: state-backend
+  EOT
+}
+
+resource "local_sensitive_file" "backend_env" {
+  filename        = "${path.module}/../../.kube-backend.env"
+  file_permission = "0600"
+  content         = <<-EOT
+    export KUBE_NAMESPACE='${var.namespace}'
   EOT
 }
