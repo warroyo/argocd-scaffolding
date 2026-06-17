@@ -73,8 +73,10 @@ generated one (e.g. a local `path = "terraform.tfstate"` for throwaway local run
 ### First-time Setup
 
 1. Clone this repo and `cd` into it.
-2. Export the required env vars (vcfa creds + the secrets listed above; or create
-   `terraform/infra/terraform.tfvars` for non-sensitive ones).
+2. `cp .env.example .env` and fill in the values (vcfa creds + bootstrap secrets). The
+   Makefile auto-loads and exports `.env` to every terraform root, including the
+   `state-backend` helper — prefer this over per-root `terraform.tfvars`, which the
+   `state-backend` dir doesn't see (and would prompt for vcfa vars).
 3. **Bootstrap the Terraform state namespace** (one-time) — follow
    [Backend Configuration](#backend-configuration): `vcf context use`, create the project +
    state namespace, write the generated name into

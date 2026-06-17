@@ -3,25 +3,20 @@ INFRA_DIR         := $(REPO_ROOT)/terraform/infra
 BOOTSTRAP_DIR     := $(REPO_ROOT)/terraform/bootstrap
 STATE_BACKEND_DIR := $(REPO_ROOT)/terraform/state-backend
 
-# Sensitive variables — set these in your environment before running:
+# Load variables from a gitignored .env (if present) and export them, so EVERY terraform
+# root — infra, bootstrap, AND state-backend — sees the same vcfa creds. This is the fix
+# for the state-backend prompting for vars: tfvars only apply to their own dir, env vars
+# apply everywhere. Copy .env.example to .env and fill it in.
 #
-#   export TF_VAR_vcfa_refresh_token=...
-#   export TF_VAR_argo_password=...
-#   export TF_VAR_ako_username=...
-#   export TF_VAR_ako_password=...
-#   export TF_VAR_ako_ca_data=...
-#   export TF_VAR_repo_url=https://github.com/your-org/argocd-scaffolding
-#
-# Non-sensitive variables can be set in a terraform.tfvars file (gitignored)
-# placed inside terraform/infra/ and terraform/bootstrap/ respectively,
-# or passed via additional TF_VAR_* exports.
-#
-# Backend config (local dev):
-#   Create terraform/infra/backend-local.hcl with: path = "terraform.tfstate"
-#   Then: make apply-infra BACKEND_CONFIG=terraform/infra/backend-local.hcl
-# Backend config (CI): pass via BACKEND_CONFIG env var pointing to a config file,
-#   or set TF_BACKEND_* env vars understood by the chosen backend.
+# .env keys (KEY=value, no quotes/spaces; see .env.example):
+#   TF_VAR_vcfa_refresh_token, TF_VAR_vcfa_url, TF_VAR_vcfa_org, TF_VAR_region_name
+#   TF_VAR_argo_password, TF_VAR_repo_url, TF_VAR_ako_username, TF_VAR_ako_password, TF_VAR_ako_ca_data
+-include .env
+export
 
+# State lives in the Kubernetes backend (see README -> Backend Configuration); bootstrap
+# the state namespace once before apply. BACKEND_CONFIG can override the generated
+# backend-k8s.hcl for throwaway local runs.
 BACKEND_CONFIG ?=
 
 .PHONY: validate state-backend \
