@@ -52,8 +52,13 @@ state-backend:
 
 # ── Infra module ───────────────────────────────────────────────────────────────
 
+# -reconfigure: the kubernetes backend caches host+token in .terraform/terraform.tfstate at
+# init. A plain re-init sees the backend *block* unchanged (config_path is the same path) and
+# keeps the cached — now expired — token, even though state-backend just rewrote
+# .kube-backend.config with a fresh one. -reconfigure discards the cached backend state and
+# re-reads the kubeconfig, so the new token is always picked up.
 init-infra: state-backend
-	terraform -chdir=$(INFRA_DIR) init
+	terraform -chdir=$(INFRA_DIR) init -reconfigure
 
 plan-infra: init-infra
 	terraform -chdir=$(INFRA_DIR) plan
@@ -70,7 +75,7 @@ output-infra: init-infra
 # ── Bootstrap module ───────────────────────────────────────────────────────────
 
 init-bootstrap: state-backend
-	terraform -chdir=$(BOOTSTRAP_DIR) init
+	terraform -chdir=$(BOOTSTRAP_DIR) init -reconfigure
 
 plan-bootstrap: init-bootstrap
 	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
