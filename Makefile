@@ -26,7 +26,7 @@ SRC_BACKEND := set -a; [ -f $(BACKEND_ENV) ] && . $(BACKEND_ENV); set +a;
 
 .PHONY: validate state-backend \
         init-infra plan-infra apply-infra output-infra \
-        init-bootstrap plan-bootstrap apply-bootstrap \
+        init-bootstrap refresh-infra-kubeconfigs plan-bootstrap apply-bootstrap \
         apply destroy-bootstrap destroy-infra destroy
 
 # All config generation now happens inside the infra Terraform run (local_file):
@@ -77,13 +77,23 @@ output-infra: init-infra
 init-bootstrap: state-backend
 	terraform -chdir=$(BOOTSTRAP_DIR) init -reconfigure
 
-plan-bootstrap: init-bootstrap
+# The bootstrap helm providers authenticate with the per-namespace tokens carried in infra's
+# `kubeconfigs` output. vcfa kubeconfig tokens are short-lived, and `terraform output` reads
+# STATE ONLY — it does not re-read the data.vcfa_kubeconfig data sources — so the output serves
+# whatever token was captured at the last infra apply, which may be long expired. Re-read the
+# data sources into infra state first so every bootstrap recipe below gets a fresh token. This
+# is why `make apply` (which applies infra first) worked while a standalone `make apply-bootstrap`
+# authenticated with a stale token.
+refresh-infra-kubeconfigs: init-infra
+	terraform -chdir=$(INFRA_DIR) apply -refresh-only -auto-approve
+
+plan-bootstrap: init-bootstrap refresh-infra-kubeconfigs
 	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) plan
 
-apply-bootstrap: init-bootstrap
+apply-bootstrap: init-bootstrap refresh-infra-kubeconfigs
 	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
@@ -96,7 +106,7 @@ apply-bootstrap: init-bootstrap
 apply: apply-infra apply-bootstrap
 
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).
-destroy-bootstrap: init-bootstrap
+destroy-bootstrap: init-bootstrap refresh-infra-kubeconfigs
 	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
