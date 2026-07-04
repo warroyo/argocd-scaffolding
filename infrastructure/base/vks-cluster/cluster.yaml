@@ -36,7 +36,11 @@ spec:
       replicas: 1
       metadata:
         annotations:
-          run.tanzu.vmware.com/resolve-os-image: os-name=ubuntu, content-library=cl-a3b5e06b12f2737ca, os-version=24.04
+          # Placeholder — the env overlay (infrastructure/components/envs/{env})
+          # supplies the real resolve-os-image annotation (the content-library ID
+          # is environment-specific). A cluster that skips the overlay fails
+          # loudly (validate.sh greps rendered output for replace-me).
+          run.tanzu.vmware.com/resolve-os-image: replace-me
     workers:
       machineDeployments:
         - class: node-pool
@@ -44,7 +48,7 @@ spec:
           replicas: 1
           metadata:
             annotations:
-              run.tanzu.vmware.com/resolve-os-image: os-name=ubuntu, content-library=cl-a3b5e06b12f2737ca, os-version=24.04
+              run.tanzu.vmware.com/resolve-os-image: replace-me
           variables:
             overrides:
               - name: vmClass

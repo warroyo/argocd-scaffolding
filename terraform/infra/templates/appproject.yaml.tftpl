@@ -9,6 +9,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
   description: ${name}
+%{ if type == "infra" ~}
   sourceRepos:
   - '*'
   destinations:
@@ -17,7 +18,35 @@ spec:
   clusterResourceWhitelist:
   - group: '*'
     kind: '*'
-%{ if type == "infra" ~}
+  namespaceResourceWhitelist:
+  - group: '*'
+    kind: '*'
+%{ else ~}
+  # Scope with `source_repos` in tenants.yaml (defaults open — tenant repos are
+  # not known at render time).
+  sourceRepos:
+%{ for repo in source_repos ~}
+  - '${repo}'
+%{ endfor ~}
+  # Tenants may target any registered workload cluster, but never the local
+  # (in-cluster) ArgoCD cluster or a supervisor-namespace registration. Deny
+  # rules ('!') take precedence over the allow-all entry. NOTE: this does not
+  # isolate tenants from EACH OTHER's workload clusters — cluster names carry
+  # no tenant prefix to match on (see README, decision model).
+  destinations:
+  - name: '!in-cluster'
+    namespace: '*'
+  - server: '!https://kubernetes.default.svc'
+    namespace: '*'
+  - name: '!supervisor-ns-*'
+    namespace: '*'
+  - name: '*'
+    namespace: '*'
+  # Namespace creation only (for CreateNamespace=true) — no other
+  # cluster-scoped kinds.
+  clusterResourceWhitelist:
+  - group: ''
+    kind: Namespace
   namespaceResourceWhitelist:
   - group: '*'
     kind: '*'

@@ -46,9 +46,10 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: '3'
     ext.packaging.carvel.dev/ytt-paths-from-secret-name.0: istio-overlay-ako
-  name: dev1-cluster-ako
+  # Placeholder prefix — the apps-side cluster-var-injector rewrites this to
+  # <cluster_name>-ako from the `vars` ConfigMap, so the base is reusable
+  # across clusters.
+  name: cluster-ako
   namespace: vmware-system-tkg
-# spec:
-#   values:
-#     - secretRef:
-#         name: dev1-cluster-ako-data-values
+  labels:
+    config.k8s.io/inject-cluster-name-prefix: "true"

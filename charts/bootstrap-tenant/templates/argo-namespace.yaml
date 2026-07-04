@@ -6,7 +6,9 @@ metadata:
 spec:
   argoNamespace: {{ .Values.argoNamespace }}
   clusterLabels:
-{{ toYaml .Values.clusterLabels | indent 4 }}
+{{- range $k, $v := .Values.clusterLabels }}
+    {{ $k }}: {{ $v | quote }}
+{{- end }}
     # The vcfa-suffixed namespace name, captured at install time. Consumed by the
     # cluster-provisioning ApplicationSet as destination.namespace so the generated
     # name never has to live in git. See R1 in the plan: this relies on

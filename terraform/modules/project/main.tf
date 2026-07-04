@@ -19,11 +19,11 @@ resource "time_sleep" "wait_10_seconds" {
 
 data "kubernetes_resource" "project" {
   api_version = "project.cci.vmware.com/v1alpha2"
-  kind = "Project"
+  kind        = "Project"
   metadata {
     name = var.name
   }
-  depends_on = [ time_sleep.wait_10_seconds ]
+  depends_on = [time_sleep.wait_10_seconds]
 }
 
 output "name" {

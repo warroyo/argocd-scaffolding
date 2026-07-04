@@ -36,8 +36,9 @@ spec:
       tenantName: "replace-me"
 
     NetworkSettings:
-  
-      nsxtT1LR: "/orgs/default/projects/replace-me/vpcs/replace-me" 
+      # Full NSX T1 path — injected verbatim from tenant-vars (nsxt_t1_path,
+      # rendered by terraform/infra). No path-segment splicing.
+      nsxtT1LR: "replace-me"
 ---
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonInstall

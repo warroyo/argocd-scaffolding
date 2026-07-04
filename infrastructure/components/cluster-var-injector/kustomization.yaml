@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
 replacements:
+  # ── Cluster name (from this cluster's `vars` ConfigMap) ─────────────────────
   - source:
       kind: ConfigMap
       name: vars
@@ -10,7 +11,7 @@ replacements:
     targets:
       - select:
           labelSelector: "config.k8s.io/inject-cluster-name-prefix=true"
-        fieldPaths: 
+        fieldPaths:
         - metadata.name
         options:
           delimiter: '-'
@@ -20,6 +21,20 @@ replacements:
           labelSelector: "config.k8s.io/inject-cluster-name=true"
         fieldPaths:
         - metadata.name
+
+      - select:
+          kind: AddonConfig
+          labelSelector: "app.kubernetes.io/name=ako"
+        fieldPaths:
+        - spec.values.AKOSettings.clusterName
+
+      - select:
+          kind: AddonInstall
+          labelSelector: "config.k8s.io/inject-cluster-name-prefix=true"
+        fieldPaths:
+        - spec.clusters.0.selector.matchLabels.[cluster.x-k8s.io/cluster-name]
+
+  # ── Tenant identity (from the terraform-rendered tenant-vars ConfigMap) ─────
   - source:
       kind: ConfigMap
       name: tenant-vars
@@ -30,37 +45,21 @@ replacements:
           labelSelector: "app.kubernetes.io/name=ako"
         fieldPaths:
         - spec.values.ControllerSettings.tenantName
+
+  # Full T1 path rendered by terraform (no delimiter splicing — the base holds a
+  # single replace-me placeholder).
   - source:
       kind: ConfigMap
       name: tenant-vars
-      fieldPath: data.tenant_uuid
+      fieldPath: data.nsxt_t1_path
     targets:
       - select:
           kind: AddonConfig
           labelSelector: "app.kubernetes.io/name=ako"
         fieldPaths:
         - spec.values.NetworkSettings.nsxtT1LR
-        options:
-          delimiter: '/'
-          index: 4
-      - select:
-          kind: AddonConfig
-          labelSelector: "app.kubernetes.io/name=ako"
-        fieldPaths:
-        - spec.values.ControllerSettings.tenantName
-  - source:
-      kind: ConfigMap
-      name: tenant-vars
-      fieldPath: data.vpc_name
-    targets:
-      - select:
-          kind: AddonConfig
-          labelSelector: "app.kubernetes.io/name=ako"
-        fieldPaths:
-        - spec.values.NetworkSettings.nsxtT1LR
-        options:
-          delimiter: '/'
-          index: 6
+
+  # ── ArgoCluster registration (decision-model join keys) ─────────────────────
   - source:
       kind: ConfigMap
       name: vars
@@ -89,18 +88,3 @@ replacements:
           kind: ArgoCluster
         fieldPaths:
         - spec.argoNamespace
-  - source:
-      kind: ConfigMap
-      name: vars
-      fieldPath: data.cluster_name
-    targets:
-      - select:
-          kind: AddonConfig
-          labelSelector: "app.kubernetes.io/name=ako"
-        fieldPaths:
-        - spec.values.AKOSettings.clusterName
-      - select:
-          kind: AddonInstall
-          labelSelector: "config.k8s.io/inject-cluster-name-prefix=true"
-        fieldPaths:
-        - spec.clusters.0.selector.matchLabels.[cluster.x-k8s.io/cluster-name]

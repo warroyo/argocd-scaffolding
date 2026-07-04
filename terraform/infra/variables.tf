@@ -15,7 +15,7 @@ variable "vcfa_org" {
 }
 
 variable "region_name" {
-  type        = string
+  type = string
 }
 
 variable "avi_enabled" {

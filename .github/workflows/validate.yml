@@ -22,3 +22,25 @@ jobs:
 
       - name: Validate
         run: ./scripts/validate.sh
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive terraform/
+
+      # -backend=false: no state-backend creds at PR time; validate only needs
+      # providers + syntax. Runs against the COMMITTED generated bootstrap
+      # wiring, so a hand-edited providers.tf/main.tf fails here.
+      - name: terraform validate
+        run: |
+          for dir in terraform/infra terraform/bootstrap terraform/state-backend; do
+            echo "validating $dir"
+            terraform -chdir="$dir" init -backend=false -input=false >/dev/null
+            terraform -chdir="$dir" validate
+          done
