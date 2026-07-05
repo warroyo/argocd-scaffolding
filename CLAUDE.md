@@ -41,7 +41,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 |------|---------|
 | `terraform/infra/tenants.yaml` | Tenants, namespaces (incl. `environment`), ArgoCD bootstrap, cluster labels, optional `source_repos` (tenant AppProject scoping) and `vpc_private_cidr` |
 | `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | The inherited default set per environment (bases + always-on components + env overlay). Edit to change every cluster in an environment at once. |
-| `infrastructure/components/envs/{env}/` | Real per-environment values (bases hold only `replace-me` placeholders) |
+| `infrastructure/components/envs/{env}/`, `apps/components/envs/{env}/` | Real per-environment values AND version pins (bases hold only `replace-me` placeholders). Always-on versions (cluster class, k8s, AKO; package bundle/baseline) apply via the profiles; optional-feature versions live in feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/observability`) that clusters include alongside the feature. Per-cluster canary: `patches:` in the cluster kustomization. |
 | `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
 | `terraform/bootstrap/locals.tf` | Merges secrets (argo_password, AKO) into the per-namespace config from the infra run's `namespace_config` output; repo_url defaults from `argocd/repo-config.yaml`. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. Per-namespace helm tokens are minted fresh by `terraform/bootstrap/vcfa.tf` (no kubeconfigs shuttle). |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
@@ -92,7 +92,11 @@ Requires `kustomize`.
    the directory path; `validate.yml` enforces this).
 3. In `kustomization.yaml` / `apps/kustomization.yaml`, reference the environment
    profile (`profiles/{env}`) and add only the optional feature components / app
-   stacks and any override patches. Keep `cluster-var-injector` **last** in the infra
+   stacks and any override patches. Pair every optional feature with its
+   `envs/{env}` sub-component (istio → `envs/{env}/istio`; observability →
+   `apps/components/envs/{env}/observability`) — it pins the feature's version;
+   forgetting it leaves `replace-me` in rendered output and fails `make validate`.
+   Keep `cluster-var-injector` **last** in the infra
    component list (it rewrites resources brought in by the profile and the components).
    If the cluster uses `apps/base/istio-ako-patch`, also enable the apps-side injector
    (`apps/components/cluster-var-injector`, last) and the `vars` configMapGenerator
@@ -105,3 +109,11 @@ Requires `kustomize`.
 Edit `infrastructure/profiles/{env}` (or `apps/profiles/{env}`) — every cluster that
 references that profile inherits the change. Real per-environment values live in
 `infrastructure/components/envs/{env}`.
+
+### Rolling a version
+Versions are never pinned in bases. Bump the pin in the env layer —
+`infrastructure/components/envs/{env}` (cluster class, k8s, AKO),
+`envs/{env}/istio`, `apps/components/envs/{env}` (package bundle, cert-manager),
+or `apps/components/envs/{env}/observability` — dev first, then prod. Canary a
+single cluster with a `patches:` override in its kustomization before bumping the
+env pin.

@@ -11,7 +11,10 @@ resources:
 
 components:
 # --- Optional per-cluster app stacks (deltas on top of the profile) ---
+# Stack + its envs/{env} sub-component travel together (the sub-component pins
+# the stack's package versions; swap `dev` to match the profile above):
 # - ../../../../../../apps/components/stacks/observability
+# - ../../../../../../apps/components/envs/dev/observability
 # --- Variable injection MUST be last (needed by istio-ako-patch) ---
 # - ../../../../../../apps/components/cluster-var-injector
 

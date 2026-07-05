@@ -1,0 +1,27 @@
+# Real dev-environment values for the ALWAYS-ON app baseline (the standard
+# stack), applied over the replace-me placeholders in the bases. Included by
+# apps/profiles/dev, so every dev cluster inherits it. Versions for OPTIONAL
+# stacks live in feature-scoped sub-components (e.g. ./observability), included
+# by the cluster alongside the stack.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+- target:
+    group: packaging.carvel.dev
+    version: v1alpha1
+    kind: PackageRepository
+    name: standard-repo
+  patch: |-
+    - op: replace
+      path: /spec/fetch/imgpkgBundle/image
+      value: "projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211" # Dev package bundle
+- target:
+    group: packaging.carvel.dev
+    version: v1alpha1
+    kind: PackageInstall
+    name: cert-manager
+  patch: |-
+    - op: replace
+      path: /spec/packageRef/versionSelection/constraints
+      value: "1.19.2+vmware.1-vks.1" # Dev cert-manager version

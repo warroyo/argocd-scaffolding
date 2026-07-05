@@ -107,7 +107,9 @@ spec:
   packageRef:
     refName: prometheus.kubernetes.vmware.com
     versionSelection:
-      constraints: 3.5.0+vmware.3-vks.1
+      # Placeholder — version supplied by the feature-scoped env sub-component
+      # (apps/components/envs/{env}/observability), included alongside the stack.
+      constraints: replace-me
       prereleases: {}
   serviceAccountName: carvel-sa
   values:

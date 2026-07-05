@@ -1,0 +1,32 @@
+# Dev versions for the OPTIONAL observability stack. Can't live in the
+# profile-level env overlay — the stack's resources aren't in the build unless
+# the cluster enables it. A cluster that includes the stack pairs it with this:
+#
+#   components:
+#   - ../../../../../../apps/components/stacks/observability
+#   - ../../../../../../apps/components/envs/dev/observability
+#
+# Forgetting it fails loudly — the bases carry replace-me placeholders that
+# validate.sh rejects in rendered output.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+- target:
+    group: packaging.carvel.dev
+    version: v1alpha1
+    kind: PackageInstall
+    name: prometheus
+  patch: |-
+    - op: replace
+      path: /spec/packageRef/versionSelection/constraints
+      value: "3.5.0+vmware.3-vks.1" # Dev prometheus version
+- target:
+    group: packaging.carvel.dev
+    version: v1alpha1
+    kind: PackageInstall
+    name: telegraf
+  patch: |-
+    - op: replace
+      path: /spec/packageRef/versionSelection/constraints
+      value: "1.36.4+vmware.1-vks.1" # Dev telegraf version

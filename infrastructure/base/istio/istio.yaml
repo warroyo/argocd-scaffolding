@@ -7,7 +7,11 @@ metadata:
     config.k8s.io/inject-cluster-name-prefix: "true"
 spec:
   addonConfigDefinitionRef:
-     name: istio.kubernetes.vmware.com.1.28.2+vmware.1-vks.1 # Ensure this matches your available version
+     # Placeholder — istio is an optional per-cluster feature, so the version
+     # comes from the feature-scoped env sub-component
+     # (infrastructure/components/envs/{env}/istio), included by the cluster
+     # alongside the istio component.
+     name: replace-me
      namespace: vmware-system-vks-public
   values:
     istio:

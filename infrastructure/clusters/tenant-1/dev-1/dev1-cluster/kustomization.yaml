@@ -10,8 +10,11 @@ resources:
 
 components:
 # --- Optional per-cluster features (deltas on top of the profile) ---
+# Feature + its env sub-component travel together (the sub-component pins the
+# feature's version for this environment).
 - ../../../../components/istio
 - ../../../../components/ako-istio
+- ../../../../components/envs/dev/istio
 - ../../../../components/cluster-autoscaling
 # - ../../../../components/ha-control-plane
 # --- Variable injection MUST be last ---
@@ -20,11 +23,16 @@ components:
 # before it.
 - ../../../../components/cluster-var-injector
 
-# Override anything inherited from the profile here, e.g.:
+# Override anything inherited from the profile here (applies after all
+# components), e.g. pin a different Kubernetes version for just this cluster
+# during a canary, or bump the control plane:
 # patches:
 # - target:
 #     kind: Cluster
 #   patch: |-
+#     - op: replace
+#       path: /spec/topology/version
+#       value: v1.35.0---vmware.1-vkr.1
 #     - op: replace
 #       path: /spec/topology/controlPlane/replicas
 #       value: 3

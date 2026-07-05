@@ -19,7 +19,9 @@ spec:
   packageRef:
     refName: telegraf.kubernetes.vmware.com
     versionSelection:
-      constraints: 1.36.4+vmware.1-vks.1
+      # Placeholder — version supplied by the feature-scoped env sub-component
+      # (apps/components/envs/{env}/observability), included alongside the stack.
+      constraints: replace-me
       prereleases: {}
   serviceAccountName: carvel-sa
   values:

@@ -14,8 +14,12 @@ spec:
         - 10.96.0.0/12
     serviceDomain: cluster.local
   topology:
-    class: builtin-generic-v3.5.0
-    version: v1.34.1---vmware.1-vkr.4
+    # Placeholders — the env overlay (infrastructure/components/envs/{env})
+    # supplies the real cluster class + Kubernetes version, so a version bump
+    # rolls out per environment (dev first, then prod) instead of fleet-wide.
+    # Per-cluster override: a `patches:` block in the cluster kustomization.
+    class: replace-me
+    version: replace-me
     variables:
       - name: vsphereOptions
         value:
