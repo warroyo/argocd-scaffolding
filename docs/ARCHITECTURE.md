@@ -1,10 +1,26 @@
 # Architecture
 
 This repo is a reference architecture for automating a multi-tenant Kubernetes
-fleet on **VMware Cloud Foundation** with **Terraform** (day-0 provisioning)
-and **ArgoCD** (day-1/2 GitOps). This document explains *why* it is shaped the
-way it is. For operating instructions, see the [README](../README.md); for the
-individual design decisions in ADR form, see [DECISIONS.md](DECISIONS.md).
+fleet on **VMware Cloud Foundation**: **Terraform** provisions the foundations
+(tenants, networks, namespaces, the GitOps control plane itself), and
+**ArgoCD** manages everything that runs on them, from git. This document explains *why* it is shaped the
+way it is. For operating instructions, see the [README](../README.md); for each
+major design decision explained as *problem → choice → trade-off*, see
+[DECISIONS.md](DECISIONS.md).
+
+## Vocabulary
+
+Terms this document assumes, in one place:
+
+| Term | Meaning |
+|------|---------|
+| **vcfa** | VCF Automation — VCF's tenant-facing API/portal. Also the name of its Terraform provider. |
+| **Supervisor namespace** | A vSphere namespace on the supervisor cluster: the unit of tenancy where quotas apply, VKS clusters are created, and (here) an ArgoCD instance runs. |
+| **VKS cluster** | A workload Kubernetes cluster (vSphere Kubernetes Service), declared as a Cluster API `Cluster` resource inside a supervisor namespace. |
+| **CCI Project** | The vcfa grouping a tenant's supervisor namespaces live under (`Project` custom resource). One per tenant here. |
+| **ApplicationSet** | An ArgoCD controller that generates one ArgoCD `Application` per match from generators — here, a cluster-registration list joined with git directories. |
+| **`ArgoNamespace` / `ArgoCluster`** | vSphere-ArgoCD-operator custom resources that register a supervisor namespace / workload cluster with an ArgoCD instance, carrying the labels this design joins on. |
+| **AKO** | Avi Kubernetes Operator — the load-balancer integration installed on workload clusters (this repo's lab uses Avi; see *Pattern vs lab*). |
 
 ## The problem that shapes everything
 
@@ -70,9 +86,9 @@ Two lifecycles, two tools, one contract each:
 
 ## The two-phase Terraform design
 
-There are two roots, run in order (`make apply` = `apply-infra` →
-`apply-bootstrap`), because the second phase's *providers* depend on resources
-the first phase creates: you cannot configure a helm provider for a namespace
+Terraform is split into two separate configurations ("roots"), run in order
+(`make apply` = `apply-infra` → `apply-bootstrap`), because the second phase's
+*provider connections* depend on resources the first phase creates: you cannot configure a helm provider for a namespace
 that does not exist yet, and Terraform cannot `for_each` provider blocks. The
 infra run therefore **renders** the bootstrap run's `providers.tf` / `main.tf`
 (one helm provider + module per namespace) as generated, committed files.
@@ -122,7 +138,7 @@ Supporting choices:
 
 ## The decision model (label join)
 
-The suffixed-name problem is solved by a taxonomy of labels stamped on every
+The suffixed-name problem is solved by a small set of labels stamped on every
 ArgoCD cluster registration, joined against the git directory layout:
 
 ```mermaid
@@ -148,18 +164,21 @@ How each label gets there:
 | `gitops.platform/namespace` (the **suffixed** name) | the chart itself, from `.Release.Namespace` at install time | same |
 | workload `type: tenant`, `project`, `namespace-ref` | kustomize (`argocd-tenant-cluster` component + `cluster-var-injector`) | `ArgoCluster` CR synced with the cluster |
 
-The `cluster-provisioning` ApplicationSet matrixes supervisor-ns registrations
-against `infrastructure/clusters/{project}/{namespace_ref}/*/cluster-details.yaml`
-— the glob is templated **from the label values**, so the join is exact, and
-`destination.namespace` comes from the `gitops.platform/namespace` label. The
-suffixed name flows from vcfa → chart → label → ApplicationSet without ever
-touching git. `cluster-apps` does the same join plus the cluster name, landing
-on the exact `{cluster}/apps` path.
+The `cluster-provisioning` ApplicationSet pairs each supervisor-namespace
+registration with the git directories under
+`infrastructure/clusters/{project}/{namespace_ref}/*/` — and because that
+search path is built **from the registration's own label values**, each
+namespace finds exactly its own cluster directories, nothing else. The
+deployment target (`destination.namespace`) comes from the
+`gitops.platform/namespace` label, so the suffixed name flows
+vcfa → chart → label → ApplicationSet without ever touching git.
+`cluster-apps` does the same join plus the cluster name, landing on the exact
+`{cluster}/apps` path.
 
-Invariants the join relies on — all enforced, none implicit:
+Rules the join depends on — every one actively checked, none left implicit:
 
-- `(project, namespace_ref)` unique — Terraform precondition + directory layout
-- cluster names globally unique — `scripts/validate.sh`
+- `(project, namespace_ref)` is unique — Terraform precondition + the directory layout itself
+- cluster names are unique across ALL tenants — `scripts/validate.sh`
 - `cluster-details.yaml` values match the directory path — `scripts/validate.sh`
 
 ## Kustomize layering
@@ -230,8 +249,9 @@ what to keep, what to swap for your environment.
 ## Known limitations
 
 Tracked with priorities and detail in [BACKLOG.md](BACKLOG.md). The headline
-items an adopter should know before production: deletion semantics
-(ApplicationSet prune is armed — a cluster-directory rename is a
-delete+recreate), single shared ArgoCD admin credential (no SSO/RBAC yet),
+items an adopter should know before production: deletion is unguarded
+(deleting — or renaming — a cluster directory deletes the live cluster; a
+rename is a delete+recreate), a single shared ArgoCD admin credential (no
+SSO/RBAC yet),
 Terraform state lives on the platform it manages (back it up off-platform), and
 one region per install.

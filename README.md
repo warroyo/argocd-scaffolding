@@ -25,7 +25,7 @@ flowchart LR
 
 **Read next:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the full design,
 diagrams, and the *pattern vs lab* guide for adapting this to your environment ·
-[docs/DECISIONS.md](docs/DECISIONS.md) — the design decisions in ADR form ·
+[docs/DECISIONS.md](docs/DECISIONS.md) — why each big choice was made (problem → choice → trade-off) ·
 [docs/BACKLOG.md](docs/BACKLOG.md) — known limitations and planned work.
 
 ## Getting Started
