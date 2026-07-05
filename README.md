@@ -1,6 +1,32 @@
 # ArgoCD Scaffolding Project
 
-This repository contains the infrastructure and application configuration for managing a multi-tenant Kubernetes environment using ArgoCD, Terraform, and Kustomize.
+A **reference architecture** for automating a multi-tenant Kubernetes (VKS)
+fleet on **VMware Cloud Foundation**: Terraform provisions tenants (projects,
+VPCs, supervisor namespaces) and bootstraps a GitOps control plane; ArgoCD
+ApplicationSets then provision clusters and applications declared as plain
+kustomize in this repo.
+
+The central problem it solves: VCF Automation generates supervisor-namespace
+names **at apply time** (`dev-1` → `dev-1-abcde`), so git can never declare
+deployment targets by name. The design keeps generated identity out of git
+entirely — logical identity lives in the directory layout, the generated names
+are captured as labels on the ArgoCD cluster registrations, and ApplicationSets
+join the two at sync time.
+
+```mermaid
+flowchart LR
+    tenants["tenants.yaml"] --> tf1["terraform/infra<br/>provision + render"]
+    tf1 --> git["git<br/>(rendered config committed)"]
+    tf1 --> tf2["terraform/bootstrap<br/>ArgoCD per namespace"]
+    tf2 --> argo["ArgoCD<br/>labels carry generated names"]
+    git --> argo
+    argo -- "label ⨯ directory join" --> fleet["VKS clusters + apps"]
+```
+
+**Read next:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the full design,
+diagrams, and the *pattern vs lab* guide for adapting this to your environment ·
+[docs/DECISIONS.md](docs/DECISIONS.md) — the design decisions in ADR form ·
+[docs/BACKLOG.md](docs/BACKLOG.md) — known limitations and planned work.
 
 ## Getting Started
 
@@ -108,6 +134,10 @@ work.) The helper re-reads the kubeconfig live each run, so the token is never s
 ---
 
 ## Overview
+
+> The full architecture — with diagrams, the decision model, and the seams
+> guide for swapping lab-specific pieces — is in
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 The project follows a **GitOps** workflow where the entire state of the infrastructure and applications is defined in this repository. There are two distinct lifecycles:
 
