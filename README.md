@@ -104,32 +104,22 @@ work.) The helper re-reads the kubeconfig live each run, so the token is never s
 
 ### First-time Setup
 
-1. Clone this repo and `cd` into it.
-2. `cp .env.example .env` and fill in the values (vcfa creds + bootstrap secrets). The
-   Makefile auto-loads and exports `.env` to every terraform root, including the
-   `state-backend` helper — prefer this over per-root `terraform.tfvars`, which the
-   `state-backend` dir doesn't see (and would prompt for vcfa vars).
-3. **Bootstrap the Terraform state namespace** (one-time) — follow
-   [Backend Configuration](#backend-configuration): `vcf context use`, create the project +
-   state namespace, write the generated name into
-   `terraform/state-backend/namespace.auto.tfvars`, and commit it. Required before any
-   `make apply-*`, since `init` stores state in that namespace.
-4. Edit `terraform/infra/tenants.yaml` — add your infra tenant and at least one namespace with `deploy_argo: true`.
-5. Update `argocd/repo-config.yaml` with your GitOps repo URL.
-6. Run:
-   ```sh
-   make apply-infra
-   ```
-   `init` auto-runs `make state-backend` (renders `.kube-backend.config` + `.kube-backend.env`) and uses the Kubernetes
-   backend. This provisions namespaces and renders generated files (`argocd/projects/`,
-   `infrastructure/clusters/*/vars/`, `terraform/bootstrap/{providers,main}.tf`).
-7. Commit the rendered files.
-8. Run:
-   ```sh
-   make apply-bootstrap
-   ```
-   This deploys the ArgoCD Helm chart and root Application into each namespace with `deploy_argo: true`.
-9. Verify with `make validate` — build-tests every Kustomize entrypoint.
+**Follow [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** — the complete
+zero-to-app walkthrough (fresh VCF org → state backend → tenants → ArgoCD →
+first cluster → a tenant app running), with expected output at every step.
+
+The short version, for reference:
+
+1. Fork; set your repo URL in `argocd/repo-config.yaml`.
+2. One-time: create the Terraform state namespace and capture its generated
+   name (see [Backend Configuration](#backend-configuration)).
+3. `cp .env.example .env`, fill in the vcfa creds + bootstrap secrets — the
+   Makefile loads it into every terraform root.
+4. Declare tenants in `terraform/infra/tenants.yaml` (one `type: infra`
+   tenant with a `deploy_argo: true` namespace).
+5. `make apply-infra` → commit the rendered files → `make apply-bootstrap`.
+6. Add clusters by copying `docs/examples/cluster-template` and pushing —
+   ArgoCD picks them up by label join. `make validate` before every push.
 
 ---
 

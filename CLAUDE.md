@@ -4,7 +4,8 @@
 
 After **any** change to the following, update `README.md` to stay in sync —
 and keep `docs/ARCHITECTURE.md` (including its mermaid diagrams and the
-pattern-vs-lab seams table) and `docs/DECISIONS.md` accurate when the flow,
+pattern-vs-lab seams table), `docs/DECISIONS.md`, and `docs/GETTING-STARTED.md`
+(its commands, file paths, and expected-output blocks) accurate when the flow,
 contracts, or design decisions they describe change:
 - Directory structure (new dirs, renamed dirs, removed dirs)
 - Key technologies (added/removed tools or frameworks)
