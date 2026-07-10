@@ -50,7 +50,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `terraform/bootstrap/locals.tf` | Merges secrets (argo_password, AKO) into the per-namespace config from the infra run's `namespace_config` output; repo_url defaults from `argocd/repo-config.yaml`. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. Per-namespace helm tokens are minted fresh by `terraform/bootstrap/vcfa.tf` (no kubeconfigs shuttle). |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
 | `docs/examples/cluster-template/` | Copy-me template for a new cluster |
-| `terraform/state-namespace/{project,state-namespace}.yaml` | CCI `Project` + `SupervisorNamespace` CRs for the Terraform-state backend. Applied once out-of-band with `kubectl` (see README → Backend Configuration). |
+| `terraform/state-namespace/{project,state-namespace}.yaml` | CCI `Project` + `SupervisorNamespace` CRs for the Terraform-state backend. Applied once out-of-band with `kubectl` (README → Backend Configuration explains the design; the commands live in `docs/GETTING-STARTED.md` Part 1). |
 | `terraform/state-backend/namespace.auto.tfvars` | The captured (generated) state-namespace name fed to the stateless `terraform/state-backend` helper. Non-secret; committed. |
 
 ## Decision model (label-based targeting)

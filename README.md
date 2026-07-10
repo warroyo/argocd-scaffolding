@@ -24,18 +24,38 @@ diagrams, and the *pattern vs lab* guide for adapting this to your environment �
 
 ## Getting Started
 
-### Prerequisites
+**Follow [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** — the complete
+zero-to-app walkthrough (fresh VCF org → state backend → tenants → ArgoCD →
+first cluster → a tenant app running). It covers the prerequisites (Part 0),
+every command, and the expected output at each step.
 
-| Tool | Purpose |
-|------|---------|
-| `terraform` >= 1.9 | Provisions namespaces, renders generated files, bootstraps ArgoCD |
-| `kustomize` | Local validation (`make validate`) — same version CI uses |
-| `make` | Orchestrates the two-phase Terraform workflow |
-| VCF Automation access | `vcfa_url`, `vcfa_org`, and an API refresh token |
+The short version, for orientation:
+
+1. Fork; set your repo URL in `argocd/repo-config.yaml`.
+2. One-time: create the Terraform state namespace and capture its generated
+   name ([Part 1](docs/GETTING-STARTED.md#part-1--one-time-state-backend-10-min)
+   of the walkthrough).
+3. `cp .env.example .env`, fill in the vcfa creds + bootstrap secrets — the
+   Makefile loads it into every terraform root.
+4. Declare tenants in `terraform/infra/tenants.yaml` (one `type: infra`
+   tenant with a `deploy_argo: true` namespace).
+5. `make apply-infra` → commit the rendered files → `make apply-bootstrap`.
+6. Add clusters by copying `docs/examples/cluster-template` and pushing —
+   ArgoCD picks them up by label join. `make validate` before every push.
+
+## Configuration Reference
+
+Everything in this section is **reference**, not a setup sequence — the
+walkthrough above says when each piece comes into play. Consult it when you
+need the full variable list or want to understand how Terraform state and
+backend credentials work.
 
 ### Required Variables
 
-Set these **before** running `make apply`. All sensitive values go via `TF_VAR_*` exports; non-sensitive values can go in `terraform/infra/terraform.tfvars` (gitignored).
+Variables read by `make apply` (both Terraform roots). Sensitive values go
+via `TF_VAR_*` exports — in practice via `.env` (copied from `.env.example`),
+which the Makefile loads into every Terraform run. Non-sensitive values can
+alternatively go in `terraform/infra/terraform.tfvars` (gitignored).
 
 **Required for `apply-infra`:**
 
@@ -73,15 +93,12 @@ backend** — state is stored as a `Secret` in a dedicated supervisor namespace,
 are portable across machines/CI. The two roots use distinct `secret_suffix` values
 (`infra`, `bootstrap`) and share one namespace.
 
-**One-time bootstrap** — point the `vcf` CLI at your vCFA endpoint, then create the
-project + state namespace (the supervisor namespace uses `generateName`, so use `create`,
-not `apply`, and capture the generated name):
-```sh
-vcf context use <vcfa-context>   # sets the kube context; no --kubeconfig needed below
-kubectl apply -f terraform/state-namespace/project.yaml
-NAME=$(kubectl create -f terraform/state-namespace/state-namespace.yaml -o jsonpath='{.metadata.name}')
-echo "namespace = \"$NAME\"" > terraform/state-backend/namespace.auto.tfvars   # commit this
-```
+**One-time setup** — the state namespace is created once, by hand, from the
+committed manifests in `terraform/state-namespace/` (the `vcf` CLI points
+`kubectl` at your vCFA endpoint), and its generated name is captured in
+`terraform/state-backend/namespace.auto.tfvars` (committed). The exact
+commands — and why it's `kubectl create`, not `apply` — are in
+[Part 1 of the walkthrough](docs/GETTING-STARTED.md#part-1--one-time-state-backend-10-min).
 
 **How init works** — `make init-infra` / `init-bootstrap` first run `make state-backend`
 (the stateless `terraform/state-backend` helper), which pulls fresh namespace creds and
@@ -95,25 +112,6 @@ in `-backend-config`, `.terraform`, or plan files. (A kubeconfig at `config_path
 `terraform init` reliably honors for auth; the individual `KUBE_HOST`/`KUBE_TOKEN` did not
 work.) The helper re-reads the kubeconfig live each run, so the token is never stale.
 `make state-backend` needs the same vcfa `TF_VAR_*` as `apply-infra`.
-
-### First-time Setup
-
-**Follow [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** — the complete
-zero-to-app walkthrough (fresh VCF org → state backend → tenants → ArgoCD →
-first cluster → a tenant app running), with expected output at every step.
-
-The short version, for reference:
-
-1. Fork; set your repo URL in `argocd/repo-config.yaml`.
-2. One-time: create the Terraform state namespace and capture its generated
-   name (see [Backend Configuration](#backend-configuration)).
-3. `cp .env.example .env`, fill in the vcfa creds + bootstrap secrets — the
-   Makefile loads it into every terraform root.
-4. Declare tenants in `terraform/infra/tenants.yaml` (one `type: infra`
-   tenant with a `deploy_argo: true` namespace).
-5. `make apply-infra` → commit the rendered files → `make apply-bootstrap`.
-6. Add clusters by copying `docs/examples/cluster-template` and pushing —
-   ArgoCD picks them up by label join. `make validate` before every push.
 
 ---
 
