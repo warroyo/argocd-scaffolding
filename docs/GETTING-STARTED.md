@@ -22,6 +22,7 @@ don't need either to finish this.
 | `terraform` | ≥ 1.9 | provisioning + rendering |
 | `kustomize` | 5.x | `make validate` (same version CI pins) |
 | `kubectl` | recent | one-time state-namespace setup, verification |
+| `envsubst` | any (gettext) | rendering the state-namespace manifest (Part 1); macOS: `brew install gettext` |
 | `vcf` CLI | recent | pointing kubectl at your VCF endpoint |
 | `make`, `git` | any | orchestration |
 
@@ -30,6 +31,9 @@ don't need either to finish this.
 - the vcfa URL, org name, and an **API refresh token**
 - the **region name**, a **zone name** in it, and a **storage policy** name —
   these vary per install and there are no safe defaults
+- whether that region's **load balancer is AVI/NSX-ALB or NSX_LB** — this sets
+  `TF_VAR_avi_enabled` (and, for AVI, the AKO secret + credentials). Getting it
+  wrong fails `apply-infra` at VPC creation. Ask your provider admin if unsure.
 
 **A fork of this repo.** GitOps means ArgoCD pulls from git, so you need a
 repo you can push to:
@@ -43,12 +47,22 @@ repo you can push to:
 
 Terraform state lives as Kubernetes Secrets in a small, dedicated supervisor
 namespace, so any machine (or CI) with VCF credentials can run the pipeline.
-That namespace is created once, by hand:
+That namespace is created once, by hand. Its `regionName` / `vpcName` / zone /
+storage policy vary per install with **no safe defaults**, so
+`state-namespace.yaml` ships as `${...}` placeholders filled from your `.env` —
+create `.env` now (you'll finish filling it in Part 2), set the region and the
+three `STATE_NS_*` values, then render the manifest with `envsubst`:
 
 ```sh
 vcf context use <your-vcfa-context>     # points kubectl at the vcfa endpoint
-kubectl apply -f terraform/state-namespace/project.yaml
-NAME=$(kubectl create -f terraform/state-namespace/state-namespace.yaml -o jsonpath='{.metadata.name}')
+
+cp .env.example .env
+# edit .env: set TF_VAR_region_name and STATE_NS_VPC / STATE_NS_ZONE /
+# STATE_NS_STORAGE_POLICY to match your install (the rest can wait for Part 2)
+
+set -a; . ./.env; set +a                # load .env into this shell
+kubectl create -f terraform/state-namespace/project.yaml
+NAME=$(envsubst < terraform/state-namespace/state-namespace.yaml | kubectl create -f - -o jsonpath='{.metadata.name}')
 echo "namespace = \"$NAME\"" > terraform/state-backend/namespace.auto.tfvars
 git add terraform/state-backend/namespace.auto.tfvars
 git commit -m "capture state namespace name"
@@ -66,8 +80,10 @@ Two things worth knowing:
 - It's `kubectl create` (not `apply`) because the namespace uses
   `generateName` — the API assigns the real name. Re-running `create` makes a
   *second* namespace, so this is deliberately a one-time step.
-- Before applying, check `regionName` / `vpcName` / zone in
-  `terraform/state-namespace/state-namespace.yaml` match your environment.
+- `envsubst` substitutes an empty string for any value left blank in `.env`;
+  the API then rejects the object (empty `regionName`/`vpcName`/zone are
+  invalid), so a missed value surfaces as a failed `create`, not a
+  misconfigured namespace.
 
 You never touch this again. Every `make` target refreshes its own short-lived
 credentials against this namespace automatically.
@@ -76,13 +92,15 @@ credentials against this namespace automatically.
 
 ### 2.1 Credentials
 
-```sh
-cp .env.example .env
-```
+You created `.env` in Part 1 (region + `STATE_NS_*`). Now finish the vcfa
+values (`TF_VAR_vcfa_url`, `TF_VAR_vcfa_org`, `TF_VAR_vcfa_refresh_token`). The
+Makefile loads `.env` into every Terraform run — no per-directory tfvars
+needed.
 
-Fill in the vcfa values (`TF_VAR_vcfa_url`, `TF_VAR_vcfa_org`,
-`TF_VAR_vcfa_refresh_token`, `TF_VAR_region_name`). The Makefile loads `.env`
-into every Terraform run — no per-directory tfvars needed.
+**Set your load-balancer mode.** `.env` defaults to `TF_VAR_avi_enabled=false`
+(NSX_LB). If your region uses **AVI/NSX-ALB**, set `TF_VAR_avi_enabled=true`,
+`TF_VAR_ako_secret_enabled=true`, and fill the base64 `TF_VAR_ako_*` creds — a
+mismatch fails `apply-infra` at VPC creation.
 
 For the ArgoCD admin password, the chart expects a **bcrypt hash**, not the
 plain password:

@@ -65,7 +65,7 @@ alternatively go in `terraform/infra/terraform.tfvars` (gitignored).
 | `vcfa_url` | tfvars or `export TF_VAR_vcfa_url=...` | VCF Automation URL (e.g. `https://vcfa.example.com`) |
 | `vcfa_org` | tfvars or `export TF_VAR_vcfa_org=...` | VCF Automation org name |
 | `region_name` | tfvars or `export TF_VAR_region_name=...` | Region used to name VPCs (`{tenant}-{region}-vpc`) |
-| `avi_enabled` | tfvars or `export TF_VAR_avi_enabled=false` | `true` (default) for AVI LB regions; `false` for NSX_LB regions — omits `loadBalancerVPCEndpoint` from VPC spec |
+| `avi_enabled` | tfvars or `export TF_VAR_avi_enabled=true` | `true` for AVI/NSX-ALB LB regions (adds `loadBalancerVPCEndpoint` to the VPC spec + AKO addon); `false` (default) for NSX_LB regions — VPC gets an NSX `LoadBalancer` CR instead. Must match your region. |
 
 **Required for `apply-bootstrap`** (`namespace_config` is passed automatically by the
 Makefile from the infra output; the same vcfa creds as `apply-infra` are needed too —

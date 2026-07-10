@@ -7,13 +7,20 @@
 # the endpoint first (it sets the kube context; no --kubeconfig needed):
 #
 #   vcf context use <vcfa-context>
-#   NAME=$(kubectl create -f terraform/state-namespace/state-namespace.yaml -o jsonpath='{.metadata.name}')
+#   set -a; . ./.env; set +a   # loads TF_VAR_region_name + STATE_NS_* from .env
+#   NAME=$(envsubst < terraform/state-namespace/state-namespace.yaml | kubectl create -f - -o jsonpath='{.metadata.name}')
 #   echo "namespace = \"$NAME\"" > terraform/state-backend/namespace.auto.tfvars
 #
 # Re-running `create` provisions a SECOND namespace — this is a deliberate one-time step.
 #
 # Sized minimally: this namespace only holds tiny tfstate Secrets.
-# Adjust regionName / vpcName / zone name to match your environment.
+#
+# regionName / vpcName / zone name / storage policy vary per install and have NO
+# safe defaults, so they are ${...} placeholders filled from .env (regionName from
+# TF_VAR_region_name; the rest from STATE_NS_*) — this file is NOT applied raw.
+# Load .env, then render through envsubst (see docs/GETTING-STARTED.md Part 1):
+#   set -a; . ./.env; set +a
+#   envsubst < terraform/state-namespace/state-namespace.yaml | kubectl create -f -
 apiVersion: infrastructure.cci.vmware.com/v1alpha3
 kind: SupervisorNamespace
 metadata:
@@ -22,14 +29,14 @@ metadata:
 spec:
   className: small
   description: Terraform state backend
-  regionName: us-east-a
-  vpcName: default-us-east-a
+  regionName: ${TF_VAR_region_name}
+  vpcName: ${STATE_NS_VPC}
   classConfigOverrides:
     storageClasses:
-      - name: vsan-default-storage-policy
+      - name: ${STATE_NS_STORAGE_POLICY}
         limit: 5000Mi
     zones:
-      - name: z-wld-a
+      - name: ${STATE_NS_ZONE}
         cpuLimit: 1000M
         cpuReservation: 0M
         memoryLimit: 1000Mi
