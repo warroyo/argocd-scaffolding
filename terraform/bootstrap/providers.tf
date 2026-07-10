@@ -5,19 +5,19 @@
 # keyed by var.namespace_config — no kubeconfigs are shuttled from the infra run.
 
 provider "helm" {
-  alias = "tenant_1_dev_1"
-  kubernetes = {
-    host     = data.vcfa_kubeconfig.ns["tenant-1-dev-1"].host
-    token    = data.vcfa_kubeconfig.ns["tenant-1-dev-1"].token
-    insecure = data.vcfa_kubeconfig.ns["tenant-1-dev-1"].insecure_skip_tls_verify
-  }
-}
-
-provider "helm" {
   alias = "infra_1_infra"
   kubernetes = {
     host     = data.vcfa_kubeconfig.ns["infra-1-infra"].host
     token    = data.vcfa_kubeconfig.ns["infra-1-infra"].token
     insecure = data.vcfa_kubeconfig.ns["infra-1-infra"].insecure_skip_tls_verify
+  }
+}
+
+provider "helm" {
+  alias = "tenant_1_dev_1"
+  kubernetes = {
+    host     = data.vcfa_kubeconfig.ns["tenant-1-dev-1"].host
+    token    = data.vcfa_kubeconfig.ns["tenant-1-dev-1"].token
+    insecure = data.vcfa_kubeconfig.ns["tenant-1-dev-1"].insecure_skip_tls_verify
   }
 }

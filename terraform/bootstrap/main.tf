@@ -2,16 +2,16 @@
 # Re-rendered by `make apply-infra` whenever the set of namespaces changes.
 # Pure wiring: per-namespace values + labels live in terraform/bootstrap/locals.tf.
 
-module "bootstrap_tenant_1_dev_1" {
-  source    = "../modules/bootstrap-helm"
-  providers = { helm = helm.tenant_1_dev_1 }
-
-  config = local.bootstrap_config["tenant-1-dev-1"]
-}
-
 module "bootstrap_infra_1_infra" {
   source    = "../modules/bootstrap-helm"
   providers = { helm = helm.infra_1_infra }
 
   config = local.bootstrap_config["infra-1-infra"]
+}
+
+module "bootstrap_tenant_1_dev_1" {
+  source    = "../modules/bootstrap-helm"
+  providers = { helm = helm.tenant_1_dev_1 }
+
+  config = local.bootstrap_config["tenant-1-dev-1"]
 }
