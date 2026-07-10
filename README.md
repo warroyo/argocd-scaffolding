@@ -6,12 +6,6 @@ VPCs, supervisor namespaces) and bootstraps a GitOps control plane; ArgoCD
 ApplicationSets then provision clusters and applications declared as plain
 kustomize in this repo.
 
-The central problem it solves: VCF Automation generates supervisor-namespace
-names **at apply time** (`dev-1` → `dev-1-abcde`), so git can never declare
-deployment targets by name. The design keeps generated identity out of git
-entirely — logical identity lives in the directory layout, the generated names
-are captured as labels on the ArgoCD cluster registrations, and ApplicationSets
-join the two at sync time.
 
 ```mermaid
 flowchart LR
