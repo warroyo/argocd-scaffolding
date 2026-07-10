@@ -1,11 +1,13 @@
 terraform {
-  required_version = ">= 1.0"
+  required_version = ">= 1.9"
   required_providers {
     vcfa = {
-      source = "vmware/vcfa"
+      source  = "vmware/vcfa"
+      version = "~> 1.0"
     }
     local = {
-      source = "hashicorp/local"
+      source  = "hashicorp/local"
+      version = "~> 2.5"
     }
   }
 }

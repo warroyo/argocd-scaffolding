@@ -19,7 +19,7 @@ locals {
     spec = merge(
       {
         description = "tenant vpc for ${var.project_name}"
-        privateIPs  = ["192.173.237.0/24"]
+        privateIPs  = [coalesce(var.private_cidr, "192.173.237.0/24")]
         regionName  = var.region_name
       },
       var.avi_enabled ? { loadBalancerVPCEndpoint = { enabled = true } } : {}
@@ -32,9 +32,9 @@ locals {
       name = "${local.vpc_name}:default"
     }
     spec = {
-      regionName                  = var.region_name
-      vpcConnectivityProfileName  = local.vpc_connectivity_profile_name
-      vpcName                     = local.vpc_name
+      regionName                 = var.region_name
+      vpcConnectivityProfileName = local.vpc_connectivity_profile_name
+      vpcName                    = local.vpc_name
     }
   }
   load_balancer_manifest = {
@@ -57,8 +57,8 @@ resource "kubernetes_manifest" "vpc" {
 
 resource "kubernetes_manifest" "vpc-connectivity" {
 
-  manifest = local.vpc_attach_manifest
-  depends_on = [ kubernetes_manifest.vpc ]
+  manifest   = local.vpc_attach_manifest
+  depends_on = [kubernetes_manifest.vpc]
 }
 
 resource "kubernetes_manifest" "load_balancer" {
@@ -68,7 +68,7 @@ resource "kubernetes_manifest" "load_balancer" {
   # Depend on the attachment (not just the VPC) so destroy order is
   # LB -> attachment -> VPC. NSX rejects deleting a VPCAttachment while a
   # North-South LoadBalancer service is still configured under the VPC.
-  depends_on = [ kubernetes_manifest.vpc-connectivity ]
+  depends_on = [kubernetes_manifest.vpc-connectivity]
 }
 
 

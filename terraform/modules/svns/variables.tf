@@ -1,46 +1,42 @@
+# No defaults here — the tenant module's typed optional() object is the single
+# default site; this module always receives concrete values.
+
 variable "region_name" {
-  type        = string
+  type = string
 }
 
 variable "vpc_name" {
-  type        = string
+  type = string
 }
 
 variable "zone_name" {
-  type        = string
+  type = string
 }
 
 variable "name" {
   type = string
-  default = "lab"
 }
 
 variable "storage_limit" {
   type = string
-  default = "102400Mi"
 }
 
 variable "class_name" {
   type = string
-  default = "small"
 }
 
 variable "cpu_limit" {
-   type = string
-  default = "10000M"
+  type = string
 }
 
 variable "mem_limit" {
-   type = string
-  default = "10000Mi"
+  type = string
 }
 
 variable "storage_policy" {
-   type = string
-  default = "vSAN Default Storage Policy"
+  type = string
 }
 
 variable "project_name" {
-   type = string
-  default = "default-project"
+  type = string
 }

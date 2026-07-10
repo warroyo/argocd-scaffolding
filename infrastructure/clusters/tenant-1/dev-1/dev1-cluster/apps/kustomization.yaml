@@ -4,9 +4,27 @@ kind: Kustomization
 resources:
 # Inherit the dev app baseline (standard stack).
 - ../../../../../../apps/profiles/dev
-# This cluster runs istio + AKO, so it ships the AKO-sidecar integration patch.
+# This cluster runs istio + AKO, so it ships the AKO-sidecar integration patch
+# (cluster-var-injector below rewrites its PackageInstall name).
 - ../../../../../../apps/base/istio-ako-patch
 
 components:
 # --- Optional per-cluster app stacks (deltas on top of the profile) ---
+# Stack + its env sub-component travel together (the sub-component pins the
+# stack's package versions for this environment).
 - ../../../../../../apps/components/stacks/observability
+- ../../../../../../apps/components/envs/dev/observability
+# --- Variable injection MUST be last ---
+- ../../../../../../apps/components/cluster-var-injector
+
+# This cluster's identity for the injector. Kustomize load restrictions keep the
+# apps tree from reading ../cluster-details.yaml, so cluster_name is declared
+# again here — validate.sh checks it matches the directory name.
+configMapGenerator:
+- name: vars
+  literals:
+  - cluster_name=dev1-cluster
+generatorOptions:
+  disableNameSuffixHash: true
+  annotations:
+    config.kubernetes.io/local-config: "true"

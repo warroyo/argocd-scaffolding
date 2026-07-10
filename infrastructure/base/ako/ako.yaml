@@ -19,7 +19,9 @@ metadata:
     config.k8s.io/inject-cluster-name-prefix: "true"
 spec:
   addonConfigDefinitionRef:
-     name: ako.kubernetes.vmware.com.2.1.3+vmware.1-vks.1 # Ensure this matches your available version
+     # Placeholder — the env overlay (infrastructure/components/envs/{env})
+     # supplies the real addon version, so bumps roll out per environment.
+     name: replace-me
      namespace: vmware-system-vks-public
   values:
     AKOSettings:
@@ -36,8 +38,9 @@ spec:
       tenantName: "replace-me"
 
     NetworkSettings:
-  
-      nsxtT1LR: "/orgs/default/projects/replace-me/vpcs/replace-me" 
+      # Full NSX T1 path — injected verbatim from tenant-vars (nsxt_t1_path,
+      # rendered by terraform/infra). No path-segment splicing.
+      nsxtT1LR: "replace-me"
 ---
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonInstall

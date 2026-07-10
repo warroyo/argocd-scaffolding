@@ -1,0 +1,25 @@
+# Dev istio version. Istio is an OPTIONAL per-cluster feature, so this can't
+# live in the profile-level env overlay (the istio resources aren't in the build
+# yet when the profile renders). A cluster that enables istio includes this
+# right after `components/istio` + `components/ako-istio`:
+#
+#   components:
+#   - ../../../../components/istio
+#   - ../../../../components/ako-istio
+#   - ../../../../components/envs/dev/istio
+#
+# Forgetting it fails loudly — the base carries a replace-me placeholder that
+# validate.sh rejects in rendered output.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+- target:
+    group: addons.kubernetes.vmware.com
+    version: v1alpha1
+    kind: AddonConfig
+    labelSelector: "app.kubernetes.io/name=istio"
+  patch: |-
+    - op: replace
+      path: /spec/addonConfigDefinitionRef/name
+      value: "istio.kubernetes.vmware.com.1.28.2+vmware.1-vks.1" # Dev istio addon version

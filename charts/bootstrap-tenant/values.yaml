@@ -13,7 +13,12 @@ clusterLabels: {}
 
 rootApp:
   enabled: true
+  # Automated sync (prune + selfHeal) so committed argocd/ changes reconcile
+  # without a manual root-app sync. Set false to gate syncs by hand.
+  autoSync: true
   name: "root-bootstrap"
+  # Fallback only — terraform/bootstrap always passes repoURL, sourced from
+  # argocd/repo-config.yaml (the same single source the ApplicationSets use).
   repoURL: "https://github.com/warroyo/argocd-scaffolding"
   targetRevision: "main"
   path: "argocd"

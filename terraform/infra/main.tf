@@ -9,10 +9,6 @@ locals {
     for k, v in local.tenant_map : k => v if lookup(v, "type", "") == "infra"
   }
 
-  all_project_ids = [
-    for mod in module.tenant : mod.project_id
-  ]
-
   infra_count       = length(local.infra_tenants)
   infra_tenant_name = local.infra_count == 1 ? keys(local.infra_tenants)[0] : null
 
@@ -29,10 +25,13 @@ locals {
         deploy_argo = ns_val.deploy_argo
 
         # Suffixed name of the namespace running the managing ArgoCD instance.
-        argo_namespace = local.infra_tenant_name != null ? [
+        # null (instead of an opaque index crash) when the tenant's argo_namespace
+        # doesn't resolve to a deploy_argo namespace on the infra tenant — a
+        # precondition in generate.tf turns that into a readable error.
+        argo_namespace = try([
           for infra_ns_key, infra_ns_val in module.tenant[local.infra_tenant_name].namespaces : infra_ns_val.name
-          if infra_ns_val.deploy_argo == true && infra_ns_key == local.tenant_map[t_name].argo_namespace
-        ][0] : "argocd"
+          if infra_ns_val.deploy_argo == true && infra_ns_key == lookup(local.tenant_map[t_name], "argo_namespace", "argocd")
+        ][0], null)
 
         # Decision-model labels, computed once here (the chart adds the suffixed
         # gitops.platform/namespace label at install time from .Release.Namespace).
@@ -52,48 +51,31 @@ locals {
 
 
 module "tenant" {
-  for_each     = local.tenant_map
-  source       = "../modules/tenant"
-  region_name  = var.region_name
-  avi_enabled  = var.avi_enabled
-  project_name = each.value.name
+  for_each                      = local.tenant_map
+  source                        = "../modules/tenant"
+  region_name                   = var.region_name
+  avi_enabled                   = var.avi_enabled
+  project_name                  = each.value.name
   vpc_connectivity_profile_name = lookup(each.value, "vpc_connectivity_profile_name", null)
+  vpc_private_cidr              = lookup(each.value, "vpc_private_cidr", null)
   providers = {
     kubernetes = kubernetes.vcfa-org
   }
-  argo_namespace = lookup(each.value, "argo_namespace", "argocd")
+  # Defaults for the optional per-namespace settings live in ONE place: the
+  # tenant module's typed optional() object (modules/tenant/variables.tf).
+  # Unset keys are passed through as null so the module default applies.
   namespaces = {
     for ns in lookup(each.value, "namespaces", []) : ns.name => {
       name           = ns.name
-      zone_name      = lookup(ns, "zone_name", "z-wld-a")
-      deploy_argo    = lookup(ns, "deploy_argo", false)
-      storage_limit  = lookup(ns, "storage_limit", "102400Mi")
-      class_name     = lookup(ns, "class_name", "small")
-      mem_limit      = lookup(ns, "mem_limit", "10000Mi")
-      cpu_limit      = lookup(ns, "cpu_limit", "10000M")
-      storage_policy = lookup(ns, "storage_policy", "vSAN Default Storage Policy")
+      zone_name      = lookup(ns, "zone_name", null)
+      deploy_argo    = lookup(ns, "deploy_argo", null)
+      storage_limit  = lookup(ns, "storage_limit", null)
+      class_name     = lookup(ns, "class_name", null)
+      mem_limit      = lookup(ns, "mem_limit", null)
+      cpu_limit      = lookup(ns, "cpu_limit", null)
+      storage_policy = lookup(ns, "storage_policy", null)
     }
   }
-}
-
-
-data "vcfa_kubeconfig" "ns_kubeconfig" {
-  for_each = local.ns_deployments
-
-  project_name              = each.value.tenant_name
-  supervisor_namespace_name = each.value.ns_name
-}
-
-output "kubeconfigs" {
-  description = "Map of namespace name to kubeconfig details"
-  value = {
-    for key, config in data.vcfa_kubeconfig.ns_kubeconfig : key => {
-      host                     = config.host
-      token                    = config.token
-      insecure_skip_tls_verify = config.insecure_skip_tls_verify
-    }
-  }
-  sensitive = true
 }
 
 # Per-namespace bootstrap config consumed by the second Terraform run. This is

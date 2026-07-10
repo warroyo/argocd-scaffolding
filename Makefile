@@ -3,6 +3,10 @@ INFRA_DIR         := $(REPO_ROOT)/terraform/infra
 BOOTSTRAP_DIR     := $(REPO_ROOT)/terraform/bootstrap
 STATE_BACKEND_DIR := $(REPO_ROOT)/terraform/state-backend
 
+# Extra flags for `terraform apply`. Empty locally (interactive approval); CI
+# sets TF_APPLY_FLAGS=-auto-approve -input=false (there is no TTY to approve on).
+TF_APPLY_FLAGS ?=
+
 # Load a gitignored .env into EVERY recipe so all terraform roots — infra, bootstrap, AND
 # state-backend — see the same vcfa creds (tfvars only apply to their own dir, which is why
 # state-backend prompted for vars). Recipes run under bash, and bash auto-sources the file
@@ -24,9 +28,15 @@ export BACKEND_ENV := $(REPO_ROOT)/.kube-backend.env
 # which doesn't get BASH_ENV) — sources KUBE_NAMESPACE first.
 SRC_BACKEND := set -a; [ -f $(BACKEND_ENV) ] && . $(BACKEND_ENV); set +a;
 
-.PHONY: validate state-backend \
-        init-infra plan-infra apply-infra output-infra \
-        init-bootstrap refresh-infra-kubeconfigs plan-bootstrap apply-bootstrap \
+# Paths rendered by apply-infra that ArgoCD consumes from git. apply-bootstrap
+# refuses to run while these are dirty — otherwise the helm bootstrap succeeds
+# but ArgoCD syncs a main that lacks the new AppProjects / tenant-vars.
+GENERATED_PATHS := argocd/projects 'infrastructure/clusters/*/vars' \
+                   terraform/bootstrap/providers.tf terraform/bootstrap/main.tf
+
+.PHONY: validate state-backend check-generated-clean \
+        init-infra plan-infra apply-infra \
+        init-bootstrap plan-bootstrap apply-bootstrap \
         apply destroy-bootstrap destroy-infra destroy
 
 # All config generation now happens inside the infra Terraform run (local_file):
@@ -66,50 +76,49 @@ plan-infra: init-infra
 ## Provisions namespaces and renders all generated config (AppProjects,
 ## tenant-vars, and terraform/bootstrap/{providers,main}.tf). Commit the result.
 apply-infra: init-infra
-	terraform -chdir=$(INFRA_DIR) apply
-
-## Print the kubeconfigs output (sensitive — not shown in plain text by default).
-output-infra: init-infra
-	terraform -chdir=$(INFRA_DIR) output -json kubeconfigs
+	terraform -chdir=$(INFRA_DIR) apply $(TF_APPLY_FLAGS)
 
 # ── Bootstrap module ───────────────────────────────────────────────────────────
+
+# Bootstrap mints its own per-namespace tokens (data.vcfa_kubeconfig in
+# terraform/bootstrap/vcfa.tf), so there is no kubeconfigs shuttle from infra and
+# no refresh-only step — only the structural namespace_config output is passed.
 
 init-bootstrap: state-backend
 	terraform -chdir=$(BOOTSTRAP_DIR) init -reconfigure
 
-# The bootstrap helm providers authenticate with the per-namespace tokens carried in infra's
-# `kubeconfigs` output. vcfa kubeconfig tokens are short-lived, and `terraform output` reads
-# STATE ONLY — it does not re-read the data.vcfa_kubeconfig data sources — so the output serves
-# whatever token was captured at the last infra apply, which may be long expired. Re-read the
-# data sources into infra state first so every bootstrap recipe below gets a fresh token. This
-# is why `make apply` (which applies infra first) worked while a standalone `make apply-bootstrap`
-# authenticated with a stale token.
-refresh-infra-kubeconfigs: init-infra
-	terraform -chdir=$(INFRA_DIR) apply -refresh-only -auto-approve
+## Fail if apply-infra rendered files that aren't committed yet — ArgoCD reads git,
+## so bootstrapping ahead of the commit hands it stale config. Set
+## SKIP_GENERATED_CHECK=1 to override deliberately.
+check-generated-clean:
+	@if [ -z "$$SKIP_GENERATED_CHECK" ] && [ -n "$$(git status --porcelain -- $(GENERATED_PATHS))" ]; then \
+	  echo "error: generated files are uncommitted (rendered by apply-infra):" >&2; \
+	  git status --short -- $(GENERATED_PATHS) >&2; \
+	  echo "Commit them first (or set SKIP_GENERATED_CHECK=1)." >&2; \
+	  exit 1; \
+	fi
 
-plan-bootstrap: init-bootstrap refresh-infra-kubeconfigs
-	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
+plan-bootstrap: init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
-	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
+	@TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) plan
 
-apply-bootstrap: init-bootstrap refresh-infra-kubeconfigs
-	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
+apply-bootstrap: check-generated-clean init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
-	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
-	  terraform -chdir=$(BOOTSTRAP_DIR) apply
+	@TF_VAR_namespace_config='$(NS_CONFIG)' \
+	  terraform -chdir=$(BOOTSTRAP_DIR) apply $(TF_APPLY_FLAGS)
 
 # ── Combined ───────────────────────────────────────────────────────────────────
 
 ## Full apply: infra first (provisions + renders all generated files),
-## then bootstrap. Commit the files rendered by apply-infra before apply-bootstrap.
+## then bootstrap. Commit the files rendered by apply-infra before apply-bootstrap
+## (apply-bootstrap enforces this via check-generated-clean).
 apply: apply-infra apply-bootstrap
 
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).
-destroy-bootstrap: init-bootstrap refresh-infra-kubeconfigs
-	$(eval KUBECONFIGS := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json kubeconfigs))
+destroy-bootstrap: init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
-	@TF_VAR_kubeconfigs='$(KUBECONFIGS)' TF_VAR_namespace_config='$(NS_CONFIG)' \
+	@TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) destroy
 
 destroy-infra: init-infra
@@ -117,7 +126,8 @@ destroy-infra: init-infra
 
 ## Destroy bootstrap fully (helm releases) BEFORE infra (namespaces/projects).
 ## Uses sequential sub-makes so the order holds even under `make -j` — infra must
-## still exist while bootstrap is destroyed (bootstrap reads infra's kubeconfigs).
+## still exist while bootstrap is destroyed (bootstrap mints tokens against the
+## still-existing namespaces and reads infra's namespace_config output).
 destroy:
 	$(MAKE) destroy-bootstrap
 	$(MAKE) destroy-infra

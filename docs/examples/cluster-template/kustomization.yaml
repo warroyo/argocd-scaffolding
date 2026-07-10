@@ -12,9 +12,12 @@ resources:
 
 components:
 # --- Optional per-cluster features (deltas on top of the profile) ---
-# Istio (include both lines together):
+# Istio (include all three lines together — the envs/{env}/istio sub-component
+# pins the addon version for this cluster's environment; swap `dev` to match
+# the profile above):
 # - ../../../../components/istio
 # - ../../../../components/ako-istio
+# - ../../../../components/envs/dev/istio
 # Other add-ons:
 # - ../../../../components/cluster-autoscaling
 # - ../../../../components/ha-control-plane
@@ -24,12 +27,16 @@ components:
 # feature components), so it has to run after anything that adds resources.
 - ../../../../components/cluster-var-injector
 
-# Override anything inherited from the profile here (escape hatch), e.g. bump the
-# control-plane to 3 replicas for just this cluster:
+# Override anything inherited from the profile here (escape hatch — applies
+# after all components), e.g. canary a different Kubernetes version on just
+# this cluster, or bump the control plane:
 # patches:
 # - target:
 #     kind: Cluster
 #   patch: |-
+#     - op: replace
+#       path: /spec/topology/version
+#       value: v1.35.0---vmware.1-vkr.1
 #     - op: replace
 #       path: /spec/topology/controlPlane/replicas
 #       value: 3

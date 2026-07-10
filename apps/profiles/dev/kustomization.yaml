@@ -10,3 +10,6 @@ components:
 # Always-on baseline: package installer (carvel-sa + RBAC), package repo,
 # cert-manager.
 - ../../components/stacks/standard
+# Env overlay last: real dev values (package bundle image, baseline package
+# versions) over the placeholders carried in the bases.
+- ../../components/envs/dev

@@ -1,14 +1,23 @@
 terraform {
-  required_version = ">= 1.0"
+  # optional() object defaults in the modules need >= 1.3; the repo is developed
+  # against 1.9+.
+  required_version = ">= 1.9"
   required_providers {
     vcfa = {
-      source = "vmware/vcfa"
+      source  = "vmware/vcfa"
+      version = "~> 1.0"
     }
     kubernetes = {
-      source = "hashicorp/kubernetes"
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.24"
     }
     local = {
-      source = "hashicorp/local"
+      source  = "hashicorp/local"
+      version = "~> 2.5"
+    }
+    time = {
+      source  = "hashicorp/time"
+      version = "~> 0.12"
     }
   }
 }

@@ -14,8 +14,12 @@ spec:
         - 10.96.0.0/12
     serviceDomain: cluster.local
   topology:
-    class: builtin-generic-v3.5.0
-    version: v1.34.1---vmware.1-vkr.4
+    # Placeholders — the env overlay (infrastructure/components/envs/{env})
+    # supplies the real cluster class + Kubernetes version, so a version bump
+    # rolls out per environment (dev first, then prod) instead of fleet-wide.
+    # Per-cluster override: a `patches:` block in the cluster kustomization.
+    class: replace-me
+    version: replace-me
     variables:
       - name: vsphereOptions
         value:
@@ -36,7 +40,11 @@ spec:
       replicas: 1
       metadata:
         annotations:
-          run.tanzu.vmware.com/resolve-os-image: os-name=ubuntu, content-library=cl-a3b5e06b12f2737ca, os-version=24.04
+          # Placeholder — the env overlay (infrastructure/components/envs/{env})
+          # supplies the real resolve-os-image annotation (the content-library ID
+          # is environment-specific). A cluster that skips the overlay fails
+          # loudly (validate.sh greps rendered output for replace-me).
+          run.tanzu.vmware.com/resolve-os-image: replace-me
     workers:
       machineDeployments:
         - class: node-pool
@@ -44,7 +52,7 @@ spec:
           replicas: 1
           metadata:
             annotations:
-              run.tanzu.vmware.com/resolve-os-image: os-name=ubuntu, content-library=cl-a3b5e06b12f2737ca, os-version=24.04
+              run.tanzu.vmware.com/resolve-os-image: replace-me
           variables:
             overrides:
               - name: vmClass

@@ -1,6 +1,32 @@
 # ArgoCD Scaffolding Project
 
-This repository contains the infrastructure and application configuration for managing a multi-tenant Kubernetes environment using ArgoCD, Terraform, and Kustomize.
+A **reference architecture** for automating a multi-tenant Kubernetes (VKS)
+fleet on **VMware Cloud Foundation**: Terraform provisions tenants (projects,
+VPCs, supervisor namespaces) and bootstraps a GitOps control plane; ArgoCD
+ApplicationSets then provision clusters and applications declared as plain
+kustomize in this repo.
+
+The central problem it solves: VCF Automation generates supervisor-namespace
+names **at apply time** (`dev-1` → `dev-1-abcde`), so git can never declare
+deployment targets by name. The design keeps generated identity out of git
+entirely — logical identity lives in the directory layout, the generated names
+are captured as labels on the ArgoCD cluster registrations, and ApplicationSets
+join the two at sync time.
+
+```mermaid
+flowchart LR
+    tenants["tenants.yaml"] --> tf1["terraform/infra<br/>provision + render"]
+    tf1 --> git["git<br/>(rendered config committed)"]
+    tf1 --> tf2["terraform/bootstrap<br/>ArgoCD per namespace"]
+    tf2 --> argo["ArgoCD<br/>labels carry generated names"]
+    git --> argo
+    argo -- "label ⨯ directory join" --> fleet["VKS clusters + apps"]
+```
+
+**Read next:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — the full design,
+diagrams, and the *pattern vs lab* guide for adapting this to your environment ·
+[docs/DECISIONS.md](docs/DECISIONS.md) — why each big choice was made (problem → choice → trade-off) ·
+[docs/BACKLOG.md](docs/BACKLOG.md) — known limitations and planned work.
 
 ## Getting Started
 
@@ -8,7 +34,7 @@ This repository contains the infrastructure and application configuration for ma
 
 | Tool | Purpose |
 |------|---------|
-| `terraform` >= 1.0 | Provisions namespaces, renders generated files, bootstraps ArgoCD |
+| `terraform` >= 1.9 | Provisions namespaces, renders generated files, bootstraps ArgoCD |
 | `kustomize` | Local validation (`make validate`) — same version CI uses |
 | `make` | Orchestrates the two-phase Terraform workflow |
 | VCF Automation access | `vcfa_url`, `vcfa_org`, and an API refresh token |
@@ -27,11 +53,14 @@ Set these **before** running `make apply`. All sensitive values go via `TF_VAR_*
 | `region_name` | tfvars or `export TF_VAR_region_name=...` | Region used to name VPCs (`{tenant}-{region}-vpc`) |
 | `avi_enabled` | tfvars or `export TF_VAR_avi_enabled=false` | `true` (default) for AVI LB regions; `false` for NSX_LB regions — omits `loadBalancerVPCEndpoint` from VPC spec |
 
-**Required for `apply-bootstrap`** (`kubeconfigs` and `namespace_config` are passed automatically by the Makefile from infra outputs):
+**Required for `apply-bootstrap`** (`namespace_config` is passed automatically by the
+Makefile from the infra output; the same vcfa creds as `apply-infra` are needed too —
+bootstrap mints its own per-namespace tokens via `data.vcfa_kubeconfig`, so no
+kubeconfigs are shuttled between the runs and tokens are always fresh):
 
 | Variable | How to set | Description |
 |----------|-----------|-------------|
-| `repo_url` | `export TF_VAR_repo_url=https://github.com/your-org/argocd-scaffolding` | GitOps repo URL injected into the root ArgoCD Application; defaults to `https://github.com/warroyo/argocd-scaffolding` (same default as the Helm chart) — **set this before running terraform if you forked/moved the repo** |
+| `repo_url` | *(usually unset)* | GitOps repo URL for the root ArgoCD Application. Empty (default) reads `argocd/repo-config.yaml` — the same single source the ApplicationSets use — so a fork edits only that file. Set `TF_VAR_repo_url` only to deliberately diverge. |
 | `argo_password` | `export TF_VAR_argo_password=...` | ArgoCD admin password (bcrypt hash); optional, defaults to `""` |
 
 **Optional — enable AKO secret:**
@@ -75,36 +104,30 @@ work.) The helper re-reads the kubeconfig live each run, so the token is never s
 
 ### First-time Setup
 
-1. Clone this repo and `cd` into it.
-2. `cp .env.example .env` and fill in the values (vcfa creds + bootstrap secrets). The
-   Makefile auto-loads and exports `.env` to every terraform root, including the
-   `state-backend` helper — prefer this over per-root `terraform.tfvars`, which the
-   `state-backend` dir doesn't see (and would prompt for vcfa vars).
-3. **Bootstrap the Terraform state namespace** (one-time) — follow
-   [Backend Configuration](#backend-configuration): `vcf context use`, create the project +
-   state namespace, write the generated name into
-   `terraform/state-backend/namespace.auto.tfvars`, and commit it. Required before any
-   `make apply-*`, since `init` stores state in that namespace.
-4. Edit `terraform/infra/tenants.yaml` — add your infra tenant and at least one namespace with `deploy_argo: true`.
-5. Update `argocd/repo-config.yaml` with your GitOps repo URL.
-6. Run:
-   ```sh
-   make apply-infra
-   ```
-   `init` auto-runs `make state-backend` (renders `.kube-backend.config` + `.kube-backend.env`) and uses the Kubernetes
-   backend. This provisions namespaces and renders generated files (`argocd/projects/`,
-   `infrastructure/clusters/*/vars/`, `terraform/bootstrap/{providers,main}.tf`).
-7. Commit the rendered files.
-8. Run:
-   ```sh
-   make apply-bootstrap
-   ```
-   This deploys the ArgoCD Helm chart and root Application into each namespace with `deploy_argo: true`.
-9. Verify with `make validate` — build-tests every Kustomize entrypoint.
+**Follow [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md)** — the complete
+zero-to-app walkthrough (fresh VCF org → state backend → tenants → ArgoCD →
+first cluster → a tenant app running), with expected output at every step.
+
+The short version, for reference:
+
+1. Fork; set your repo URL in `argocd/repo-config.yaml`.
+2. One-time: create the Terraform state namespace and capture its generated
+   name (see [Backend Configuration](#backend-configuration)).
+3. `cp .env.example .env`, fill in the vcfa creds + bootstrap secrets — the
+   Makefile loads it into every terraform root.
+4. Declare tenants in `terraform/infra/tenants.yaml` (one `type: infra`
+   tenant with a `deploy_argo: true` namespace).
+5. `make apply-infra` → commit the rendered files → `make apply-bootstrap`.
+6. Add clusters by copying `docs/examples/cluster-template` and pushing —
+   ArgoCD picks them up by label join. `make validate` before every push.
 
 ---
 
 ## Overview
+
+> The full architecture — with diagrams, the decision model, and the seams
+> guide for swapping lab-specific pieces — is in
+> [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 The project follows a **GitOps** workflow where the entire state of the infrastructure and applications is defined in this repository. There are two distinct lifecycles:
 
@@ -123,8 +146,8 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 ## Directory Structure
 
 - `terraform/`
-  - `infra/`: Provisions vSphere supervisor namespaces, outputs kubeconfigs, and renders all generated config from `tenants.yaml` (`generate.tf` + `templates/*.tftpl`).
-  - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) merges secrets into the infra run's `namespace_config` output (which carries the suffixed namespace names + `gitops.platform/*` labels).
+  - `infra/`: Provisions vSphere supervisor namespaces and renders all generated config from `tenants.yaml` (`generate.tf` + `templates/*.tftpl`). Outputs `namespace_config` (suffixed namespace names + decision-model labels) for the bootstrap run.
+  - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) merges secrets into the infra run's `namespace_config` output (which carries the suffixed namespace names + `gitops.platform/*` labels). `vcfa.tf` mints a fresh per-namespace token for each helm provider on every run.
   - `state-namespace/`: Committed `Project` + `SupervisorNamespace` manifests for the Terraform state backend, applied once out-of-band (see [Backend Configuration](#backend-configuration)).
   - `state-backend/`: Stateless helper that pulls the state-namespace creds and renders the gitignored `.kube-backend.config` kubeconfig (host + token; each `backend.tf` sets `config_path` to it) and `.kube-backend.env` (`KUBE_NAMESPACE`, sourced by the Makefile) for the infra/bootstrap Kubernetes backends. `namespace.auto.tfvars` holds the captured namespace name.
   - `modules/bootstrap-helm/`: Terraform module wrapping the bootstrap Helm chart (single `config` object input).
@@ -136,20 +159,20 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `repo-config.yaml`: Single source of truth for the GitOps repo URL.
 - `infrastructure/`
   - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`). Bases carry `replace-me` placeholders for environment values.
-  - `components/`: Kustomize components for optional features and environment overlays (`envs/{env}` carries the real per-environment values).
+  - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`) pin optional features' versions and are included by the cluster alongside the feature.
   - `profiles/{env}/`: The inherited default set for an environment — bases + always-on components + the env overlay. Clusters reference a profile instead of enumerating everything.
   - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`.
 - `apps/`
   - `base/`: Base application manifests.
   - `components/stacks/`: Application stacks (e.g., `standard`, `observability`).
-  - `components/envs/{env}/`: Feature-scoped per-environment app tuning (e.g., `envs/dev/istio`), included only alongside the matching stack.
+  - `components/envs/{env}/`: Per-environment app values and version pins — the baseline (package-repo bundle, cert-manager version) is applied via the profile; feature-scoped sub-components (`envs/{env}/observability`) pin optional stacks' versions and are included by the cluster alongside the stack.
   - `profiles/{env}/`: The inherited default app stack for an environment.
 - `docs/examples/`
   - `cluster-template/`: Copy-me template for onboarding a new cluster.
   - `sample-tenant-repo/`: Example of what a tenant keeps in their **own** app repo (not deployed by this platform).
 - `.github/workflows/`
-  - `apply.yml`: On tenant changes, runs `make apply-infra` (provisions + renders generated files), commits them, then runs `make apply-bootstrap`.
-  - `validate.yml`: On PRs and pushes to `main`, runs `scripts/validate.sh` — the same build-test you run locally with `make validate` (renders every cluster (infra + apps) and the argocd root with kustomize, and checks each `cluster-details.yaml` matches its directory path).
+  - `apply.yml`: On pushes to `main` touching `terraform/**` or `charts/bootstrap-tenant/**`, runs `make apply-infra` (provisions + renders generated files), commits them (`git add -A`, so deletions of removed tenants are staged too), then runs `make apply-bootstrap`. Applies run with `TF_APPLY_FLAGS=-auto-approve -input=false` (no TTY in Actions).
+  - `validate.yml`: On PRs and pushes to `main`, runs `scripts/validate.sh` (see [Local Testing](#local-testing)) plus a terraform job (`fmt -check` and `validate` with `-backend=false` for each root).
 
 ## Local Testing
 
@@ -159,8 +182,18 @@ Before pushing, build-test every kustomize entrypoint the same way CI does:
 make validate        # or: ./scripts/validate.sh
 ```
 
-It renders the argocd root and every cluster (infra + `apps/`) with kustomize and verifies
-each `cluster-details.yaml` matches its directory path. Requires `kustomize` on your PATH.
+It renders the argocd root and every cluster (infra + `apps/`) with kustomize and checks:
+
+- each `cluster-details.yaml` matches its directory path;
+- no rendered output contains `replace-me` (i.e. no cluster skipped its
+  `components/envs/{env}` overlay);
+- cluster names are globally unique (ArgoCD registrations and the
+  `{{.name}}-apps` Applications are keyed by bare cluster name);
+- an `apps/` dir that declares a `vars` cluster_name (for the apps-side
+  injector) declares the directory's cluster name;
+- `docs/examples/cluster-template` still builds (via a temp copy at real depth).
+
+Requires `kustomize` on your PATH.
 
 ### Running the GitHub Actions workflows locally with `act`
 
@@ -187,7 +220,7 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
 ## Tenant Types
 
 - **`type: infra`** — The platform tenant that hosts the ArgoCD instance. Generates an unrestricted ArgoCD project (`namespaceResourceWhitelist: */*`). Only one infra tenant is supported, but it may have multiple namespaces each with `deploy_argo: true`. The `infra` project owns all cluster provisioning (ApplicationSets use `project: infra`).
-- **`type: tenant`** — Developer tenants. Each gets a dedicated ArgoCD project for deploying apps into their clusters. (The current template grants broad permissions; tightening `sourceRepos`/resource whitelists per tenant is a recommended follow-up.)
+- **`type: tenant`** — Developer tenants. Each gets a dedicated ArgoCD project for deploying apps into their clusters. The generated project denies the in-cluster and supervisor-namespace destinations, whitelists only `Namespace` as a cluster-scoped kind (for `CreateNamespace=true`), and allows all namespaced kinds. `sourceRepos` defaults open (tenant repos aren't known at render time) — scope it per tenant with `source_repos: [...]` in `tenants.yaml`. Note: tenants are **not** isolated from each other's workload clusters (cluster names carry no tenant prefix to match on; see `docs/BACKLOG.md`).
 
 ## Workflows
 
@@ -200,9 +233,15 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
    - provisions the supervisor namespace(s), and
    - renders `argocd/projects/{tenant}.yaml`, the projects kustomization,
      `infrastructure/clusters/{tenant}/vars/{tenant-vars,kustomization}.yaml`
-     (with the auto-generated `tenant_uuid`, `vpc_name`, `argo_namespace`), and
-     `terraform/bootstrap/{providers,main}.tf`.
+     (with the auto-generated `tenant_uuid`, `vpc_name`, `nsxt_t1_path`,
+     `argo_namespace`), and `terraform/bootstrap/{providers,main}.tf`.
 3. Commit those generated files; then bootstrap deploys the Helm chart and ArgoCD.
+   (`make apply-bootstrap` refuses to run while rendered files are uncommitted —
+   ArgoCD reads git, so bootstrapping ahead of the commit would hand it stale
+   config. Override with `SKIP_GENERATED_CHECK=1` if you know what you're doing.)
+   The root Application auto-syncs (prune + selfHeal), so later commits to
+   `argocd/` reconcile without a manual sync — set `rootApp.autoSync: false` in
+   the chart values to gate that by hand.
 
 ### 2. Provisioning a New Cluster
 
@@ -218,8 +257,12 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
 3. Set the environment by referencing the right profile (`profiles/{env}`) in
    both `kustomization.yaml` and `apps/kustomization.yaml`. Add only the optional
    feature components / app stacks this cluster needs, and any override patches —
-   everything else is inherited from the profile. Keep `cluster-var-injector`
-   **last** in the infra component list.
+   everything else is inherited from the profile. An optional feature travels
+   with its `envs/{env}` sub-component (e.g. `istio` + `ako-istio` +
+   `envs/dev/istio`; `stacks/observability` + `envs/dev/observability`) — the
+   sub-component pins the feature's version for the environment, and forgetting
+   it fails validation (`replace-me` in rendered output). Keep
+   `cluster-var-injector` **last** in the infra component list.
 4. Commit. The `cluster-provisioning` ApplicationSet joins the directory to its
    supervisor namespace by label (`gitops.platform/project` +
    `gitops.platform/namespace-ref`) and provisions it. The vcfa-generated
@@ -251,12 +294,28 @@ Because everything resolves through plain Kustomize, `kustomize build <cluster-d
 reproduces exactly what ArgoCD deploys — env selection is an explicit profile
 reference, never injected at sync time.
 
+### Version management (staged rollouts)
+
+No version is pinned in a shared base — bases carry `replace-me` placeholders and
+`validate.sh` rejects any rendered output still containing one, so a missed overlay
+fails at PR time instead of deploying a placeholder. Versions live in three layers:
+
+| Layer | What it pins | Where |
+|-------|--------------|-------|
+| Env (always-on) | cluster class, Kubernetes version, AKO addon; package bundle + baseline packages | `infrastructure/components/envs/{env}`, `apps/components/envs/{env}` (applied via the profiles) |
+| Env (optional feature) | istio addon; observability packages | `infrastructure/components/envs/{env}/istio`, `apps/components/envs/{env}/observability` — the cluster includes these alongside the feature/stack |
+| Per-cluster override | anything, e.g. a canary Kubernetes version | `patches:` block in the cluster `kustomization.yaml` (applies after all components) |
+
+To roll a version: bump it in `envs/dev`, let dev soak, then mirror the change in
+`envs/prod`. To canary one cluster first, add a `patches:` override to just that
+cluster and remove it once the env-wide pin catches up.
+
 ## AKO Configuration
 
 AKO is configured as a modular Kustomize component.
 
 - **Base**: `infrastructure/base/ako` defines `AddonConfig` and `AddonInstall` with `replace-me` placeholders for environment values.
-- **Variable injection**: `cluster-var-injector` injects `cluster_name`/`project` (from `cluster-details.yaml`) and `tenant_uuid`/`vpc_name`/`argo_namespace` (from `tenant-vars.yaml`). It must run **last** so it rewrites resources pulled in by the profile and the feature components.
+- **Variable injection**: `cluster-var-injector` injects `cluster_name`/`project` (from `cluster-details.yaml`) and `tenant_uuid`/`nsxt_t1_path`/`argo_namespace` (from `tenant-vars.yaml`). It must run **last** so it rewrites resources pulled in by the profile and the feature components. The apps tree has its own smaller injector (`apps/components/cluster-var-injector`) fed by a per-cluster `vars` configMapGenerator (kustomize load restrictions keep `apps/` from reading `../cluster-details.yaml`); it makes `apps/base/istio-ako-patch` reusable across clusters.
 - **Environment overlays**: `infrastructure/components/envs/{env}` owns the real `controllerHost`/`cloudName` values and is applied via the profile, so a cluster that skips it fails loudly instead of running on stale defaults.
 - **Istio integration**: `infrastructure/components/ako-istio` enables Istio support (include `istio` + `ako-istio` in the cluster `kustomization.yaml`).
 
@@ -289,7 +348,8 @@ into `infrastructure/clusters/{tenant}/vars/tenant-vars.yaml`:
 | Value | Source |
 |-------|--------|
 | `tenant_uuid` | K8s UID of the vSphere Project CRD |
-| `vpc_name` | `{tenant}-{region}-vpc` |
+| `vpc_name` | the vpc module's output (`{tenant}-{region}-vpc`) |
+| `nsxt_t1_path` | full NSX T1 path (`/orgs/default/projects/{uuid}/vpcs/{vpc}`), consumed verbatim by AKO's `nsxtT1LR` |
 | `argo_namespace` | vSphere-generated infra namespace ID |
 
 The supervisor namespace's own suffixed name is **not** written to git — it is carried
@@ -299,4 +359,6 @@ as the `gitops.platform/namespace` cluster label and consumed at sync time.
 
 The GitOps repo URL is defined in one place: `argocd/repo-config.yaml`. Kustomize replacements inject it into all ApplicationSets at apply time. When forking or moving this repo, update only that file.
 
-For the bootstrap Helm chart, set `TF_VAR_repo_url` **before** running `make apply-bootstrap` (defaults to `https://github.com/warroyo/argocd-scaffolding`, same as `charts/bootstrap-tenant/values.yaml`'s `repoURL` — both must be updated together when forking).
+The bootstrap run reads the same file for the root ArgoCD Application's `repoURL`
+(`terraform/bootstrap/locals.tf` yamldecodes it), so no second edit is needed when
+forking. `TF_VAR_repo_url` exists only as a deliberate override.

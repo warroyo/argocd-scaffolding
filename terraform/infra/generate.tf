@@ -32,19 +32,26 @@ locals {
     }
   ]
 
-  # Decision-model invariant: (project, namespace_ref) must be globally unique.
-  all_ns_refs = [for k, ns in local.ns_deployments : "${ns.tenant_name}/${ns.ns_name}"]
+  # Decision-model invariant: (project, namespace_ref) must be unique. The yaml
+  # decode already rejects duplicate namespace names within one tenant, but the
+  # ns_deployments merge() would silently collapse a cross-tenant key collision
+  # (keys are "<tenant>-<ref>", so tenant "a-b"/ref "c" collides with "a"/"b-c").
+  total_namespaces = sum([for t in values(local.tenant_map) : length(lookup(t, "namespaces", []))])
 }
 
 resource "terraform_data" "validate_namespace_refs" {
   lifecycle {
     precondition {
-      condition     = length(local.all_ns_refs) == length(distinct(local.all_ns_refs))
-      error_message = "Each (project, namespace_ref) must be unique across tenants.yaml — duplicate found."
+      condition     = length(local.ns_deployments) == local.total_namespaces
+      error_message = "Namespace deployment keys collided — a '<tenant>-<namespace_ref>' key is not unique across tenants.yaml."
     }
     precondition {
       condition     = local.infra_count == 1
       error_message = "Exactly one tenant of type 'infra' is required. Found: ${local.infra_count}."
+    }
+    precondition {
+      condition     = alltrue([for ns in values(local.ns_deployments) : ns.argo_namespace != null])
+      error_message = "Every tenant's argo_namespace must name a namespace on the infra tenant that has deploy_argo: true. Check argo_namespace in tenants.yaml."
     }
   }
 }
@@ -57,6 +64,9 @@ resource "local_file" "appproject" {
   content = templatefile("${path.module}/templates/appproject.yaml.tftpl", {
     name = local.project_names[each.key]
     type = lookup(each.value, "type", "tenant")
+    # Optional per-tenant allow-list of git repos (tenants.yaml `source_repos`).
+    # Defaults open because tenant repos are not known at render time.
+    source_repos = lookup(each.value, "source_repos", ["*"])
   })
 }
 
@@ -73,8 +83,12 @@ resource "local_file" "tenant_vars" {
   for_each = local.tenant_map
   filename = "${path.module}/../../infrastructure/clusters/${each.key}/vars/tenant-vars.yaml"
   content = templatefile("${path.module}/templates/tenant-vars.yaml.tftpl", {
-    tenant_uuid    = module.tenant[each.key].project_id
-    vpc_name       = "${each.key}-${var.region_name}-vpc"
+    tenant_uuid = module.tenant[each.key].project_id
+    # From the vpc module's output — the naming convention lives only there.
+    vpc_name = module.tenant[each.key].vpc_name
+    # Full NSX T1 path consumed verbatim by AKO's nsxtT1LR (the kustomize
+    # injector no longer splices path segments). "default" is the NSX org.
+    nsxt_t1_path   = "/orgs/default/projects/${module.tenant[each.key].project_id}/vpcs/${module.tenant[each.key].vpc_name}"
     argo_namespace = local.tenant_argo_namespace[each.key]
   })
 }

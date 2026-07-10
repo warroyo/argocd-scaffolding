@@ -1,11 +1,17 @@
-variable "kubeconfigs" {
-  type = map(object({
-    host                     = string
-    token                    = string
-    insecure_skip_tls_verify = bool
-  }))
-  description = "Map of namespace key to kubeconfig — output of the infra module. Passed automatically by the Makefile."
+variable "vcfa_refresh_token" {
+  type        = string
+  description = "The VCF Automation refresh token — used to mint per-namespace kubeconfig tokens (vcfa.tf)."
   sensitive   = true
+}
+
+variable "vcfa_url" {
+  type        = string
+  description = "The VCF Automation url"
+}
+
+variable "vcfa_org" {
+  type        = string
+  description = "The VCF Automation org"
 }
 
 variable "namespace_config" {
@@ -21,8 +27,8 @@ variable "namespace_config" {
 
 variable "repo_url" {
   type        = string
-  description = "URL of the GitOps repo — used as repoURL in the root ArgoCD Application. Set via TF_VAR_repo_url before running terraform if forking/moving this repo."
-  default     = "https://github.com/warroyo/argocd-scaffolding"
+  description = "URL of the GitOps repo — used as repoURL in the root ArgoCD Application. Empty (the default) reads argocd/repo-config.yaml, the same source the ApplicationSets use, so a fork only edits that one file. Set TF_VAR_repo_url only to deliberately diverge."
+  default     = ""
 }
 
 variable "argo_password" {
