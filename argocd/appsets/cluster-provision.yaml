@@ -29,7 +29,7 @@ spec:
                 - path: infrastructure/clusters/{{.values.project}}/{{.values.namespaceRef}}/*/cluster-details.yaml
   template:
     metadata:
-      name: '{{.values.project}}-{{.cluster_name}}-provision'
+      name: '{{.values.project}}-{{.name}}-provision'
       finalizers:
       - resources-finalizer.argocd.argoproj.io
       labels:
