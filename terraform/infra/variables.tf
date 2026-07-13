@@ -23,3 +23,9 @@ variable "avi_enabled" {
   description = "Whether the region uses AVI as its load balancer. Set false for NSX_LB regions."
   default     = false
 }
+
+variable "seg_name" {
+  type        = string
+  description = "Service Engine Group associated with each Supervisor Namespace. Required when avi_enabled is true (NSX_REGISTERED_AVI LB regions); leave null for NSX_LB regions."
+  default     = null
+}

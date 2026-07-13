@@ -37,7 +37,11 @@ GENERATED_PATHS := argocd/projects 'infrastructure/clusters/*/vars' \
 .PHONY: validate state-backend check-generated-clean \
         init-infra plan-infra apply-infra \
         init-bootstrap plan-bootstrap apply-bootstrap \
-        apply destroy-bootstrap destroy-infra destroy
+        apply destroy-apps destroy-bootstrap destroy-infra destroy \
+        shell
+
+# ROOT=<infra|bootstrap> → the terraform dir, for the `shell` helper.
+TF_ROOT_DIR := $(if $(filter infra,$(ROOT)),$(INFRA_DIR),$(if $(filter bootstrap,$(ROOT)),$(BOOTSTRAP_DIR),))
 
 # All config generation now happens inside the infra Terraform run (local_file):
 # ArgoCD AppProjects, the tenant-vars handoff, and the bootstrap providers/main.tf
@@ -117,17 +121,71 @@ apply: apply-infra apply-bootstrap
 
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).
 destroy-bootstrap: init-bootstrap
-	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
+	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config 2>/dev/null))
+	@if [ -z '$(NS_CONFIG)' ]; then \
+	  echo "error: infra output 'namespace_config' is empty or absent." >&2; \
+	  echo "  Infra state carries no outputs — infra was never fully applied (a partial" >&2; \
+	  echo "  apply-infra leaves no outputs) or is already destroyed." >&2; \
+	  echo "  Bootstrap destroy needs it to auth its per-namespace providers, so it cannot run." >&2; \
+	  echo "  If nothing was bootstrapped, skip this step: make destroy-infra" >&2; \
+	  echo "  If bootstrap state is orphaned, clear it directly: terraform -chdir=$(BOOTSTRAP_DIR) state list" >&2; \
+	  exit 1; \
+	fi
 	@TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) destroy
 
 destroy-infra: init-infra
 	terraform -chdir=$(INFRA_DIR) destroy
 
-## Destroy bootstrap fully (helm releases) BEFORE infra (namespaces/projects).
-## Uses sequential sub-makes so the order holds even under `make -j` — infra must
-## still exist while bootstrap is destroyed (bootstrap mints tokens against the
-## still-existing namespaces and reads infra's namespace_config output).
+## Delete ArgoCD-managed ApplicationSets + Applications and let their finalizers
+## cascade (removing the VKS workload clusters) BEFORE ArgoCD is torn down. Those
+## Applications are appset-generated (not helm-owned), so destroy-bootstrap alone
+## orphans them and leaks clusters. Talks to the vcfa supervisor (where ArgoCD runs)
+## via a throwaway kubeconfig built from bootstrap's argo_endpoints output — no ambient
+## kubectl context needed. `apply -refresh-only` first re-reads the vcfa data source so
+## the short-lived tokens are fresh. Requires kubectl + jq. Only deploy_argo namespaces.
+destroy-apps: init-bootstrap
+	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config 2>/dev/null))
+	@if [ -z '$(NS_CONFIG)' ]; then echo "warn: infra namespace_config empty — nothing to clean, skipping." >&2; exit 0; fi
+	@echo "refreshing ArgoCD-namespace tokens..."
+	@TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) apply -refresh-only -auto-approve >/dev/null
+	@umask 077; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	  eps=$$(TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) output -json argo_endpoints); \
+	  if [ "$$(jq 'length' <<<"$$eps")" = 0 ]; then echo "no deploy_argo namespaces — nothing to clean."; exit 0; fi; \
+	  jq -c 'to_entries[]' <<<"$$eps" | while read -r e; do \
+	    ns=$$(jq -r '.key' <<<"$$e"); kc="$$tmp/$$ns"; \
+	    jq -r '.value | "apiVersion: v1\nkind: Config\nclusters:\n- name: a\n  cluster:\n    server: \(.host)\n    insecure-skip-tls-verify: \(.insecure)\nusers:\n- name: a\n  user:\n    token: \(.token)\ncontexts:\n- name: a\n  context:\n    cluster: a\n    user: a\n    namespace: \(.namespace)\ncurrent-context: a"' <<<"$$e" > "$$kc"; \
+	    echo "== $$ns: deleting ApplicationSets + Applications (cascades cluster deletion; up to 25m) =="; \
+	    kubectl --kubeconfig="$$kc" delete applicationset --all --ignore-not-found || true; \
+	    kubectl --kubeconfig="$$kc" delete application    --all --ignore-not-found --wait --timeout=25m || true; \
+	  done
+
+## Full teardown in the correct order: (1) drain ArgoCD-managed apps so clusters
+## cascade-delete while ArgoCD lives, (2) destroy bootstrap (helm/ArgoCD), (3) destroy
+## infra (namespaces/projects). Sequential sub-makes so the order holds even under
+## `make -j` — infra must still exist while bootstrap is destroyed (bootstrap mints
+## tokens against the still-existing namespaces and reads infra's namespace_config).
 destroy:
+	$(MAKE) destroy-apps
 	$(MAKE) destroy-bootstrap
 	$(MAKE) destroy-infra
+
+# ── Terraform shell (state surgery / escape hatch) ───────────────────────────────
+
+## Drop into a subshell primed for a terraform root: fresh backend creds, -reconfigure
+## init, cd'd into the root dir, and (bootstrap only) TF_VAR_namespace_config exported.
+## Then run terraform directly with your shell's OWN quoting — no make quoting layer,
+## so bracketed addresses just work:
+##   terraform state list
+##   terraform state rm 'module.tenant["tenant-1"].module.svns["dev-1"].vcfa_supervisor_namespace.supervisor_namespace'
+## `exit` to leave. Usage: make shell ROOT=<infra|bootstrap>
+shell: state-backend
+	@if [ -z '$(TF_ROOT_DIR)' ]; then echo "usage: make shell ROOT=<infra|bootstrap>" >&2; exit 1; fi
+	@terraform -chdir=$(TF_ROOT_DIR) init -reconfigure >/dev/null
+	@cd $(TF_ROOT_DIR); \
+	  if [ '$(ROOT)' = 'bootstrap' ]; then \
+	    export TF_VAR_namespace_config="$$($(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config 2>/dev/null)"; \
+	    [ -z "$$TF_VAR_namespace_config" ] && echo "warn: infra namespace_config empty — state subcommands work; plan/apply/destroy won't" >&2; \
+	  fi; \
+	  echo "primed terraform shell → $(ROOT) ($(TF_ROOT_DIR)); run terraform directly, 'exit' to leave"; \
+	  exec $${SHELL:-bash}

@@ -22,12 +22,6 @@ locals {
 
       repo_url      = local.repo_url
       argo_password = var.argo_password
-      ako = {
-        enabled  = var.ako_secret_enabled
-        username = var.ako_username
-        password = var.ako_password
-        ca_data  = var.ako_ca_data
-      }
     }
   }
 }

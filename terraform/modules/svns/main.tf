@@ -5,6 +5,7 @@ resource "vcfa_supervisor_namespace" "supervisor_namespace" {
   description  = "Supervisor Namespace with prefix created by Terraform"
   region_name  = var.region_name
   vpc_name     = var.vpc_name
+  seg_name     = var.seg_name
 
   storage_classes_class_config_overrides {
     limit = var.storage_limit

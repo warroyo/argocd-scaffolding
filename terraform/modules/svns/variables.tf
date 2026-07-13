@@ -17,6 +17,11 @@ variable "name" {
   type = string
 }
 
+variable "seg_name" {
+  type    = string
+  default = null
+}
+
 variable "storage_limit" {
   type = string
 }

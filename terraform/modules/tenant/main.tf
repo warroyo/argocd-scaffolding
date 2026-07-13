@@ -19,6 +19,7 @@ module "svns" {
   region_name    = var.region_name
   vpc_name       = module.vpc.vpc_name
   name           = each.value.name
+  seg_name       = var.seg_name
   storage_limit  = each.value.storage_limit
   class_name     = each.value.class_name
   mem_limit      = each.value.mem_limit

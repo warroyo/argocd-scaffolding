@@ -28,9 +28,8 @@ improvement · **P3** = nice-to-have / hygiene.
 ### P1 — Rotate and externalize credentials
 - **What:** `infrastructure/base/ako/ako.yaml` commits a real AVI
   username/password/CA (base64) and ships it to every cluster as
-  `cluster-avi-secret`. The supervisor-side secret is already Terraform-fed
-  (`charts/bootstrap-tenant` → `istio-ako-avi-secret`); the workload-side secret
-  needs the same treatment (or an external-secrets pattern).
+  `cluster-avi-secret`. This workload-side secret should move to
+  Terraform/external-secrets instead of git.
 - **Action:** Rotate the leaked credentials (they are in git history), then wire the
   workload secret through Terraform/external-secrets instead of git.
 - **Owner note:** Intentionally left untouched on request.

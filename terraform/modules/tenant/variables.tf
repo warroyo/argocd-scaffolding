@@ -30,6 +30,12 @@ variable "avi_enabled" {
   default     = false
 }
 
+variable "seg_name" {
+  type        = string
+  description = "Service Engine Group associated with each Supervisor Namespace. Required when avi_enabled is true."
+  default     = null
+}
+
 variable "vpc_connectivity_profile_name" {
   type        = string
   description = "Name of the VPCConnectivityProfile to attach the tenant VPC to. If unset, the default profile for region_name is looked up via a data source."

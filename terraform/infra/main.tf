@@ -55,6 +55,7 @@ module "tenant" {
   source                        = "../modules/tenant"
   region_name                   = var.region_name
   avi_enabled                   = var.avi_enabled
+  seg_name                      = var.seg_name
   project_name                  = each.value.name
   vpc_connectivity_profile_name = lookup(each.value, "vpc_connectivity_profile_name", null)
   vpc_private_cidr              = lookup(each.value, "vpc_private_cidr", null)

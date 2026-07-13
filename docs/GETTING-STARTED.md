@@ -32,8 +32,9 @@ don't need either to finish this.
 - the **region name**, a **zone name** in it, and a **storage policy** name —
   these vary per install and there are no safe defaults
 - whether that region's **load balancer is AVI/NSX-ALB or NSX_LB** — this sets
-  `TF_VAR_avi_enabled` (and, for AVI, the AKO secret + credentials). Getting it
-  wrong fails `apply-infra` at VPC creation. Ask your provider admin if unsure.
+  `TF_VAR_avi_enabled` (and, for AVI, a **Service Engine Group** name for
+  `TF_VAR_seg_name`). Getting it wrong fails `apply-infra` at VPC creation. Ask
+  your provider admin if unsure.
 
 **A fork of this repo.** GitOps means ArgoCD pulls from git, so you need a
 repo you can push to:
@@ -98,9 +99,10 @@ Makefile loads `.env` into every Terraform run — no per-directory tfvars
 needed.
 
 **Set your load-balancer mode.** `.env` defaults to `TF_VAR_avi_enabled=false`
-(NSX_LB). If your region uses **AVI/NSX-ALB**, set `TF_VAR_avi_enabled=true`,
-`TF_VAR_ako_secret_enabled=true`, and fill the base64 `TF_VAR_ako_*` creds — a
-mismatch fails `apply-infra` at VPC creation.
+(NSX_LB). If your region uses **AVI/NSX-ALB**, set `TF_VAR_avi_enabled=true` and
+uncomment `TF_VAR_seg_name` with your Service Engine Group — a mismatch fails
+`apply-infra` at VPC creation. For NSX_LB, leave `TF_VAR_seg_name` commented (it
+must stay unset, not empty).
 
 For the ArgoCD admin password, the chart expects a **bcrypt hash**, not the
 plain password:
@@ -357,13 +359,11 @@ catalog-7d9b…               1/1     Running   0          1m
   mirror to prod — see the README's *Version management* section.
 - **Change every dev cluster at once:** edit `infrastructure/profiles/dev`.
 
-Two warnings before you experiment freely:
+One warning before you experiment freely:
 
 - **Deletion is live.** Deleting — or *renaming* — a cluster directory
   deletes the actual cluster (a rename is a delete + recreate to ArgoCD).
   Guardrails are tracked in [BACKLOG.md](BACKLOG.md).
-- The example AVI credentials in `infrastructure/base/ako/ako.yaml` are lab
-  placeholders to replace with your own secret handling before any real use.
 
 Where to go next: [ARCHITECTURE.md](ARCHITECTURE.md) for how it all fits
 together (including what to swap for your environment — *Pattern vs lab*),

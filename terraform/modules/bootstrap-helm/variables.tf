@@ -8,11 +8,5 @@ variable "config" {
     cluster_labels = map(string)
     repo_url       = string
     argo_password  = string
-    ako = object({
-      enabled  = bool
-      username = string
-      password = string
-      ca_data  = string
-    })
   })
 }

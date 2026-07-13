@@ -83,12 +83,6 @@ resource "local_file" "tenant_vars" {
   for_each = local.tenant_map
   filename = "${path.module}/../../infrastructure/clusters/${each.key}/vars/tenant-vars.yaml"
   content = templatefile("${path.module}/templates/tenant-vars.yaml.tftpl", {
-    tenant_uuid = module.tenant[each.key].project_id
-    # From the vpc module's output — the naming convention lives only there.
-    vpc_name = module.tenant[each.key].vpc_name
-    # Full NSX T1 path consumed verbatim by AKO's nsxtT1LR (the kustomize
-    # injector no longer splices path segments). "default" is the NSX org.
-    nsxt_t1_path   = "/orgs/default/projects/${module.tenant[each.key].project_id}/vpcs/${module.tenant[each.key].vpc_name}"
     argo_namespace = local.tenant_argo_namespace[each.key]
   })
 }

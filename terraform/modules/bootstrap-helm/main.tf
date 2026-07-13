@@ -32,13 +32,6 @@ resource "helm_release" "bootstrap" {
       rootApp = {
         repoURL = var.config.repo_url
       }
-
-      akoSecret = {
-        enabled                  = var.config.ako.enabled
-        username                 = var.config.ako.username
-        password                 = var.config.ako.password
-        certificateAuthorityData = var.config.ako.ca_data
-      }
     })
   ]
 }

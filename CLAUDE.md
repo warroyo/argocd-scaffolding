@@ -27,7 +27,7 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 |------|------------------------|
 | `argocd/projects/*.yaml` | `terraform/infra` → `templates/appproject.yaml.tftpl` |
 | `argocd/projects/kustomization.yaml` | `terraform/infra` → `templates/projects-kustomization.yaml.tftpl` |
-| `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (needs state: `tenant_uuid`, `vpc_name`, `nsxt_t1_path`, `argo_namespace`) |
+| `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (needs state: `argo_namespace`) |
 | `infrastructure/clusters/*/vars/kustomization.yaml` | `terraform/infra` → `templates/vars-kustomization.yaml.tftpl` |
 | `terraform/bootstrap/providers.tf` | `terraform/infra` → `templates/bootstrap-providers.tf.tftpl` |
 | `terraform/bootstrap/main.tf` | `terraform/infra` → `templates/bootstrap-main.tf.tftpl` |
@@ -47,7 +47,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | The inherited default set per environment (bases + always-on components + env overlay). Edit to change every cluster in an environment at once. |
 | `infrastructure/components/envs/{env}/`, `apps/components/envs/{env}/` | Real per-environment values AND version pins (bases hold only `replace-me` placeholders). Always-on versions (cluster class, k8s, AKO; package bundle/baseline) apply via the profiles; optional-feature versions live in feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/observability`) that clusters include alongside the feature. Per-cluster canary: `patches:` in the cluster kustomization. |
 | `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
-| `terraform/bootstrap/locals.tf` | Merges secrets (argo_password, AKO) into the per-namespace config from the infra run's `namespace_config` output; repo_url defaults from `argocd/repo-config.yaml`. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. Per-namespace helm tokens are minted fresh by `terraform/bootstrap/vcfa.tf` (no kubeconfigs shuttle). |
+| `terraform/bootstrap/locals.tf` | Merges secrets (argo_password) into the per-namespace config from the infra run's `namespace_config` output; repo_url defaults from `argocd/repo-config.yaml`. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. Per-namespace helm tokens are minted fresh by `terraform/bootstrap/vcfa.tf` (no kubeconfigs shuttle). |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
 | `docs/examples/cluster-template/` | Copy-me template for a new cluster |
 | `terraform/state-namespace/{project,state-namespace}.yaml` | CCI `Project` + `SupervisorNamespace` CRs for the Terraform-state backend. Applied once out-of-band with `kubectl` (README → Backend Configuration explains the design; the commands live in `docs/GETTING-STARTED.md` Part 1). |

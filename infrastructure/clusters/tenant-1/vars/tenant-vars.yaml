@@ -8,7 +8,4 @@ metadata:
   annotations:
     config.kubernetes.io/local-config: "true"
 data:
-  tenant_uuid: "7e46d0ea-c848-4b9a-9fce-274540b1bae6"
-  vpc_name: "tenant-1-gpu-mgmt-vpc"
-  nsxt_t1_path: "/orgs/default/projects/7e46d0ea-c848-4b9a-9fce-274540b1bae6/vpcs/tenant-1-gpu-mgmt-vpc"
-  argo_namespace: "infra-qdkw2"
+  argo_namespace: "infra-9lg5w"
