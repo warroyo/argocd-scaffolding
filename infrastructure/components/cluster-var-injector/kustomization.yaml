@@ -22,11 +22,11 @@ replacements:
         fieldPaths:
         - metadata.name
 
-      - select:
-          kind: AddonConfig
-          labelSelector: "app.kubernetes.io/name=ako"
-        fieldPaths:
-        - spec.values.AKOSettings.clusterName
+      # - select:
+      #     kind: AddonConfig
+      #     labelSelector: "app.kubernetes.io/name=ako"
+      #   fieldPaths:
+      #   - spec.values.AKOSettings.clusterName
 
       - select:
           kind: AddonInstall
@@ -34,30 +34,7 @@ replacements:
         fieldPaths:
         - spec.clusters.0.selector.matchLabels.[cluster.x-k8s.io/cluster-name]
 
-  # ── Tenant identity (from the terraform-rendered tenant-vars ConfigMap) ─────
-  - source:
-      kind: ConfigMap
-      name: tenant-vars
-      fieldPath: data.tenant_uuid
-    targets:
-      - select:
-          kind: AddonConfig
-          labelSelector: "app.kubernetes.io/name=ako"
-        fieldPaths:
-        - spec.values.ControllerSettings.tenantName
 
-  # Full T1 path rendered by terraform (no delimiter splicing — the base holds a
-  # single replace-me placeholder).
-  - source:
-      kind: ConfigMap
-      name: tenant-vars
-      fieldPath: data.nsxt_t1_path
-    targets:
-      - select:
-          kind: AddonConfig
-          labelSelector: "app.kubernetes.io/name=ako"
-        fieldPaths:
-        - spec.values.NetworkSettings.nsxtT1LR
 
   # ── ArgoCluster registration (decision-model join keys) ─────────────────────
   - source:
