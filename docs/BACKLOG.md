@@ -106,18 +106,17 @@ improvement · **P3** = nice-to-have / hygiene.
   changes), or per-tenant destination labels.
 - **Size:** M.
 
-### P2 — Bring cluster policy APIs under gitops
-- **What:** VKS/supervisor cluster policy APIs (e.g. policy CRs applied to
-  workload clusters or supervisor namespaces) are not represented in the repo
-  at all — any policies are applied out-of-band, invisible to review and drift
-  detection.
-- **Action:** decide where policy CRs live in the tree (a
-  `infrastructure/base/` + `components/` pair like other addons if they're
-  per-cluster, or the profile layer if they're env-wide defaults), wire them
-  through the existing ApplicationSets, and add a starter policy set. Check
-  which policy APIs the supervisor exposes and whether they apply at the
-  supervisor-namespace or workload-cluster destination — that determines
-  which appset carries them.
+### P2 — Bring cluster policy APIs under gitops (via Terraform)
+- **What:** cluster policy APIs are not represented in the repo at all — any
+  policies are applied out-of-band, invisible to review and drift detection.
+  Constraint: cluster policy has to be managed through Terraform, so it cannot
+  ride the kustomize tree / ApplicationSets like other addons.
+- **Action:** model policies in `terraform/infra` — decide the input surface
+  (per-tenant/per-namespace fields in `tenants.yaml` vs a dedicated policy
+  vars file), add the policy resources to the infra run, and document the
+  workflow (edit tenants.yaml → `make apply`, same as adding a tenant).
+  Terraform ownership also means the scheduled-`terraform plan` drift idea
+  under "Failure visibility" would cover policy drift.
 - **Size:** M.
 
 ### P2 — Document the addon-addition workflow
