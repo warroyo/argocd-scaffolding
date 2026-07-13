@@ -209,8 +209,8 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`.
 - `apps/`
   - `base/`: Base application manifests.
-  - `components/stacks/`: Application stacks (e.g., `standard`, `observability`).
-  - `components/envs/{env}/`: Per-environment app values and version pins — the baseline (package-repo bundle, cert-manager version) is applied via the profile; feature-scoped sub-components (`envs/{env}/observability`) pin optional stacks' versions and are included by the cluster alongside the stack.
+  - `components/stacks/`: Application stacks (e.g., `standard`).
+  - `components/envs/{env}/`: Per-environment app values and version pins — the baseline (package-repo bundle, cert-manager version) is applied via the profile. (Observability is no longer an app stack; VKS 9.1+ delivers it by default via the `automated-monitoring` addon label on the base Cluster — opt out per-cluster with `infrastructure/components/disable-observability`.)
   - `profiles/{env}/`: The inherited default app stack for an environment.
 - `docs/examples/`
   - `cluster-template/`: Copy-me template for onboarding a new cluster.
@@ -302,11 +302,13 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
 3. Set the environment by referencing the right profile (`profiles/{env}`) in
    both `kustomization.yaml` and `apps/kustomization.yaml`. Add only the optional
    feature components / app stacks this cluster needs, and any override patches —
-   everything else is inherited from the profile. An optional feature travels
-   with its `envs/{env}` sub-component (e.g. `istio` + `ako-istio` +
-   `envs/dev/istio`; `stacks/observability` + `envs/dev/observability`) — the
-   sub-component pins the feature's version for the environment, and forgetting
-   it fails validation (`replace-me` in rendered output). Keep
+   everything else is inherited from the profile. A version-pinned optional
+   feature travels with its `envs/{env}` sub-component (e.g. `istio` +
+   `ako-istio` + `envs/dev/istio`) — the sub-component pins the feature's version
+   for the environment, and forgetting it fails validation (`replace-me` in
+   rendered output). (Observability is on by default via the base Cluster's
+   `automated-monitoring` label; opt out with
+   `infrastructure/components/disable-observability`, no version to pin.) Keep
    `cluster-var-injector` **last** in the infra component list.
 4. Commit. The `cluster-provisioning` ApplicationSet joins the directory to its
    supervisor namespace by label (`gitops.platform/project` +
@@ -330,8 +332,8 @@ A cluster does not enumerate its whole stack. It references an environment
   env overlay that carries the real per-environment values. Change something for
   every cluster in an environment by editing the profile once.
 - **Deltas**: a cluster adds optional feature components (`istio`, `ako-istio`,
-  `cluster-autoscaling`, …) and app stacks (`observability`) that aren't part of
-  the baseline.
+  `cluster-autoscaling`, `disable-observability`, …) and app stacks that aren't
+  part of the baseline.
 - **Overrides**: anything inherited can be overridden per-cluster with a
   `patches:` block in the cluster `kustomization.yaml` (escape hatch).
 
@@ -348,7 +350,7 @@ fails at PR time instead of deploying a placeholder. Versions live in three laye
 | Layer | What it pins | Where |
 |-------|--------------|-------|
 | Env (always-on) | cluster class, Kubernetes version, AKO addon; package bundle + baseline packages | `infrastructure/components/envs/{env}`, `apps/components/envs/{env}` (applied via the profiles) |
-| Env (optional feature) | istio addon; observability packages | `infrastructure/components/envs/{env}/istio`, `apps/components/envs/{env}/observability` — the cluster includes these alongside the feature/stack |
+| Env (optional feature) | istio addon | `infrastructure/components/envs/{env}/istio` — the cluster includes this alongside the feature (observability carries no version — it's on by default via the base Cluster's `automated-monitoring` label, opt-out `infrastructure/components/disable-observability`) |
 | Per-cluster override | anything, e.g. a canary Kubernetes version | `patches:` block in the cluster `kustomization.yaml` (applies after all components) |
 
 To roll a version: bump it in `envs/dev`, let dev soak, then mirror the change in

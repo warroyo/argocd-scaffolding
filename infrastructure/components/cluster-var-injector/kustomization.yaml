@@ -34,6 +34,15 @@ replacements:
         fieldPaths:
         - spec.clusters.0.selector.matchLabels.[cluster.x-k8s.io/cluster-name]
 
+      # Antrea-NSX AddonConfig (VKS 3.6+) — stamp this cluster's name into the
+      # clusterName field and the cluster-name label the addon controller joins on.
+      - select:
+          kind: AddonConfig
+          labelSelector: "addon.kubernetes.vmware.com/addon-name=antrea"
+        fieldPaths:
+        - spec.clusterName
+        - metadata.labels.[cluster.x-k8s.io/cluster-name]
+
 
 
   # ── ArgoCluster registration (decision-model join keys) ─────────────────────

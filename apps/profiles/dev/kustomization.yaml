@@ -1,7 +1,7 @@
 # Dev environment app profile — the app stack every dev cluster inherits.
 #
 # A cluster's apps/kustomization.yaml references this profile and adds only the
-# extra stacks it wants (e.g. observability, service-mesh). Fleet-wide app
+# extra stacks it wants (e.g. service-mesh). Fleet-wide app
 # defaults for dev live here, in one place.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

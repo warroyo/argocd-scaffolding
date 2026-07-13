@@ -141,8 +141,8 @@ impossible without forking the base.
 **The choice.** Bases carry `replace-me` placeholders instead of versions.
 Real pins live in the environment layer: always-on versions in
 `components/envs/{env}` (inherited through the profile), optional-feature
-versions in small feature-scoped components (`envs/{env}/istio`,
-`envs/{env}/observability`) that a cluster includes alongside the feature. A
+versions in small feature-scoped components (`envs/{env}/istio`) that a cluster
+includes alongside the feature. A
 single cluster can canary ahead via a `patches:` block. Validation rejects any
 rendered output that still contains `replace-me`.
 

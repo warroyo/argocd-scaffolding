@@ -1,0 +1,27 @@
+# VKS 3.6+ ships Antrea as a managed addon (the old cni.tanzu.vmware.com
+# AntreaConfig CRD is gone). Tune the auto-installed antrea addon by layering
+# values onto it through this AddonConfig — no addon version to pin here (unlike
+# AKO). Base carries defaults only (antreaNSX off); feature components flip the
+# knobs they own (e.g. components/antrea-nsx sets antreaNSX.enable: true). Add
+# more spec.values.* here as you need to tune other antrea parameters.
+#
+# Naming/identity are filled in by cluster-var-injector:
+#   metadata.name              cluster-antrea -> <clustername>-antrea
+#     (config.k8s.io/inject-cluster-name-prefix label; index 0 of the '-' split)
+#   metadata.labels[cluster.x-k8s.io/cluster-name] and spec.clusterName
+#     replaced with this cluster's name (AddonConfig addon-name=antrea target).
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonConfig
+metadata:
+  name: cluster-antrea
+  annotations:
+    clusteraddon.addons.kubernetes.vmware.com/owned-for-deletion: "true"
+  labels:
+    addon.kubernetes.vmware.com/addon-name: antrea
+    config.k8s.io/inject-cluster-name-prefix: "true"
+    cluster.x-k8s.io/cluster-name: clustername
+spec:
+  clusterName: clustername
+  values:
+    antreaNSX:
+      enable: false

@@ -167,8 +167,8 @@ improvement · **P3** = nice-to-have / hygiene.
 - **Version decoupling** (branch `claude/terraform-kustomize-review-1bbie5`):
   bases carry `replace-me` placeholders; always-on versions (cluster class,
   k8s, AKO) pinned in `infrastructure/components/envs/{env}`; optional-feature
-  versions in feature-scoped env sub-components (`envs/{env}/istio`,
-  `apps/components/envs/{env}/observability`); standard-stack versions in
+  versions in feature-scoped env sub-components (`envs/{env}/istio`);
+  standard-stack versions in
   `apps/components/envs/{env}` via the apps profile; per-cluster canary via the
   cluster `patches:` block. Rendered output verified byte-identical.
 - **Remote Terraform state backend** — kubernetes backend in the dedicated

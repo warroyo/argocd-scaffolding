@@ -191,7 +191,7 @@ templating:
 flowchart TB
     bases["bases (infrastructure/base/*, apps/base/*)<br/>shapes only — versions and env values are<br/>replace-me placeholders"]
     comps["feature components<br/>(istio, ako, cluster-autoscaling, stacks/*)"]
-    envs["env overlays (components/envs/{env})<br/>real values + always-on version pins;<br/>feature-scoped sub-components<br/>(envs/{env}/istio, envs/{env}/observability)<br/>pin optional features"]
+    envs["env overlays (components/envs/{env})<br/>real values + always-on version pins;<br/>feature-scoped sub-components<br/>(envs/{env}/istio) pin optional features"]
     profile["profiles/{env}<br/>bases + always-on components + env overlay"]
     cluster["cluster dir<br/>profile + optional features (paired with their<br/>envs/{env} sub-component) + override patches"]
     inject["cluster-var-injector (LAST)<br/>rewrites names from cluster-details.yaml<br/>+ argo_namespace from tenant-vars.yaml"]
@@ -239,8 +239,8 @@ what to keep, what to swap for your environment.
 | Layer | In this repo | Where to swap | Notes |
 |-------|--------------|---------------|-------|
 | Load balancer | AVI (AKO addon on every cluster) | `avi_enabled` + `seg_name` (Service Engine Group, per region, `terraform/infra/variables.tf`); drop `components/ako*` from profiles/clusters | `avi_enabled=false` already switches the VPC to an NSX `LoadBalancer` CR. `seg_name` is required when `avi_enabled=true`, null otherwise. On VCF 9.1 AKO is auto-installed into VKS clusters, so there's no AKO secret to bootstrap; the `AddonConfig`/injector wiring is AVI-specific. |
-| CNI tuning | Antrea + NSX integration (`components/antrea-nsx`) | Profile component list | The base `AntreaConfig` is a full example; the component only flips `antreaNSX.enable`. |
-| App baseline | carvel package installer + cert-manager, telegraf/prometheus stacks | `apps/components/stacks/*`, `apps/profiles/{env}` | Stacks are plain kustomize components — swap contents freely; the env-pinning pattern is what matters. |
+| CNI tuning | Antrea + NSX integration (`components/antrea-nsx`) | Profile component list | VKS 3.6+ ships Antrea as a managed addon, so NSX integration is an `AddonConfig` (`base/antrea`, `antreaNSX.enable: true`) — no addon version to pin, unlike AKO. |
+| App baseline | carvel package installer + cert-manager | `apps/components/stacks/*`, `apps/profiles/{env}` | Stacks are plain kustomize components — swap contents freely; the env-pinning pattern is what matters. (Observability is no longer an app stack; VKS 9.1+ delivers it by default via the `automated-monitoring` addon label on the base Cluster — opt a cluster out with `infrastructure/components/disable-observability`.) |
 | Package source & images | Broadcom standard package repo, ubuntu content library | `apps/components/envs/{env}` (bundle image), `infrastructure/components/envs/{env}` (os-image annotations) | Deliberately env-layer values, never in bases. |
 | Sizing & placement | `z-wld-a` zone, vSAN storage policy, class sizes | Defaults in `terraform/modules/tenant/variables.tf`; per-namespace overrides in `tenants.yaml` | Zone names vary per region — always set explicitly. |
 | GitOps repo identity | `github.com/warroyo/argocd-scaffolding` | `argocd/repo-config.yaml` — the single source; Terraform and the ApplicationSets both read it | One-file fork. |

@@ -1,8 +1,8 @@
 # Real dev-environment values for the ALWAYS-ON app baseline (the standard
 # stack), applied over the replace-me placeholders in the bases. Included by
 # apps/profiles/dev, so every dev cluster inherits it. Versions for OPTIONAL
-# stacks live in feature-scoped sub-components (e.g. ./observability), included
-# by the cluster alongside the stack.
+# app stacks live in feature-scoped sub-components included by the cluster
+# alongside the stack.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 

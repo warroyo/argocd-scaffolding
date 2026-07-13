@@ -1,14 +1,17 @@
+# Antrea-NSX integration. VKS 3.6+ delivers this via an AddonConfig on the
+# auto-installed antrea addon (base/antrea). No version to pin — this component
+# just pulls the base in and flips the antreaNSX toggle on.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 resources:
-- ../../base/antrea-config
+- ../../base/antrea
 patches:
 - target:
-    group: cni.tanzu.vmware.com
+    group: addons.kubernetes.vmware.com
     version: v1alpha1
-    kind: AntreaConfig
-    name: clustername-antrea-package
+    kind: AddonConfig
+    labelSelector: "addon.kubernetes.vmware.com/addon-name=antrea"
   patch: |-
     - op: replace
-      path: /spec/antreaNSX/enable
+      path: /spec/values/antreaNSX/enable
       value: true
