@@ -21,8 +21,7 @@ components:
 # Other add-ons:
 # - ../../../../components/cluster-autoscaling
 # - ../../../../components/ha-control-plane
-# Observability is ON by default (automated-monitoring addon label, VKS 9.1+).
-# Opt this cluster out (flips the label to `disabled`; no version to pin):
+# Observability is on by default; opt out with:
 # - ../../../../components/disable-observability
 #
 # --- Variable injection MUST be last ---

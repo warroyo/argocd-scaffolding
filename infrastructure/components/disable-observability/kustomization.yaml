@@ -1,8 +1,5 @@
-# Opt-out of automated observability. VKS 9.1+ turns the monitoring stack
-# (prometheus/telegraf) on by default via the `automated-monitoring` addon label
-# (set to `enabled` in the base Cluster). Including this component flips that
-# label to `disabled` for the cluster. No version pin, so no envs/{env}
-# sub-component.
+# Opt out of automated observability: flip the automated-monitoring addon label
+# (enabled by default in base/vks-cluster) to disabled.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 patches:

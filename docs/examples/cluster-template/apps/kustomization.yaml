@@ -11,9 +11,7 @@ resources:
 
 components:
 # --- Optional per-cluster app stacks (deltas on top of the profile) ---
-# (Observability is not an app stack — it's on by default via the base
-# Cluster's automated-monitoring addon label, VKS 9.1+; opt out on the infra
-# side with infrastructure/components/disable-observability.)
+# (observability is not an app stack — it's a cluster addon label; see infra side)
 # --- Variable injection MUST be last (needed by istio-ako-patch) ---
 # - ../../../../../../apps/components/cluster-var-injector
 

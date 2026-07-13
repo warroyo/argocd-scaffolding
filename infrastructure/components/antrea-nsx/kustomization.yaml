@@ -1,6 +1,4 @@
-# Antrea-NSX integration. VKS 3.6+ delivers this via an AddonConfig on the
-# auto-installed antrea addon (base/antrea). No version to pin — this component
-# just pulls the base in and flips the antreaNSX toggle on.
+# Antrea-NSX integration (VKS 3.6+): enable the antreaNSX toggle on base/antrea.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 resources:

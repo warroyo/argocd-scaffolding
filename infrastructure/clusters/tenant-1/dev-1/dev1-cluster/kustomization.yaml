@@ -16,8 +16,7 @@ components:
 - ../../../../components/ako-istio
 - ../../../../components/envs/dev/istio
 - ../../../../components/cluster-autoscaling
-# Observability is on by default (automated-monitoring addon label, VKS 9.1+).
-# To turn it off for this cluster, add:
+# Observability is on by default; opt out with:
 # - ../../../../components/disable-observability
 # - ../../../../components/ha-control-plane
 # --- Variable injection MUST be last ---

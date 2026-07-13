@@ -4,10 +4,7 @@ metadata:
   name: clustername
   labels:
     config.k8s.io/inject-cluster-name: "true"
-    # VKS 9.1+ delivers the monitoring stack (prometheus/telegraf) automatically
-    # when this addon label is `enabled` — on by default for every cluster.
-    # Opt a cluster out with the `disable-observability` component (flips it to
-    # `disabled`).
+    # Automated monitoring stack (VKS 9.1+); opt out with disable-observability.
     addons.kubernetes.vmware.com/automated-monitoring: enabled
 spec:
   clusterNetwork:
