@@ -106,6 +106,33 @@ improvement · **P3** = nice-to-have / hygiene.
   changes), or per-tenant destination labels.
 - **Size:** M.
 
+### P2 — Bring cluster policy APIs under gitops
+- **What:** VKS/supervisor cluster policy APIs (e.g. policy CRs applied to
+  workload clusters or supervisor namespaces) are not represented in the repo
+  at all — any policies are applied out-of-band, invisible to review and drift
+  detection.
+- **Action:** decide where policy CRs live in the tree (a
+  `infrastructure/base/` + `components/` pair like other addons if they're
+  per-cluster, or the profile layer if they're env-wide defaults), wire them
+  through the existing ApplicationSets, and add a starter policy set. Check
+  which policy APIs the supervisor exposes and whether they apply at the
+  supervisor-namespace or workload-cluster destination — that determines
+  which appset carries them.
+- **Size:** M.
+
+### P2 — Document the addon-addition workflow
+- **What:** the repo has a clear addon pattern (VKS `AddonConfig` base with a
+  `replace-me` version placeholder + optional-feature component + feature-scoped
+  `envs/{env}/{feature}` version pin + per-cluster opt-in; apps-side stacks for
+  non-AddonConfig software), but it's only discoverable by reading the istio
+  example. Nothing in `docs/` walks through adding a brand-new addon end-to-end.
+- **Action:** add a "adding an addon" guide (docs/ or ARCHITECTURE.md section):
+  infra-side AddonConfig addons vs apps-side stacks, where the version pin
+  goes, the `cluster-var-injector` ordering rule, the validate.sh
+  `replace-me` check as the safety net, and a checklist mirroring the istio
+  layout. Cross-link from the cluster-template README.
+- **Size:** S.
+
 ### P2 — Commit `.terraform.lock.hcl` files
 - **What:** Provider versions are pinned (`~>` constraints) but the dependency
   lock files are not committed, so CI still resolves fresh each run.
@@ -114,6 +141,16 @@ improvement · **P3** = nice-to-have / hygiene.
 - **Blocker:** Needs registry access from a dev machine (provider binaries are
   fetched from github release assets).
 - **Size:** XS.
+
+### P3 — Headlamp addon
+- **What:** no cluster UI ships with the standard stack; Headlamp is a
+  lightweight candidate tenants could opt into per cluster.
+- **Action:** add it via the standard addon pattern — check whether a VKS
+  `AddonConfig` definition exists for Headlamp (infra-side addon) or ship it
+  as an apps-side stack (helm chart via the package-installer / a
+  `apps/components/stacks/` entry); include the auth story (SSO vs
+  token) in the docs. Good first consumer of the addon-addition guide above.
+- **Size:** S–M.
 
 ### P3 — Region dimension
 - **What:** `region_name` is one global variable; VPC names embed it; zones
