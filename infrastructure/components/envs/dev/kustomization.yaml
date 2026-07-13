@@ -37,7 +37,7 @@ patches:
   patch: |-
     - op: replace
       path: /spec/topology/controlPlane/metadata/annotations/run.tanzu.vmware.com~1resolve-os-image
-      value: "os-name=ubuntu, content-library=cl-a3b5e06b12f2737ca, os-version=24.04" # Dev content library
+      value: "os-name=ubuntu, os-version=24.04" # Dev content library
     - op: replace
       path: /spec/topology/workers/machineDeployments/0/metadata/annotations/run.tanzu.vmware.com~1resolve-os-image
-      value: "os-name=ubuntu, content-library=cl-a3b5e06b12f2737ca, os-version=24.04" # Dev content library
+      value: "os-name=ubuntu, os-version=24.04" # Dev content library
