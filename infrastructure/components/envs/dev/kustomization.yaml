@@ -29,7 +29,7 @@ patches:
       value: "builtin-generic-v3.6.0" # Dev cluster class
     - op: replace
       path: /spec/topology/version
-      value: "v1.34.2---vmware.2-vkr.2" # Dev Kubernetes version
+      value: "v1.35.5---vmware.1-vkr.1" # Dev Kubernetes version
 - target:
     group: cluster.x-k8s.io
     version: v1beta1
