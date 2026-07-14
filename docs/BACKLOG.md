@@ -23,11 +23,11 @@ improvement · **P3** = nice-to-have / hygiene.
   deletes the Cluster CR explicitly); write a teardown runbook (drain/delete
   cluster dirs → wait for deprovision → remove tenant from tenants.yaml →
   `make apply` → commit deletions); call out the rename trap in the template README.
-- **Done so far:** both `cluster-provisioning` and `cluster-apps` now have
-  `preserveResourcesOnDeletion: true` (added alongside path-scoping the appset
-  Application names to `{project}-{namespace_ref}-{cluster}` — the renames that
-  required would otherwise have pruned live Cluster CRs / workloads).
-- **Remaining:** teardown runbook; rename-trap note in the template README.
+- **Note:** appset Application names are now path-scoped to
+  `{project}-{namespace_ref}-{cluster}` (so bare cluster names may repeat). The
+  `preserveResourcesOnDeletion` flag is intentionally **not** set — teardown
+  still relies on the Application finalizer cascading (`make destroy-apps`), and
+  dir-deletion still deprovisions. The rename trap remains armed.
 - **Size:** S.
 
 ### P1 — Rotate and externalize credentials

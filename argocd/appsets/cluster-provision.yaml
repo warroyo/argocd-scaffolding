@@ -7,11 +7,6 @@ metadata:
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
-  # Removing an Application from the generated set leaves its resources in place
-  # (no cascade-prune of the live Cluster CR); deliberate teardown deletes the
-  # cluster dir AND the CR explicitly. Required so renames/removals are safe.
-  syncPolicy:
-    preserveResourcesOnDeletion: true
   generators:
     # Matrix join: each supervisor-namespace ArgoCD cluster (discovered by label)
     # is paired ONLY with the cluster directories under its own

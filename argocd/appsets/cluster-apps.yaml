@@ -7,10 +7,6 @@ metadata:
 spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
-  # Removing an Application from the generated set leaves its deployed workloads
-  # in place (no cascade-prune) — so renames/removals don't churn live apps.
-  syncPolicy:
-    preserveResourcesOnDeletion: true
   generators:
     - matrix:
         generators:
