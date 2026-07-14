@@ -34,10 +34,11 @@ spec:
                 - path: infrastructure/clusters/{{.values.project}}/{{.values.namespaceRef}}/*/cluster-details.yaml
   template:
     metadata:
-      # One supervisor-ns fans out over every cluster dir under its path, so the
-      # name must key on the dir (== cluster_name, globally unique), not .name
-      # (the shared supervisor-ns cluster).
-      name: '{{.path.basename}}-provision'
+      # One supervisor-ns fans out over every cluster dir under its path. Key the
+      # name on the full path tuple (project + namespace_ref + dir) so it is
+      # unique even when cluster names repeat across tenants/namespaces — .name
+      # is the shared supervisor-ns cluster, not usable here.
+      name: '{{.values.project}}-{{.values.namespaceRef}}-{{.path.basename}}-provision'
       finalizers:
       - resources-finalizer.argocd.argoproj.io
       labels:

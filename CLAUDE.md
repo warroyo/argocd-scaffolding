@@ -75,8 +75,8 @@ the coarse selector, plus `gitops.platform/project` and
 Run `make validate` (or `./scripts/validate.sh`) before pushing — it build-tests every
 kustomize entrypoint (argocd root + each cluster's infra and `apps/` dirs + a temp copy of
 `docs/examples/cluster-template`), checks each `cluster-details.yaml` against its directory
-path, rejects `replace-me` in rendered output (a cluster missing its env overlay), enforces
-globally-unique cluster names, and cross-checks the apps-side `vars` cluster_name. CI runs
+path, rejects `replace-me` in rendered output (a cluster missing its env overlay), and
+cross-checks the apps-side `vars` cluster_name. CI runs
 the same script, plus `terraform fmt -check` / `terraform validate` in `validate.yml`.
 Requires `kustomize`.
 

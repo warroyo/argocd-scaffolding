@@ -48,10 +48,13 @@ directories, and the deployment target comes from the label — never from git.
 
 **The trade-off.** The generated name flows from VCF → chart → label →
 ApplicationSet without ever touching git. The cost is that the join has rules
-that must hold: `(project, namespace_ref)` must be unique, cluster names must
-be unique everywhere, and each `cluster-details.yaml` must match its directory
-path. All three are actively checked — by Terraform preconditions and by
-`scripts/validate.sh` on every PR.
+that must hold: `(project, namespace_ref)` must be unique, and each
+`cluster-details.yaml` must match its directory path. Both are actively checked
+— by Terraform preconditions and by `scripts/validate.sh` on every PR. Cluster
+names need only be unique within a `(project, namespace_ref)` (the directory
+layout guarantees it); the appset Application names are path-scoped
+(`{project}-{namespace_ref}-{cluster}`), so bare names may repeat across
+tenants/namespaces.
 
 ---
 

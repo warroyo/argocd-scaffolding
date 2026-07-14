@@ -10,11 +10,9 @@
 #      directory path (infrastructure/clusters/{project}/{namespace_ref}/{cluster}).
 #   3. no rendered output contains "replace-me" (catches a cluster that skipped
 #      its environment overlay — the bases carry replace-me placeholders).
-#   4. cluster names are globally unique (ArgoCD cluster registrations and the
-#      cluster-apps '{{.name}}-apps' Applications are keyed by bare cluster name).
-#   5. an apps/ dir that declares a `vars` cluster_name (for the apps-side
+#   4. an apps/ dir that declares a `vars` cluster_name (for the apps-side
 #      injector) declares the directory's cluster name.
-#   6. docs/examples/cluster-template still builds (via a temp copy at the real
+#   5. docs/examples/cluster-template still builds (via a temp copy at the real
 #      directory depth), so the template can't rot silently.
 #
 # Usage: scripts/validate.sh   (requires kustomize on PATH)
@@ -47,7 +45,6 @@ build_check() {
 echo "building argocd"
 kustomize build argocd >/dev/null || fail "kustomize build failed: argocd"
 
-seen_clusters=""
 while IFS= read -r details; do
   dir="$(dirname "$details")"
   # infrastructure/clusters/{project}/{namespace_ref}/{cluster}
@@ -68,12 +65,10 @@ while IFS= read -r details; do
     fi
   done
 
-  # Cluster names must be unique across ALL projects (ArgoCD registrations and
-  # the cluster-apps Applications are keyed by bare cluster name).
-  case " $seen_clusters " in
-    *" $cluster "*) fail "$dir: cluster name '$cluster' is already used by another cluster directory — cluster names must be globally unique" ;;
-  esac
-  seen_clusters="$seen_clusters $cluster"
+  # Cluster names need only be unique per (project, namespace_ref) — which the
+  # directory layout guarantees (one dir name per namespace_ref dir) and the
+  # infra run's precondition enforces on the (project, namespace_ref) key. The
+  # appset Application names are path-scoped, so bare names may repeat.
 
   echo "building $dir"
   build_check "$dir"

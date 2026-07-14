@@ -27,7 +27,9 @@ spec:
             - path: infrastructure/clusters/{{.values.project}}/{{.values.namespaceRef}}/{{.name}}/cluster-details.yaml
   template:
     metadata:
-      name: '{{.name}}-apps'
+      # Path-scoped so it stays unique when cluster names repeat across
+      # tenants/namespaces (.name is the bare workload cluster name).
+      name: '{{.values.project}}-{{.values.namespaceRef}}-{{.name}}-apps'
       finalizers:
       - resources-finalizer.argocd.argoproj.io
     spec:

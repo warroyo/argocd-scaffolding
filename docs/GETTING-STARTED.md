@@ -225,8 +225,9 @@ cp -r docs/examples/cluster-template \
 
 The three path segments are the join keys: `tenant-1` (the tenant), `dev-1`
 (the namespace you declared in tenants.yaml), `dev1-cluster` (your new
-cluster's name, unique across ALL tenants). ArgoCD matches this directory to
-the right supervisor namespace by these names — nothing else links them.
+cluster's name, which need only be unique within this `(tenant, namespace)`).
+ArgoCD matches this directory to the right supervisor namespace by these names —
+nothing else links them.
 
 Edit `infrastructure/clusters/tenant-1/dev-1/dev1-cluster/cluster-details.yaml`
 so the three values match the path exactly:
@@ -279,7 +280,8 @@ git add infrastructure/clusters/tenant-1 && git commit -m "add dev1-cluster" && 
 ```
 
 Within a sync interval, *you should see* in ArgoCD a new Application named
-**`tenant-1-dev1-cluster-provision`**. It creates the VKS `Cluster` in the
+**`tenant-1-dev-1-dev1-cluster-provision`** (`{project}-{namespace_ref}-{cluster}-provision`).
+It creates the VKS `Cluster` in the
 supervisor namespace — watch it come up (10–20 min is normal):
 
 ```sh

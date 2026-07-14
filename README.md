@@ -232,8 +232,6 @@ It renders the argocd root and every cluster (infra + `apps/`) with kustomize an
 - each `cluster-details.yaml` matches its directory path;
 - no rendered output contains `replace-me` (i.e. no cluster skipped its
   `components/envs/{env}` overlay);
-- cluster names are globally unique (ArgoCD registrations and the
-  `{{.name}}-apps` Applications are keyed by bare cluster name);
 - an `apps/` dir that declares a `vars` cluster_name (for the apps-side
   injector) declares the directory's cluster name;
 - `docs/examples/cluster-template` still builds (via a temp copy at real depth).

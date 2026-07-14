@@ -178,7 +178,7 @@ vcfa → chart → label → ApplicationSet without ever touching git.
 Rules the join depends on — every one actively checked, none left implicit:
 
 - `(project, namespace_ref)` is unique — Terraform precondition + the directory layout itself
-- cluster names are unique across ALL tenants — `scripts/validate.sh`
+- cluster names are unique per `(project, namespace_ref)` — guaranteed by the directory layout (cluster names may repeat across tenants/namespaces; the appset Application names are path-scoped)
 - `cluster-details.yaml` values match the directory path — `scripts/validate.sh`
 
 ## Kustomize layering
