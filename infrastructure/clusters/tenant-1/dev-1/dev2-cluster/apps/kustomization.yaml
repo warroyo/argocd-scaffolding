@@ -20,7 +20,7 @@ components:
 configMapGenerator:
 - name: vars
   literals:
-  - cluster_name=dev1-cluster
+  - cluster_name=dev2-cluster
 generatorOptions:
   disableNameSuffixHash: true
   annotations:
