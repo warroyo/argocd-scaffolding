@@ -116,10 +116,31 @@ Edit `infrastructure/profiles/{env}` (or `apps/profiles/{env}`) — every cluste
 references that profile inherits the change. Real per-environment values live in
 `infrastructure/components/envs/{env}`.
 
+### Adding a namespace-scoped (label-gated) add-on
+For a VKS add-on that needs **no cluster-specific overrides** (e.g. headlamp),
+use ONE shared `AddonInstall` per supervisor namespace, gated by a cluster label —
+not a per-cluster install. (Add-ons that DO need per-cluster config use the
+istio pattern: a per-cluster `AddonInstall`+`AddonConfig` prefixed by
+`cluster-var-injector`.)
+1. `infrastructure/base/{addon}/` — the `AddonInstall` (label selector
+   `matchLabels`, `stopMatchingBehavior: Delete`, `version: replace-me`) + its
+   kustomization.
+2. `infrastructure/components/envs/{env}/{addon}/` — pins the version (base
+   carries `replace-me`; forgetting it fails `make validate`).
+3. `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/` — a
+   kustomization pulling in `base/{addon}` + the `envs/{env}/{addon}` component.
+   The `namespace-resources` ApplicationSet syncs this dir ONCE into the
+   supervisor namespace (one owner, even when clusters share the namespace).
+4. Enablement is the cluster label. Default-on for dev by adding the label in
+   `infrastructure/components/envs/dev` (`op: add` on the Cluster); opt a cluster
+   out with a `disable-{addon}` component that flips it to `disabled` (mirrors
+   `disable-observability`). Headlamp is wired this way today
+   (`addons.kubernetes.vmware.com/headlamp: enabled`).
+
 ### Rolling a version
 Versions are never pinned in bases. Bump the pin in the env layer —
 `infrastructure/components/envs/{env}` (cluster class, k8s, AKO),
-`envs/{env}/istio`, or `apps/components/envs/{env}` (package bundle,
-cert-manager) — dev first, then prod. Canary a
+`envs/{env}/istio`, `envs/{env}/headlamp`, or `apps/components/envs/{env}`
+(package bundle, cert-manager) — dev first, then prod. Canary a
 single cluster with a `patches:` override in its kustomization before bumping the
 env pin.

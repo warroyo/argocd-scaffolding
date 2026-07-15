@@ -71,6 +71,7 @@ flowchart TB
     chart -- "root app syncs" --> argodir
     argodir -- "cluster-provisioning appset:<br/>labels ⨯ git dirs" --> clusterdirs
     clusterdirs -- "provisioned into<br/>suffixed namespace (from label)" --> vks
+    argodir -- "namespace-resources appset:<br/>labels ⨯ ns dir → one app per namespace" --> vks
     vks --> attach
     argodir -- "cluster-apps appset:<br/>labels ⨯ git dirs" --> pkgs
     attach -. "join keys" .-> pkgs
@@ -241,6 +242,7 @@ what to keep, what to swap for your environment.
 | Load balancer | AVI (AKO addon on every cluster) | `avi_enabled` + `seg_name` (Service Engine Group, per region, `terraform/infra/variables.tf`); drop `components/ako*` from profiles/clusters | `avi_enabled=false` already switches the VPC to an NSX `LoadBalancer` CR. `seg_name` is required when `avi_enabled=true`, null otherwise. On VCF 9.1 AKO is auto-installed into VKS clusters, so there's no AKO secret to bootstrap; the `AddonConfig`/injector wiring is AVI-specific. |
 | CNI tuning | Antrea + NSX integration (`components/antrea-nsx`) | Profile component list | VKS 3.6+ ships Antrea as a managed addon, so NSX integration is an `AddonConfig` (`base/antrea`, `antreaNSX.enable: true`) — no addon version to pin, unlike AKO. |
 | App baseline | carvel package installer + cert-manager | `apps/components/stacks/*`, `apps/profiles/{env}` | Stacks are plain kustomize components — swap contents freely; the env-pinning pattern is what matters. (Observability is no longer an app stack; VKS 9.1+ delivers it by default via the `automated-monitoring` addon label on the base Cluster — opt a cluster out with `infrastructure/components/disable-observability`.) |
+| Namespace add-ons (label-gated) | headlamp (`base/headlamp` → one shared `AddonInstall` per namespace) | `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/`, version in `components/envs/{env}/headlamp`, default-on label in `components/envs/dev`, opt-out `components/disable-headlamp` | The pattern: a single label-selected `AddonInstall` per supervisor namespace (delivered by the `namespace-resources` appset, not per cluster) installs the add-on on any cluster carrying the label — swap headlamp for any VKS add-on that needs no cluster-specific overrides. Add-ons that DO need per-cluster overrides use the per-cluster `AddonInstall`+`AddonConfig` pattern (istio). |
 | Package source & images | Broadcom standard package repo, ubuntu content library | `apps/components/envs/{env}` (bundle image), `infrastructure/components/envs/{env}` (os-image annotations) | Deliberately env-layer values, never in bases. |
 | Sizing & placement | `z-wld-a` zone, vSAN storage policy, class sizes | Defaults in `terraform/modules/tenant/variables.tf`; per-namespace overrides in `tenants.yaml` | Zone names vary per region — always set explicitly. |
 | GitOps repo identity | `github.com/warroyo/argocd-scaffolding` | `argocd/repo-config.yaml` — the single source; Terraform and the ApplicationSets both read it | One-file fork. |

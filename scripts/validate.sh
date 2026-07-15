@@ -85,6 +85,14 @@ while IFS= read -r details; do
   fi
 done < <(find infrastructure/clusters -name cluster-details.yaml)
 
+# Namespace-level resources (namespace-resources ApplicationSet source): one dir
+# per {project}/{namespace_ref}, synced once into the supervisor namespace. No
+# cluster-details.yaml, so build-test them on their own.
+while IFS= read -r nsdir; do
+  echo "building $nsdir"
+  build_check "$nsdir"
+done < <(find infrastructure/clusters -type d -name namespace-resources)
+
 # Build-test the copy-me template at the real directory depth so its relative
 # paths resolve. Uses an existing tenant's vars dir; the temp project dir is
 # hidden (leading dot) so nothing else picks it up, and is always cleaned up.

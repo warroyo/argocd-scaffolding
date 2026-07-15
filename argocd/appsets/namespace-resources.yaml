@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: namespace-resources
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    # Matrix join: each supervisor-namespace ArgoCD cluster (discovered by label)
+    # is paired with its own {project}/{namespace_ref}/namespace-resources dir —
+    # one app PER NAMESPACE (not per cluster), so a namespace-scoped shared
+    # resource has a single owner even when two clusters share the namespace.
+    # Namespaces without a namespace-resources/ dir simply produce no app. Use it
+    # for any namespace-level config (shared add-on installs, quotas, etc.).
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchLabels:
+                  type: supervisor-ns
+              values:
+                project: '{{index .metadata.labels "gitops.platform/project"}}'
+                namespaceRef: '{{index .metadata.labels "gitops.platform/namespace-ref"}}'
+                namespace: '{{index .metadata.labels "gitops.platform/namespace"}}'
+          - git:
+              repoURL: ARGOCD_REPO_URL
+              revision: main
+              directories:
+                - path: infrastructure/clusters/{{.values.project}}/{{.values.namespaceRef}}/namespace-resources
+  template:
+    metadata:
+      name: '{{.values.project}}-{{.values.namespaceRef}}-namespace-resources'
+      finalizers:
+      - resources-finalizer.argocd.argoproj.io
+      labels:
+        tenant: '{{.values.project}}'
+        type: "namespace-resources"
+    spec:
+      project: infra
+      source:
+        repoURL: ARGOCD_REPO_URL
+        targetRevision: main
+        path: '{{.path.path}}'
+      destination:
+        # Resolved from the supervisor-namespace cluster registration, not git:
+        # .name is the ArgoCD cluster name (supervisor-ns-<suffixed>) and
+        # .values.namespace is the suffixed namespace from the cluster label.
+        name: '{{.name}}'
+        namespace: '{{.values.namespace}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

@@ -24,6 +24,16 @@ patches:
     version: v1beta1
     kind: Cluster
   patch: |-
+    # Headlamp on by default for dev clusters; the shared headlamp AddonInstall
+    # (namespace-resources) selects this label. Opt out with disable-headlamp.
+    - op: add
+      path: /metadata/labels/addons.kubernetes.vmware.com~1headlamp
+      value: enabled
+- target:
+    group: cluster.x-k8s.io
+    version: v1beta1
+    kind: Cluster
+  patch: |-
     - op: replace
       path: /spec/topology/class
       value: "builtin-generic-v3.6.0" # Dev cluster class

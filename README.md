@@ -206,14 +206,14 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `modules/tenant/`, `modules/svns/`, `modules/vpc/`: vSphere infrastructure modules.
 - `charts/bootstrap-tenant/`: Helm chart that deploys the `ArgoNamespace` registration, ArgoCD instance + root Application.
 - `argocd/`
-  - `appsets/`: ApplicationSets that discover and deploy clusters and apps (label-based join).
+  - `appsets/`: ApplicationSets that discover and deploy clusters and apps (label-based join): `cluster-provisioning` (per cluster dir), `cluster-apps` (per cluster `apps/` dir), and `namespace-resources` (one app per supervisor namespace, sourced from `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/` — for namespace-scoped shared resources like label-gated add-on installs).
   - `projects/`: ArgoCD AppProject definitions, all rendered by the infra run (the `infra`-type tenant's project is rendered as `infra.yaml`, the project the ApplicationSets target).
   - `repo-config.yaml`: Single source of truth for the GitOps repo URL.
 - `infrastructure/`
-  - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`). Bases carry `replace-me` placeholders for environment values.
-  - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`) pin optional features' versions and are included by the cluster alongside the feature.
+  - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`, `headlamp`). Bases carry `replace-me` placeholders for environment values.
+  - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`) pin optional features' versions and are included by the cluster alongside the feature. Opt-out components flip a default addon label (`disable-observability`, `disable-headlamp`).
   - `profiles/{env}/`: The inherited default set for an environment — bases + always-on components + the env overlay. Clusters reference a profile instead of enumerating everything.
-  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`.
+  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`. `clusters/{project}/{namespace_ref}/namespace-resources/` (optional) holds namespace-scoped shared resources synced once per supervisor namespace by the `namespace-resources` ApplicationSet — e.g. the shared, label-gated headlamp `AddonInstall`.
 - `apps/`
   - `base/`: Base application manifests.
   - `components/stacks/`: Application stacks (e.g., `standard`).
@@ -337,8 +337,8 @@ A cluster does not enumerate its whole stack. It references an environment
   env overlay that carries the real per-environment values. Change something for
   every cluster in an environment by editing the profile once.
 - **Deltas**: a cluster adds optional feature components (`istio`, `ako-istio`,
-  `cluster-autoscaling`, `disable-observability`, …) and app stacks that aren't
-  part of the baseline.
+  `cluster-autoscaling`, `disable-observability`, `disable-headlamp`, …) and app
+  stacks that aren't part of the baseline.
 - **Overrides**: anything inherited can be overridden per-cluster with a
   `patches:` block in the cluster `kustomization.yaml` (escape hatch).
 
@@ -356,6 +356,7 @@ fails at PR time instead of deploying a placeholder. Versions live in three laye
 |-------|--------------|-------|
 | Env (always-on) | cluster class, Kubernetes version, AKO addon; package bundle + baseline packages | `infrastructure/components/envs/{env}`, `apps/components/envs/{env}` (applied via the profiles) |
 | Env (optional feature) | istio addon | `infrastructure/components/envs/{env}/istio` — the cluster includes this alongside the feature (observability carries no version — it's on by default via the base Cluster's `automated-monitoring` label, opt-out `infrastructure/components/disable-observability`) |
+| Env (namespace add-on) | headlamp addon | `infrastructure/components/envs/{env}/headlamp` — the namespace's `namespace-resources` kustomization includes it alongside `base/headlamp`. On by default for dev clusters via the `headlamp` label (envs/dev), opt-out `infrastructure/components/disable-headlamp` |
 | Per-cluster override | anything, e.g. a canary Kubernetes version | `patches:` block in the cluster `kustomization.yaml` (applies after all components) |
 
 To roll a version: bump it in `envs/dev`, let dev soak, then mirror the change in

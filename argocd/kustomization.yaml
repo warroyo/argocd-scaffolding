@@ -28,3 +28,10 @@ replacements:
         fieldPaths:
           - spec.generators.0.matrix.generators.1.git.repoURL
           - spec.template.spec.source.repoURL
+      # namespace-resources: git generator nested inside matrix + source
+      - select:
+          kind: ApplicationSet
+          name: namespace-resources
+        fieldPaths:
+          - spec.generators.0.matrix.generators.1.git.repoURL
+          - spec.template.spec.source.repoURL

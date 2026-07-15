@@ -1,0 +1,27 @@
+# Headlamp add-on. No cluster-specific overrides, so a SINGLE shared AddonInstall
+# (per supervisor namespace) installs it on every cluster in that namespace that
+# carries the addons.kubernetes.vmware.com/headlamp: enabled label — the same
+# label-gated model VKS ships for prometheus/automated-monitoring. Delivered once
+# per namespace by the namespace-resources ApplicationSet (not per cluster), so
+# the two clusters that share a namespace don't fight to own it.
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonInstall
+metadata:
+  name: headlamp-addoninstall
+  labels:
+    app.kubernetes.io/name: headlamp
+spec:
+  addonRef:
+    name: headlamp
+  # Placeholder — the version (AddonConfigDefinition name) is pinned per
+  # environment by the feature-scoped sub-component
+  # (infrastructure/components/envs/{env}/headlamp), included by the namespace's
+  # namespace-resources kustomization. A namespace that skips it fails loudly
+  # (validate.sh rejects replace-me in rendered output).
+  version: replace-me
+  clusters:
+  - selector:
+      matchLabels:
+        addons.kubernetes.vmware.com/headlamp: enabled
+  # Uninstall from a cluster when its headlamp label is removed/flipped.
+  stopMatchingBehavior: Delete
