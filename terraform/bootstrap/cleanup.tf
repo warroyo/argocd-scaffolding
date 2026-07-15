@@ -11,8 +11,12 @@
 # for the finalizers to cascade WHILE ArgoCD is still up, before destroy-bootstrap. To reach
 # the vcfa supervisor where ArgoCD runs (not the state-backend cluster, not any ambient
 # kubectl context) it reads this output and builds a throwaway kubeconfig per namespace.
-# vcfa tokens are short-lived, so destroy-apps runs `apply -refresh-only` first to re-read
-# data.vcfa_kubeconfig into state, making the token below fresh at read time.
+# vcfa tokens are short-lived, so destroy-apps runs a refresh-only pass first (plan
+# -refresh-only -out + apply <planfile>) to re-read data.vcfa_kubeconfig into state,
+# making the token below fresh at read time. The two-step (var baked into the plan file,
+# no -var on apply) avoids Terraform's "can't set a variable when applying a saved plan"
+# guard — a single-shot `apply -refresh-only` trips it because the helm providers
+# configure host/token from this data source, forcing an internal plan+apply split.
 
 locals {
   argo_namespaces = { for k, v in var.namespace_config : k => v if v.deploy_argo }

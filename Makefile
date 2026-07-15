@@ -142,13 +142,21 @@ destroy-infra: init-infra
 ## Applications are appset-generated (not helm-owned), so destroy-bootstrap alone
 ## orphans them and leaks clusters. Talks to the vcfa supervisor (where ArgoCD runs)
 ## via a throwaway kubeconfig built from bootstrap's argo_endpoints output — no ambient
-## kubectl context needed. `apply -refresh-only` first re-reads the vcfa data source so
-## the short-lived tokens are fresh. Requires kubectl + jq. Only deploy_argo namespaces.
+## kubectl context needed. A refresh-only pass first re-reads the vcfa data source so
+## the short-lived tokens are fresh. It is split into `plan -refresh-only -out` (var via
+## env) + `apply <planfile>` (no var): the helm providers configure host/token from
+## data.vcfa_kubeconfig, so a single-shot `apply -refresh-only` splits internally into
+## plan+apply and the still-set TF_VAR_namespace_config trips Terraform's "can't set a
+## variable when applying a saved plan" guard. Baking the var into the plan file avoids it.
+## Requires kubectl + jq. Only deploy_argo namespaces.
 destroy-apps: init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config 2>/dev/null))
 	@if [ -z '$(NS_CONFIG)' ]; then echo "warn: infra namespace_config empty — nothing to clean, skipping." >&2; exit 0; fi
 	@echo "refreshing ArgoCD-namespace tokens..."
-	@TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) apply -refresh-only -auto-approve >/dev/null
+	@tfp=$$(mktemp) && \
+	  TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) plan -refresh-only -out="$$tfp" >/dev/null && \
+	  terraform -chdir=$(BOOTSTRAP_DIR) apply -input=false "$$tfp" >/dev/null; \
+	  rc=$$?; rm -f "$$tfp"; exit $$rc
 	@umask 077; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 	  eps=$$(TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) output -json argo_endpoints); \
 	  if [ "$$(jq 'length' <<<"$$eps")" = 0 ]; then echo "no deploy_argo namespaces — nothing to clean."; exit 0; fi; \
