@@ -120,6 +120,12 @@ apply-bootstrap: check-generated-clean init-bootstrap
 apply: apply-infra apply-bootstrap
 
 ## Destroy bootstrap first (helm releases), then infra (namespaces/projects).
+## Split into `plan -destroy -out` (var via env) + `apply <planfile>` (no var) for
+## the same reason as destroy-apps: the helm providers configure host/token from
+## data.vcfa_kubeconfig, so a single-shot `terraform destroy` splits internally into
+## plan+apply and the still-set TF_VAR_namespace_config trips the "can't set a variable
+## when applying a saved plan" guard. The confirmation gate is preserved manually (set
+## AUTO_APPROVE=1 to skip it, e.g. in CI).
 destroy-bootstrap: init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config 2>/dev/null))
 	@if [ -z '$(NS_CONFIG)' ]; then \
@@ -131,8 +137,14 @@ destroy-bootstrap: init-bootstrap
 	  echo "  If bootstrap state is orphaned, clear it directly: terraform -chdir=$(BOOTSTRAP_DIR) state list" >&2; \
 	  exit 1; \
 	fi
-	@TF_VAR_namespace_config='$(NS_CONFIG)' \
-	  terraform -chdir=$(BOOTSTRAP_DIR) destroy
+	@tfp=$$(mktemp); \
+	  TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) plan -destroy -out="$$tfp" || { rm -f "$$tfp"; exit 1; }; \
+	  if [ -z "$$AUTO_APPROVE" ]; then \
+	    printf 'Apply this destroy plan? Only "yes" will be accepted: '; read ans; \
+	    [ "$$ans" = yes ] || { echo "aborted."; rm -f "$$tfp"; exit 1; }; \
+	  fi; \
+	  terraform -chdir=$(BOOTSTRAP_DIR) apply -input=false "$$tfp"; \
+	  rc=$$?; rm -f "$$tfp"; exit $$rc
 
 destroy-infra: init-infra
 	terraform -chdir=$(INFRA_DIR) destroy
@@ -140,7 +152,12 @@ destroy-infra: init-infra
 ## Delete ArgoCD-managed ApplicationSets + Applications and let their finalizers
 ## cascade (removing the VKS workload clusters) BEFORE ArgoCD is torn down. Those
 ## Applications are appset-generated (not helm-owned), so destroy-bootstrap alone
-## orphans them and leaks clusters. Talks to the vcfa supervisor (where ArgoCD runs)
+## orphans them and leaks clusters. First quiesces the helm-owned root app (removes
+## its automated syncPolicy so it stops selfHeal-recreating the appsets / pruning the
+## AppProjects mid-teardown, and strips its finalizer) but leaves the object for
+## destroy-bootstrap/helm to delete — the root app has a single owner (helm). Keeping
+## the AppProjects alive while the workload apps delete avoids "app is not allowed in
+## project" finalizer deadlock. Talks to the vcfa supervisor (where ArgoCD runs)
 ## via a throwaway kubeconfig built from bootstrap's argo_endpoints output — no ambient
 ## kubectl context needed. A refresh-only pass first re-reads the vcfa data source so
 ## the short-lived tokens are fresh. It is split into `plan -refresh-only -out` (var via
@@ -163,8 +180,12 @@ destroy-apps: init-bootstrap
 	  jq -c 'to_entries[]' <<<"$$eps" | while read -r e; do \
 	    ns=$$(jq -r '.key' <<<"$$e"); kc="$$tmp/$$ns"; \
 	    jq -r '.value | "apiVersion: v1\nkind: Config\nclusters:\n- name: a\n  cluster:\n    server: \(.host)\n    insecure-skip-tls-verify: \(.insecure)\nusers:\n- name: a\n  user:\n    token: \(.token)\ncontexts:\n- name: a\n  context:\n    cluster: a\n    user: a\n    namespace: \(.namespace)\ncurrent-context: a"' <<<"$$e" > "$$kc"; \
-	    echo "== $$ns: deleting ApplicationSets + Applications (cascades cluster deletion; up to 25m) =="; \
-	    kubectl --kubeconfig="$$kc" delete applicationset --all --ignore-not-found || true; \
+	    echo "== $$ns: quiescing root app (leave it for destroy-bootstrap/helm to delete) =="; \
+	    kubectl --kubeconfig="$$kc" patch application root-bootstrap --type=json -p '[{"op":"remove","path":"/spec/syncPolicy/automated"}]' 2>/dev/null || true; \
+	    kubectl --kubeconfig="$$kc" patch application root-bootstrap --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true; \
+	    echo "== $$ns: deleting ApplicationSets (orphan their generated apps) =="; \
+	    kubectl --kubeconfig="$$kc" delete applicationset --all --cascade=orphan --ignore-not-found || true; \
+	    echo "== $$ns: deleting Applications (cascades cluster deletion; up to 25m) =="; \
 	    kubectl --kubeconfig="$$kc" delete application    --all --ignore-not-found --wait --timeout=25m || true; \
 	  done
 

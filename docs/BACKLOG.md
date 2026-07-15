@@ -27,7 +27,12 @@ improvement · **P3** = nice-to-have / hygiene.
   `{project}-{namespace_ref}-{cluster}` (so bare cluster names may repeat). The
   `preserveResourcesOnDeletion` flag is intentionally **not** set — teardown
   still relies on the Application finalizer cascading (`make destroy-apps`), and
-  dir-deletion still deprovisions. The rename trap remains armed.
+  dir-deletion still deprovisions. The rename trap remains armed. The
+  root-app-prunes-AppProject race is defused *in the `make destroy-apps` path*:
+  it quiesces the root app (drops automated `syncPolicy`, strips its finalizer)
+  before deleting the appsets/apps, so AppProjects stay alive until the workload
+  Applications finish finalizing. The general tenant-removal ordering (terraform
+  destroying the namespace while clusters run) is still undefined.
 - **Size:** S.
 
 ### P1 — Rotate and externalize credentials
