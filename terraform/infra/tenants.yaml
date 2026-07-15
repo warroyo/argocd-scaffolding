@@ -7,7 +7,7 @@ tenants:
       - name: "dev-1"
         environment: dev
         zone_name: "domain-c9"   # always set explicitly — default exists but varies per region
-        storage_limit: "200Gi"
+        storage_limit: "400Gi"
         mem_limit: "30Gi"
         cpu_limit: "20000M"
       # - name: "dev-2"
