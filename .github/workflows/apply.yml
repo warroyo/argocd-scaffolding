@@ -57,6 +57,9 @@ jobs:
       - name: Apply bootstrap
         run: make apply-bootstrap
         env:
+          # apply-bootstrap plans to a file then applies it (saved-plan guard workaround);
+          # skip the manual confirm gate here — no TTY in Actions.
+          AUTO_APPROVE: 1
           TF_VAR_vcfa_refresh_token: ${{ secrets.VCFA_REFRESH_TOKEN }}
           TF_VAR_vcfa_url: ${{ secrets.VCFA_URL }}
           TF_VAR_vcfa_org: ${{ secrets.VCFA_ORG }}

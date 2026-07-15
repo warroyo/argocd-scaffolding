@@ -107,10 +107,22 @@ plan-bootstrap: init-bootstrap
 	@TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) plan
 
+## Split into `plan -out` (var via env) + `apply <planfile>` (no var) for the same
+## reason as destroy-bootstrap: the helm providers configure host/token from
+## data.vcfa_kubeconfig, so a single-shot `terraform apply` splits internally into
+## plan+apply and the still-set TF_VAR_namespace_config trips the "can't set a variable
+## when applying a saved plan" guard. Baking the var into the plan file avoids it. The
+## confirmation gate is preserved manually (set AUTO_APPROVE=1 to skip it, e.g. in CI).
 apply-bootstrap: check-generated-clean init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
-	@TF_VAR_namespace_config='$(NS_CONFIG)' \
-	  terraform -chdir=$(BOOTSTRAP_DIR) apply $(TF_APPLY_FLAGS)
+	@tfp=$$(mktemp); \
+	  TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) plan -out="$$tfp" || { rm -f "$$tfp"; exit 1; }; \
+	  if [ -z "$$AUTO_APPROVE" ]; then \
+	    printf 'Apply this plan? Only "yes" will be accepted: '; read ans; \
+	    [ "$$ans" = yes ] || { echo "aborted."; rm -f "$$tfp"; exit 1; }; \
+	  fi; \
+	  terraform -chdir=$(BOOTSTRAP_DIR) apply -input=false "$$tfp"; \
+	  rc=$$?; rm -f "$$tfp"; exit $$rc
 
 # ── Combined ───────────────────────────────────────────────────────────────────
 

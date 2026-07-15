@@ -223,7 +223,7 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `cluster-template/`: Copy-me template for onboarding a new cluster.
   - `sample-tenant-repo/`: Example of what a tenant keeps in their **own** app repo (not deployed by this platform).
 - `.github/workflows/`
-  - `apply.yml`: On pushes to `main` touching `terraform/**` or `charts/bootstrap-tenant/**`, runs `make apply-infra` (provisions + renders generated files), commits them (`git add -A`, so deletions of removed tenants are staged too), then runs `make apply-bootstrap`. Applies run with `TF_APPLY_FLAGS=-auto-approve -input=false` (no TTY in Actions).
+  - `apply.yml`: On pushes to `main` touching `terraform/**` or `charts/bootstrap-tenant/**`, runs `make apply-infra` (provisions + renders generated files), commits them (`git add -A`, so deletions of removed tenants are staged too), then runs `make apply-bootstrap`. `apply-infra` runs with `TF_APPLY_FLAGS=-auto-approve -input=false`; `apply-bootstrap` (which plans to a file then applies it) skips its manual confirm gate via `AUTO_APPROVE=1` (no TTY in Actions).
   - `validate.yml`: On PRs and pushes to `main`, runs `scripts/validate.sh` (see [Local Testing](#local-testing)) plus a terraform job (`fmt -check` and `validate` with `-backend=false` for each root).
 
 ## Local Testing
