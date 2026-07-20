@@ -3,3 +3,4 @@ kind: Kustomization
 
 resources:
 - argocd-cm-patch.yaml
+- argocd-appproject-default-patch.yaml

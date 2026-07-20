@@ -1,0 +1,24 @@
+# SSA co-management of the built-in "default" AppProject: owns ONLY
+# destinationServiceAccounts. root-bootstrap (charts/bootstrap-tenant, project=
+# default) self-manages the argocd/ tree, including its own AppProject and
+# argocd-cm — a project ArgoCD auto-creates, not one of our rendered
+# AppProjects. Once impersonation is enabled it requires a match on every sync,
+# even the platform's own; this restores root-bootstrap's pre-impersonation
+# identity (argo-attach-sa, its existing cluster-admin registration SA) rather
+# than granting anything new. Same sync-wave as argocd-cm-patch so both are live
+# before impersonation is actually enforced. See docs/DECISIONS.md #12.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+    argocd.argoproj.io/sync-options: ServerSideApply=true
+spec:
+  destinationServiceAccounts:
+  - server: '*'
+    namespace: '*'
+    defaultServiceAccount: 'argo-attach-sa'
+  - server: ''
+    namespace: '*'
+    defaultServiceAccount: 'argo-attach-sa'

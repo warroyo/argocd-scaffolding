@@ -367,6 +367,11 @@ ConfigMap. This depends on the operator granting **per-key**, not
 whole-object, field ownership — verified against the live instance before
 relying on it (see `docs/GETTING-STARTED.md`).
 
+The flag is global — it also requires `destinationServiceAccounts` on the
+platform's own `default` and `infra` AppProjects (restoring their existing
+`argo-attach-sa` identity, not granting anything new); see
+`docs/DECISIONS.md` #12 for why and why the value shape differs between them.
+
 **Facts this design leans on, verified live** (not assumed): the Gatekeeper
 webhook backing VKSM auto-exempts only `gatekeeper-system` / `kube-system` /
 `vmware-system-vksm` — no `vmware-system-*` wildcard — so every other platform

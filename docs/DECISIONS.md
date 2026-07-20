@@ -313,3 +313,47 @@ gate LBs on an approval or a controller identity. Two reasons:
 
 `NodePort` stays denied (it bypasses the LB/IPAM path entirely and pins host
 ports), steering tenants to a Gateway-backed LoadBalancer.
+
+## 12. Why do the `default` and `infra` AppProjects need `destinationServiceAccounts` too?
+
+Enabling `application.sync.impersonation.enabled` (#10) doesn't only gate
+tenant syncs — once it's on, ArgoCD requires a `destinationServiceAccounts`
+match on **every** sync in **every** project, platform ones included. A
+project with none defined doesn't silently fall back to the un-impersonated
+controller identity; it hard-fails with "no matching service account found."
+This broke `root-bootstrap` (project `default`, self-managing the `argocd/`
+tree) and the platform ApplicationSets (project `infra`: `cluster-provisioning`,
+`namespace-resources`) the moment the flag went live — confirmed by forcing a
+fresh sync on each and watching them fail identically, not inferred.
+
+The fix for both is the same identity — `argo-attach-sa`, each destination's
+own pre-existing cluster-admin registration SA — restoring exactly the
+pre-impersonation behavior, not granting anything new. But the **value shape
+differs** by how each project's syncs fan out:
+
+- `default` (`root-bootstrap`) only ever targets its own home supervisor
+  namespace, so a namespace-qualified value would work — but so does the bare
+  form, and using the same bare form as `infra` keeps both consistent.
+- `infra`'s ApplicationSets fan out across **every tenant's own supervisor
+  namespace** (`namespace-resources` for tenant-1 targets `dev-1-hvvz2`, not
+  the platform's own `infra-84jfn`). A namespace-qualified value here
+  (`infra-84jfn:argo-attach-sa`) fails with a *different* error: the real
+  caller (e.g. `dev-1-hvvz2:argo-attach-sa`) has no RBAC to impersonate
+  anything in a namespace that isn't its own.
+
+The bare account name (`argo-attach-sa`, no namespace prefix) resolves relative
+to each sync's own destination namespace — one entry covers every tenant's
+supervisor namespace without enumerating them. Both entries also match
+`server: ''` alongside `server: '*'`: a project's own self-referential
+destination (ArgoCD managing its own namespace, as `root-bootstrap` does)
+resolves to an empty destination-server value in the impersonation lookup, and
+the `'*'` glob alone did not match it in practice.
+
+`default` is patched via SSA (`argocd/config/argocd-appproject-default-patch.yaml`,
+same pattern as `argocd-cm-patch.yaml` — it's ArgoCD's built-in project, not one
+we render). `infra` is set directly in `terraform/infra/templates/appproject.yaml.tftpl`
+(the `type == "infra"` branch), since Terraform already owns that file. The
+tenant branch's `platform-gitops:tenant-sync-${name}` keeps its namespace
+prefix — a tenant's Applications only ever target its own clusters, each with
+a fixed, literal `platform-gitops` namespace, so the multi-destination problem
+above doesn't apply there.
