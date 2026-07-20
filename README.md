@@ -410,7 +410,7 @@ fails at PR time instead of deploying a placeholder. Versions live in three laye
 
 | Layer | What it pins | Where |
 |-------|--------------|-------|
-| Env (always-on) | cluster class, Kubernetes version, AKO addon; package bundle + baseline packages | `infrastructure/components/envs/{env}`, `apps/components/envs/{env}` (applied via the profiles) |
+| Env (always-on) | cluster class, Kubernetes version, AKO addon; baseline package versions (cert-manager) | `infrastructure/components/envs/{env}`, `apps/components/envs/{env}` (applied via the profiles) |
 | Env (shared add-on) | istio + headlamp `AddonInstall` versions (`releaseFilter.ref` = an `AddonRelease` name) | `infrastructure/components/envs/{env}/{addon}` — the namespace's `namespace-resources` kustomization includes it alongside `base/{addon}`. Enablement is a cluster label: headlamp on by default for dev (envs/dev), opt-out `disable-headlamp`; istio opt-in via `components/istio`. (Observability carries no version — on by default via the base Cluster's `automated-monitoring` label, opt-out `disable-observability`) |
 | Per-cluster override | anything, e.g. a canary Kubernetes version | `patches:` block in the cluster `kustomization.yaml` (applies after all components) |
 

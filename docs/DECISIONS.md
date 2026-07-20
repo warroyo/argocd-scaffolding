@@ -357,3 +357,33 @@ tenant branch's `platform-gitops:tenant-sync-${name}` keeps its namespace
 prefix — a tenant's Applications only ever target its own clusters, each with
 a fixed, literal `platform-gitops` namespace, so the multi-destination problem
 above doesn't apply there.
+
+---
+
+## 13. Why does `cert-manager`'s `PackageInstall` not ship its own `PackageRepository`?
+
+**The problem.** The standard app stack used to render its own Carvel
+`PackageRepository` (`apps/base/standard-repo`, image pinned per-env) so its
+`PackageInstall`s (cert-manager) had a `Package` to resolve against.
+
+**What live-cluster verification found.** Every VKS cluster already carries a
+platform-owned `PackageRepository` (`vmware-system-tkg/standard-packages`,
+present since cluster creation) whose `Package`s — cert-manager included, at
+the exact version our env layer pinned — are visible cluster-wide via
+kapp-controller's global packaging namespace, no per-namespace
+`PackageRepository` required. Confirmed live: our own `tkg-system/standard-repo`
+carried an ArgoCD tracking annotation and a `last-applied-configuration`
+matching our `repo.yaml` byte-for-byte — it was GitOps's own object, not
+something VKS provisioned, and it was re-fetching content the platform already
+exposed for free.
+
+**The choice.** Deleted `apps/base/standard-repo` and its reference from
+`apps/components/stacks/standard`, and the per-env `imgpkgBundle` patch from
+`apps/components/envs/{env}`. `PackageInstall`s (cert-manager, and any future
+one) resolve straight from the platform's global namespace — the env layer
+now only pins the `PackageInstall`'s version constraint, nothing else.
+
+**The trade-off.** One fewer moving part, and one less thing to keep in sync
+with the platform's own bundle cadence — at the cost of being bound to
+whatever package versions the platform ships (no custom/private Carvel
+packages without reintroducing a repository).

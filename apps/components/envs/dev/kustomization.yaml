@@ -10,15 +10,6 @@ patches:
 - target:
     group: packaging.carvel.dev
     version: v1alpha1
-    kind: PackageRepository
-    name: standard-repo
-  patch: |-
-    - op: replace
-      path: /spec/fetch/imgpkgBundle/image
-      value: "projects.packages.broadcom.com/vsphere/supervisor/vks-standard-packages/3.6.0-20260211/vks-standard-packages:3.6.0-20260211" # Dev package bundle
-- target:
-    group: packaging.carvel.dev
-    version: v1alpha1
     kind: PackageInstall
     name: cert-manager
   patch: |-
