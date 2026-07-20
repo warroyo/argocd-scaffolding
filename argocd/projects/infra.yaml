@@ -20,3 +20,17 @@ spec:
   namespaceResourceWhitelist:
   - group: '*'
     kind: '*'
+  # Platform syncs (ApplicationSets: cluster-provisioning, namespace-resources)
+  # fan out across every tenant's own supervisor namespace, each with its own
+  # local argo-attach-sa — so this must be the BARE account name (no namespace
+  # prefix), which ArgoCD resolves relative to each sync's own destination
+  # namespace. A namespace-qualified value only works for a project whose syncs
+  # target one fixed namespace (see the tenant branch below). See
+  # docs/DECISIONS.md #12.
+  destinationServiceAccounts:
+  - server: '*'
+    namespace: '*'
+    defaultServiceAccount: 'argo-attach-sa'
+  - server: ''
+    namespace: '*'
+    defaultServiceAccount: 'argo-attach-sa'
