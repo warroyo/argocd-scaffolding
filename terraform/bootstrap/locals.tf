@@ -1,11 +1,6 @@
-# Per-namespace bootstrap config. The structural part (suffixed namespace names,
-# decision-model labels) comes from the infra run via var.namespace_config — the
-# single terraform -> bootstrap contract — so this stack never re-parses
-# tenants.yaml or guesses vcfa-suffixed names. Secrets are merged in here.
-#
-# The generated main.tf only wires providers to modules and references
-# local.bootstrap_config[<key>]; no values are baked into the generated HCL, so
-# it only changes when the SET of namespaces changes.
+# Per-namespace bootstrap config. Structural values (suffixed namespace names,
+# decision-model labels) come from the infra run via var.namespace_config — the
+# single infra -> bootstrap contract; secrets are merged in here.
 
 locals {
   # Single source of truth for the repo URL is argocd/repo-config.yaml (also

@@ -1,6 +1,4 @@
-# Opt out of headlamp: flip the headlamp addon label (enabled by default on dev
-# clusters via infrastructure/components/envs/dev) to disabled, so the shared
-# headlamp AddonInstall no longer selects this cluster.
+# Opt out of headlamp: flip the headlamp label to disabled (on by default via envs/dev).
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 patches:

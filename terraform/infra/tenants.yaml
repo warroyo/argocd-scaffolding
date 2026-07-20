@@ -3,6 +3,24 @@ tenants:
     type: tenant
     argo_namespace: "infra"
     # vpc_connectivity_profile_name: "default--us-east-a"  # optional — default is looked up via data source if unset
+    # Custom cluster policies — see CLAUDE.md "Adding a policy" for the catalog
+    # and docs/ARCHITECTURE.md "Cluster policy + namespace self-service" for the
+    # design. All start in dryrun; flip to deny per the rollout order in the
+    # policy's own docs once dryrun violations are clean.
+    policies:
+      require-namespace-labels:
+        enforcement: dryrun
+      gitops-namespace-containment:
+        enforcement: dryrun
+      hostname-ownership:
+        enforcement: dryrun
+        parameters:
+          allowedSuffixes:
+            - ".will-org-apps.vcf.lab"
+      service-exposure:
+        enforcement: dryrun
+        parameters:
+          denyNodePort: true
     namespaces:
       - name: "dev-1"
         environment: dev

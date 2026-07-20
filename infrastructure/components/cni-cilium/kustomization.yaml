@@ -1,0 +1,18 @@
+# cilium CNI (instead of default antrea). Day-0 only, immutable after creation.
+# One cni-* per cluster — see CLAUDE.md "VKS add-ons" Variant B.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+- target:
+    group: cluster.x-k8s.io
+    version: v1beta1
+    kind: Cluster
+  patch: |-
+    - op: add
+      path: /spec/topology/variables/-
+      value:
+        name: bootstrapAddons
+        value:
+          cniRef:
+            name: cilium
+            namespace: vmware-system-vks-public

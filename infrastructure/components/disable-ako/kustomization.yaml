@@ -1,0 +1,13 @@
+# Opt out of AKO: flip ako.kubernetes.vmware.com/install to "false" (uninstalls via
+# the platform installer's Delete; drop ako-istio too). CLAUDE.md "VKS add-ons" Variant B.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+- target:
+    group: cluster.x-k8s.io
+    version: v1beta1
+    kind: Cluster
+  patch: |-
+    - op: add
+      path: /metadata/labels/ako.kubernetes.vmware.com~1install
+      value: "false"

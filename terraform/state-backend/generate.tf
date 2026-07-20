@@ -1,18 +1,8 @@
-# Renders, from the live state-namespace credentials, the two gitignored files the
-# infra/bootstrap Kubernetes backends need:
-#
-#   .kube-backend.config  — a kubeconfig (server + token). Each root's backend.tf points
-#                           config_path at it; the backend reads the host and token here.
-#   .kube-backend.env     — KUBE_NAMESPACE. The kubernetes backend only takes host/token from
-#                           the kubeconfig — the target namespace is NOT read from it, so it
-#                           must be supplied as an env var. The Makefile sources this into
-#                           every recipe.
-#
-# Splitting it this way is what testing showed actually works: a kubeconfig for auth (the
-# individual KUBE_HOST/KUBE_TOKEN were not reliably honored by `terraform init`) plus the
-# namespace direct. config_path, insecure, and secret_suffix are literals in each backend.tf.
-#
-# Both files hold a token / point at one — gitignored, never commit.
+# Renders the two gitignored files the kubernetes backends need (see the CLAUDE.md
+# generated-files table): .kube-backend.config (kubeconfig with host + token, via
+# each backend.tf config_path) and .kube-backend.env (KUBE_NAMESPACE — the backend
+# doesn't read the namespace from the kubeconfig, so the Makefile sources it).
+# Both hold/point at a token — never commit.
 
 resource "local_sensitive_file" "backend_kubeconfig" {
   filename        = "${path.module}/../../.kube-backend.config"

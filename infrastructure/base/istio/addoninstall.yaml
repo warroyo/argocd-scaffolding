@@ -1,0 +1,21 @@
+# Shared label-gated istio AddonInstall (one per supervisor namespace).
+# Pattern: CLAUDE.md "VKS add-ons" Variant A.
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonInstall
+metadata:
+  name: istio-addoninstall
+  labels:
+    app.kubernetes.io/name: istio
+spec:
+  addonRef:
+    name: istio
+  # Version (AddonRelease name) pinned per-env by components/envs/{env}/istio.
+  releaseFilter:
+    ref:
+      name: replace-me
+      namespace: vmware-system-vks-public
+  clusters:
+  - selector:
+      matchLabels:
+        addons.kubernetes.vmware.com/istio: enabled
+  stopMatchingBehavior: Delete

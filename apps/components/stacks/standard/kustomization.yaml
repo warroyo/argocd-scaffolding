@@ -4,4 +4,5 @@ resources:
 - ../../../base/standard-repo
 - ../../../base/package-installer
 - ../../../base/cert-manager
+- ../../../base/tenant-sync
 

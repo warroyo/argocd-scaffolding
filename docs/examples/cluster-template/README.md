@@ -15,7 +15,11 @@ Then:
    `terraform/infra/tenants.yaml`). These three must match the directory path.
 2. Edit `kustomization.yaml` — include only the components you want. Reuse comes
    from the shared `infrastructure/components/` and `infrastructure/base/`; there
-   is no generation step, so you have full control.
+   is no generation step, so you have full control. Add-ons (istio, headlamp) are
+   enabled by cluster label; the shared `AddonInstall`s and their version pins
+   live in the namespace's `namespace-resources/` dir — if this cluster's
+   namespace doesn't have one yet, copy
+   `docs/examples/namespace-resources-template` alongside this cluster dir.
 3. Edit `apps/kustomization.yaml` — pick the app stacks for this cluster.
 4. Commit. The `cluster-provisioning` ApplicationSet joins this directory to its
    supervisor namespace by label (`gitops.platform/project` +

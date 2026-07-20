@@ -1,0 +1,66 @@
+# Per-tenant ArgoCD sync-impersonation identity. Design:
+# docs/ARCHITECTURE.md "Cluster policy + namespace self-service".
+# Dedicated namespace (own lifecycle, out of tenant policy scope); sync-wave -1
+# so it exists before the SA/RBAC below.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-gitops
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    gitops.platform/project: infra
+    gitops.platform/environment: infra
+---
+# Name suffixed per-tenant by cluster-var-injector (inject-project-suffix).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tenant-sync-replaceme
+  namespace: platform-gitops
+  labels:
+    config.k8s.io/inject-project-suffix: "true"
+---
+# Namespaced-kinds admin, cluster-wide — no cluster-scoped writes (the AppProject
+# clusterResourceWhitelist caps that). Built-in "admin" role is never renamed.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenant-sync-replaceme-admin
+  labels:
+    config.k8s.io/inject-project-suffix: "true"
+    config.k8s.io/inject-project-subject: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: admin
+subjects:
+- kind: ServiceAccount
+  name: tenant-sync-replaceme
+  namespace: platform-gitops
+---
+# admin lacks Namespace create/update (cluster-scoped) — grant it narrowly here
+# rather than widening the AppProject clusterResourceWhitelist.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tenant-sync-namespace-manager
+rules:
+- apiGroups: ['']
+  resources: ['namespaces']
+  verbs: ['create', 'get', 'list', 'watch', 'update', 'patch']
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenant-sync-namespace-manager
+  labels:
+    config.k8s.io/inject-project-subject: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: tenant-sync-namespace-manager
+subjects:
+- kind: ServiceAccount
+  name: tenant-sync-replaceme
+  namespace: platform-gitops

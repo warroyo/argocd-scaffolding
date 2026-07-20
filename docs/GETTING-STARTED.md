@@ -147,7 +147,9 @@ tenants:
 
 Anything you don't set (`class_name`, `storage_policy`, …) gets a default from
 `terraform/modules/tenant/variables.tf` — check the storage-policy default
-matches your install.
+matches your install. A tenant can also opt into the custom cluster policy
+catalog here (`policies:` — Part 5 walks through verifying it); this
+walkthrough's minimal example omits it.
 
 ### 2.3 Provision
 
@@ -240,10 +242,17 @@ data:
 ```
 
 Then open `kustomization.yaml` in the same directory: it already inherits the
-dev profile; uncomment optional features you want. **Pair every feature with
-its `envs/dev` sub-component** (e.g. istio needs `components/istio`,
-`components/ako-istio`, AND `components/envs/dev/istio` — the last one pins
-the version). Same idea in `apps/kustomization.yaml` for app stacks.
+dev profile; uncomment optional features you want. The CNI is declared
+explicitly — the template ships `cni-antrea` + `antrea-nsx`; swap both lines
+for `cni-cilium` or `cni-calico` BEFORE the first commit (the choice is
+immutable after cluster creation). Add-ons are label-gated:
+`components/istio` adds the enablement label the namespace's shared istio
+`AddonInstall` selects on (pair it with `components/ako-istio`; add
+`components/istio-config` only if this cluster needs istio values different
+from the defaults). The `AddonInstall` itself and its version pin
+(`components/envs/dev/istio`) live in the namespace's `namespace-resources/`
+dir — copy `docs/examples/namespace-resources-template` if this namespace
+doesn't have one yet. Same idea in `apps/kustomization.yaml` for app stacks.
 
 ### 3.2 Validate before pushing
 
@@ -257,7 +266,9 @@ make validate
 building argocd
 building infrastructure/clusters/tenant-1/dev-1/dev1-cluster
 building infrastructure/clusters/tenant-1/dev-1/dev1-cluster/apps
+building infrastructure/clusters/tenant-1/dev-1/namespace-resources
 building docs/examples/cluster-template (temp copy)
+building docs/examples/namespace-resources-template (temp copy)
 OK: all kustomize entrypoints build
 ```
 
@@ -341,7 +352,12 @@ kubectl apply -f app.yaml -n infra-kyrtt    # the suffixed infra namespace
 The `tenant-1` AppProject is the enforcement boundary: it denies the
 supervisor-namespace and in-cluster destinations and allows no cluster-scoped
 resources except `Namespace` — a tenant Application can deploy workloads to
-workload clusters, and nothing else.
+workload clusters, and nothing else. It also carries
+`destinationServiceAccounts`, so this sync runs impersonated as
+`platform-gitops:tenant-sync-tenant-1` on `dev1-cluster` — **not** the
+cluster's cluster-admin registration identity — which is what lets the custom
+cluster policies in Part 5 tell this tenant's own gitops flow apart from
+everyone else's.
 
 *You should see* the app sync, and on the workload cluster:
 
@@ -352,6 +368,76 @@ cart-5f6c…                  1/1     Running   0          1m
 catalog-7d9b…               1/1     Running   0          1m
 ```
 
+## Part 5 — Cluster policy & namespace self-service (~15 min, optional)
+
+This part confirms the layer that lets tenants manage namespaces through git
+without being cluster-admin — the design is in
+[ARCHITECTURE.md](ARCHITECTURE.md#cluster-policy--namespace-self-service).
+Two things here are marked **verify-live** rather than assumed, because they
+depend on how the argocd-service operator and ArgoCD itself behave on your
+install, not just on what's in git.
+
+### 5.1 Confirm the operator co-manages `argocd-cm` safely
+
+`argocd/config/argocd-cm-patch.yaml` sets one key
+(`application.sync.impersonation.enabled`) via Server-Side Apply, intending to
+coexist with the argocd-service operator's own management of the rest of the
+ConfigMap. This only works if the operator grants **per-key** field
+ownership, not one whole-object entry:
+
+```sh
+kubectl get cm argocd-cm -n infra-kyrtt -o yaml   # your suffixed infra namespace
+```
+
+*You should see* in `metadata.managedFields`: two managers, one owning
+`f:data.application\.sync\.impersonation\.enabled` and the operator's own
+manager owning the rest, each key separately. **If instead one manager owns a
+single whole-map `f:data` entry**, the operator's next reconcile will
+silently revert this key — the patch isn't safe on this install, and
+impersonation needs a different mechanism before you rely on the rest of this
+part.
+
+Confirm the flag stuck: `kubectl get cm argocd-cm -n infra-kyrtt -o jsonpath='{.data.application\.sync\.impersonation\.enabled}'` → `true`.
+
+### 5.2 Confirm tenant syncs are actually impersonated
+
+Re-sync the `music-store-app` from Part 4, then check who applied it on the
+workload cluster:
+
+```sh
+kubectl get deploy -n music-store -o jsonpath='{.items[0].metadata.managedFields[0].manager}'
+```
+
+*You should see* the impersonated identity
+(`tenant-sync-tenant-1`), not `argo-attach-sa`. If a sync from a **brand-new**
+cluster ever appears to succeed as `argo-attach-sa` instead of failing outright,
+that means this ArgoCD version falls back to the un-impersonated identity when
+the target service account is momentarily missing rather than hard-failing —
+worth knowing before you trust the bootstrap-window argument in
+[ARCHITECTURE.md](ARCHITECTURE.md#known-limitations).
+
+### 5.3 Confirm the policies rendered and are catching real cases
+
+```sh
+vcf context use <your-vcfa-context>          # org-level context
+kubectl get clusterpolicytemplate -n @org
+kubectl get clusterpolicy -n tenant-1
+```
+
+*You should see* four templates and four `ClusterPolicy` objects, all
+`enforcementAction: dryrun` (`tenants.yaml` ships them that way — see
+CLAUDE.md's rollout order before flipping any to `deny`). Then, on the
+workload cluster:
+
+```sh
+kubectl get constrainttemplate      # the four propagated into dev1-cluster
+```
+
+Try a violation: remove `gitops.platform/project`/`environment` from the
+`music-store` Namespace in your tenant repo, push, let it sync — the
+violation shows up recorded against the constraint (dryrun never blocks the
+sync), not as a sync failure. Restore the labels before continuing.
+
 ## You're done — and what you have now
 
 - **Add a namespace or tenant:** edit `tenants.yaml`, `make apply`, commit the
@@ -360,6 +446,7 @@ catalog-7d9b…               1/1     Running   0          1m
 - **Roll a version:** bump one pin in `components/envs/dev`, let it soak,
   mirror to prod — see the README's *Version management* section.
 - **Change every dev cluster at once:** edit `infrastructure/profiles/dev`.
+- **Add a cluster policy:** see CLAUDE.md's "Adding a policy" workflow.
 
 One warning before you experiment freely:
 

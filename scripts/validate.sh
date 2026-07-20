@@ -12,8 +12,9 @@
 #      its environment overlay — the bases carry replace-me placeholders).
 #   4. an apps/ dir that declares a `vars` cluster_name (for the apps-side
 #      injector) declares the directory's cluster name.
-#   5. docs/examples/cluster-template still builds (via a temp copy at the real
-#      directory depth), so the template can't rot silently.
+#   5. docs/examples/cluster-template and docs/examples/namespace-resources-template
+#      still build (via temp copies at the real directory depth), so the
+#      templates can't rot silently.
 #
 # Usage: scripts/validate.sh   (requires kustomize on PATH)
 set -uo pipefail
@@ -80,6 +81,12 @@ while IFS= read -r details; do
     if [ -n "$apps_cluster" ] && [ "$apps_cluster" != "$cluster" ]; then
       fail "$dir/apps/kustomization.yaml: vars cluster_name is '$apps_cluster' but the directory implies '$cluster'"
     fi
+    # project also feeds the apps-side tenant-sync SA/RBAC naming
+    # (apps/components/cluster-var-injector) — must agree with the directory too.
+    apps_project="$(grep -o 'project=[^ ]*' "$dir/apps/kustomization.yaml" 2>/dev/null | head -1 | cut -d= -f2)"
+    if [ -n "$apps_project" ] && [ "$apps_project" != "$project" ]; then
+      fail "$dir/apps/kustomization.yaml: vars project is '$apps_project' but the directory implies '$project'"
+    fi
     echo "building $dir/apps"
     build_check "$dir/apps"
   fi
@@ -107,6 +114,21 @@ cp -r infrastructure/clusters/tenant-1/vars "$TPL_PROJECT/vars"
 build_check "$TPL_PROJECT/tmpl-ns/tmpl-cluster"
 kustomize build "$TPL_PROJECT/tmpl-ns/tmpl-cluster/apps" >/dev/null \
   || fail "kustomize build failed: docs/examples/cluster-template/apps"
+
+# Same trick for the namespace-resources template (shared add-on installs).
+echo "building docs/examples/namespace-resources-template (temp copy)"
+cp -r docs/examples/namespace-resources-template "$TPL_PROJECT/tmpl-ns/namespace-resources"
+build_check "$TPL_PROJECT/tmpl-ns/namespace-resources"
+
+# Rego syntax check for the custom cluster policy catalog (terraform/infra/policies.tf).
+# Optional — opa is not a hard dependency like kustomize, this only runs if it's
+# on PATH, so a missing opa install never fails CI or a local run.
+if command -v opa >/dev/null 2>&1; then
+  echo "checking terraform/infra/rego"
+  opa check terraform/infra/rego/ || fail "opa check failed: terraform/infra/rego"
+else
+  echo "skipping opa check (opa not on PATH)"
+fi
 
 if [ "$rc" -eq 0 ]; then
   echo "OK: all kustomize entrypoints build"

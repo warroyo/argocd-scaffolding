@@ -1,13 +1,5 @@
-# Dev environment profile — the set every dev cluster inherits.
-#
-# A cluster references this profile and then adds only its own deltas
-# (identity, optional feature components, and override patches). Change something
-# here once and every dev cluster picks it up; there is no per-cluster copy.
-#
-# What belongs here: building blocks + feature components that are ON for all dev
-# clusters, plus the env overlay that carries the real dev values. What does NOT
-# belong here: anything cluster-specific (cluster-details, tenant-vars, the
-# cluster-var-injector) or optional per-cluster features (istio, autoscaling).
+# Dev environment profile — every dev cluster inherits this; edit to change all
+# dev clusters at once. See CLAUDE.md "Changing every cluster in an environment".
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
@@ -16,9 +8,8 @@ resources:
 - ../../base/cluster-argocd-attach
 
 components:
-- ../../components/antrea-nsx
+# CNI is NOT here — each cluster picks exactly one cni-* (day-0, immutable).
 - ../../components/argocd-tenant-cluster
 - ../../components/ako
-# Env overlay last: it fills in the real dev values (AKO controller host, cloud)
-# over the placeholders carried in the bases.
+# Env overlay last — fills real dev values over base placeholders.
 - ../../components/envs/dev

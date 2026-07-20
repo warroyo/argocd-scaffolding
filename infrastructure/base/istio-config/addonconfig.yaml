@@ -1,3 +1,7 @@
+# Opt-in per-cluster istio value overrides — a cluster on defaults ships none (the
+# controller auto-creates one). Name injector-prefixed to <cluster>-istio; no
+# addonConfigDefinitionRef/clusterName (controller fills them; version pinned only
+# in the shared AddonInstall). See CLAUDE.md "VKS add-ons" Variant A.
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonConfig
 metadata:
@@ -6,13 +10,6 @@ metadata:
     app.kubernetes.io/name: istio
     config.k8s.io/inject-cluster-name-prefix: "true"
 spec:
-  addonConfigDefinitionRef:
-     # Placeholder — istio is an optional per-cluster feature, so the version
-     # comes from the feature-scoped env sub-component
-     # (infrastructure/components/envs/{env}/istio), included by the cluster
-     # alongside the istio component.
-     name: replace-me
-     namespace: vmware-system-vks-public
   values:
     istio:
       namespace: "istio-system"
@@ -123,21 +120,3 @@ spec:
         defaultProviders:
           tracing:
             - jaeger
----
-apiVersion: addons.kubernetes.vmware.com/v1alpha1
-kind: AddonInstall
-metadata:
-  name: cluster-istio-installer
-  labels:
-    app.kubernetes.io/name: istio
-    config.k8s.io/inject-cluster-name-prefix: "true"
-  annotations:
-    argocd.argoproj.io/sync-wave: '1'
-spec:
-  addonRef:
-    name: istio
-  clusters:
-  - selector:
-      matchLabels:
-        cluster.x-k8s.io/cluster-name: cluster 
-  paused: false

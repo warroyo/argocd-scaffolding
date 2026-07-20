@@ -1,16 +1,5 @@
-# Dev headlamp version. Headlamp is delivered per namespace via the
-# namespace-resources ApplicationSet (not the cluster profile), so its version
-# can't live in the profile-level env overlay. A namespace that installs headlamp
-# includes this right after base/headlamp in its namespace-resources
-# kustomization:
-#
-#   resources:
-#   - ../../../../base/headlamp
-#   components:
-#   - ../../../../components/envs/dev/headlamp
-#
-# Forgetting it fails loudly — the base carries a replace-me placeholder that
-# validate.sh rejects in rendered output.
+# Dev headlamp version pin (AddonRelease name), included by a namespace's
+# namespace-resources after base/headlamp. See CLAUDE.md "Rolling a version".
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
@@ -22,5 +11,5 @@ patches:
     labelSelector: "app.kubernetes.io/name=headlamp"
   patch: |-
     - op: replace
-      path: /spec/version
-      value: "headlamp.kubernetes.vmware.com.0.42.0-vmware.1-vks.1" # Dev headlamp addon version
+      path: /spec/releaseFilter/ref/name
+      value: "headlamp.kubernetes.vmware.com.0.42.0-vmware.1-vks.1" # Dev headlamp AddonRelease

@@ -1,0 +1,6 @@
+# Opt-in per-cluster istio value overrides (base/istio-config); injector prefixes
+# the AddonConfig name to <cluster>-istio. See CLAUDE.md "VKS add-ons" Variant A.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+- ../../base/istio-config

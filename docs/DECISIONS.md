@@ -143,9 +143,10 @@ impossible without forking the base.
 
 **The choice.** Bases carry `replace-me` placeholders instead of versions.
 Real pins live in the environment layer: always-on versions in
-`components/envs/{env}` (inherited through the profile), optional-feature
-versions in small feature-scoped components (`envs/{env}/istio`) that a cluster
-includes alongside the feature. A
+`components/envs/{env}` (inherited through the profile), shared add-on versions
+in small feature-scoped components (`envs/{env}/istio`, `envs/{env}/headlamp`)
+that a namespace's `namespace-resources` kustomization includes alongside the
+add-on base (see decision 9). A
 single cluster can canary ahead via a `patches:` block. Validation rejects any
 rendered output that still contains `replace-me`.
 
@@ -175,3 +176,140 @@ cost: platform config and tenant-visible cluster config share one history, so
 the write boundary between platform team and tenants has to come from code
 ownership rules and branch protection (see the backlog), not from repo
 boundaries.
+
+---
+
+## 9. Why are add-ons installed with shared label-gated AddonInstalls?
+
+**The problem.** VKS add-ons were wired three different ways: istio as a
+per-cluster `AddonInstall` whose selector the injector rewrote to one exact
+cluster name, headlamp as a shared label-selected `AddonInstall`, and ako/antrea
+as bare `AddonConfig`s with inconsistent label keys. Every new add-on had to
+pick a style, and the per-cluster istio install duplicated an object the CRD
+model already fans out for free.
+
+**The choice.** One pattern, two variants, following the VKS addon CRD model:
+
+- **Installable add-on** (istio, headlamp): ONE shared `AddonInstall` per
+  supervisor namespace (`infrastructure/base/{addon}`, delivered by the
+  `namespace-resources` ApplicationSet), selecting clusters on
+  `addons.kubernetes.vmware.com/{addon}: enabled` with
+  `stopMatchingBehavior: Delete`. Enablement is a Cluster label (default-on
+  add-ons set it in `envs/{env}` with a `disable-{addon}` opt-out; opt-in
+  add-ons get a `components/{addon}` label component). The version is pinned in
+  exactly one place: `releaseFilter.ref.name` (an `AddonRelease` name — the
+  API has no `AddonInstall.spec.version` field; a value set there is pruned and
+  the addon silently floats), via `components/envs/{env}/{addon}`.
+- **Auto-installed core add-on** (ako, antrea): the platform installs it, so
+  there is no `AddonInstall` to author — only a per-cluster `AddonConfig`.
+  (Antrea isn't even label-gated: it's the cluster's CNI, selected in the
+  Cluster spec via `bootstrapAddons.cniRef` — the AddonConfig only tunes its
+  settings.)
+
+`AddonConfig` is always per-cluster overrides ONLY, and opt-in
+(`components/istio-config`): the addon controller auto-generates an
+`AddonConfig` named `{cluster}-{addon}` (its default `addonConfigNameTemplate`)
+for clusters without one, filling `addonConfigDefinitionRef` and `clusterName`
+itself — which is why authored configs omit both fields. Every addon resource
+carries `app.kubernetes.io/name: {addon}` and all patches target by
+`labelSelector`, never by exact name.
+
+**The trade-off.** Enabling an add-on for a cluster is one label component;
+uninstalling is removing it (`Delete` handles cleanup). The costs: an add-on's
+version rolls per namespace-environment, not per cluster (canary = a `patches:`
+override in one namespace-resources dir), and a cluster that needs custom
+values takes a second component (`{addon}-config`) — but a cluster on defaults
+ships nothing at all.
+
+See `docs/ARCHITECTURE.md` → "VKS add-on pattern" for the diagram and the
+per-add-on variant table.
+
+---
+
+## 10. Why is custom cluster policy in Terraform, keyed on per-tenant sync impersonation?
+
+**The problem.** Tenants manage namespaces through git, synced by a shared
+ArgoCD instance — but the workload cluster's registration identity
+(`argo-attach-sa`, cluster-admin) is the same for every sync, tenant and
+platform alike. Nothing at the cluster API server can tell them apart, so
+"self-service namespaces via git" otherwise means "tenant is cluster-admin."
+VCF Automation's policy CRDs (`ClusterPolicyTemplate`, org-scoped) are also
+org-admin-only — a tenant's own ArgoCD project could never author them even
+if policy were pushed through GitOps.
+
+**The choice.** Two decisions, not one:
+
+- **Policy lives in Terraform** (`terraform/infra/policies.tf` +
+  `terraform/infra/rego/`), not GitOps, because `ClusterPolicyTemplate` is an
+  org singleton only an org admin can create — putting it outside any
+  tenant's ArgoCD project by construction, the same reason the AppProjects
+  themselves are Terraform-rendered rather than hand-authored.
+- **ArgoCD sync impersonation gives each tenant its own identity**
+  (`destinationServiceAccounts` on the generated AppProject → a per-tenant
+  `tenant-sync-<tenant>` service account, `apps/base/tenant-sync`, named by
+  `apps/components/cluster-var-injector`). Custom `ClusterPolicy` rules key on
+  that identity: a Namespace-label-ownership policy plus a
+  containment policy that denies that identity writing outside namespaces
+  labeled as its own tenant. A single shared identity was considered and
+  rejected — the tenant AppProject's `destinations` block already allows
+  targeting any registered cluster by name (not just the tenant's own), so a
+  shared principal would make a tenant landing on another tenant's cluster
+  indistinguishable from that cluster's legitimate owner. Per-tenant naming
+  turns that same gap into a sync that simply fails (no such service account
+  exists there) instead of a silent cross-tenant compromise.
+
+Enabling impersonation needs one `argocd-cm` key
+(`application.sync.impersonation.enabled`) that the argocd-service operator
+doesn't manage — applied as a *minimal* Server-Side-Apply patch
+(`argocd/config/argocd-cm-patch.yaml`) that owns only that key, rather than
+templating the operator's own CR (which exposes no such field) or replacing
+the whole ConfigMap (which would fight the operator's reconcile loop).
+
+Namespace ownership itself is **label-driven, not an exclude-list**: a
+`require-namespace-labels` policy makes the tenant's own sync identity stamp
+`gitops.platform/project`/`environment` on every namespace it touches (with a
+no-adoption rule blocking it from relabeling a namespace that wasn't already
+its own); every other policy then scopes by that label's presence or absence.
+The one genuine exclude-list left is three lines in the AppProject
+(`kube-system` / `gatekeeper-system` / `vmware-system-vksm`) — the exact
+namespaces the Gatekeeper webhook itself is hard-configured to never see, so
+no policy could cover them regardless of labeling.
+
+**The trade-off.** Adding a policy is Terraform, not a PR against the
+`argocd/` tree — consistent with the rest of the platform-admin surface, but
+one more place (alongside `tenants.yaml`, the AppProject template) that
+requires an infra apply rather than a plain git sync. Impersonation is a beta
+ArgoCD feature (v3.0.19, shipped here); its exact behavior when the target
+service account is momentarily missing (hard-fail vs. silent fallback to the
+un-impersonated identity) determines how much a brand-new cluster's bootstrap
+window actually matters, and is a verify-live item (see
+`docs/GETTING-STARTED.md`), not something this design can assert from git
+alone. The cross-cluster destination gap itself is mitigated, not closed —
+closing it needs cluster names to carry a tenant prefix, a directory-layout
+change out of scope here.
+
+See `docs/ARCHITECTURE.md` → "Cluster policy + namespace self-service" for
+the diagram and the full policy table.
+
+## 11. Why doesn't `service-exposure` police LoadBalancer Services?
+
+`service-exposure` denies `NodePort` but **allows** `LoadBalancer` — it does not
+gate LBs on an approval or a controller identity. Two reasons:
+
+- **Provider heterogeneity.** Tenants expose via their own `Gateway`, and the
+  platform supports multiple Gateway API providers (a cluster registers both the
+  `avi-lb`/AKO and `istio` GatewayClasses, and customers may bring their own). The
+  LB Service that a tenant Gateway produces is created by the provider's
+  controller — `avi-system:ako-sa` for AKO, `istiod` for istio, an unknowable SA
+  for a customer's. An identity exemption list is therefore coupled to one
+  provider and can never cover customer-brought ones; a `LoadBalancer`-requires-
+  annotation gate is worse still, because the annotation is tenant-set and so
+  self-approvable.
+- **The real boundary is the IP pool, not admission.** Clusters are
+  single-tenant, so an LB only ever consumes that one tenant's own cluster
+  capacity. LB sprawl is bounded by the cluster's Avi Service Engine Group and VPC
+  IP pool (`seg_name`, `vpc_private_cidr`) — a quota the platform already owns —
+  rather than by a Gatekeeper rule that would have to know every provider.
+
+`NodePort` stays denied (it bypasses the LB/IPAM path entirely and pins host
+ports), steering tenants to a Gateway-backed LoadBalancer.

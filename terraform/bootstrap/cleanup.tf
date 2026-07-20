@@ -1,22 +1,14 @@
-# ArgoCD supervisor endpoints for `make destroy-apps` — OUTPUT ONLY, no resources, so a
-# normal apply-bootstrap has zero side effects from this file (nothing written to disk).
+# OUTPUT ONLY (no resources) — supervisor endpoints for `make destroy-apps`.
 #
-# Teardown ordering problem: the `*-provision` / `*-apps` Applications are created by the
-# ApplicationSet controllers at runtime (not helm-owned), so destroying the bootstrap helm
-# release removes ArgoCD *and* the appsets at once — the controllers die before they
-# cascade-delete those Applications, orphaning them and leaking the VKS workload clusters
-# (whose deletion is driven by the Applications' finalizers).
-#
-# `make destroy-apps` fixes the order: it deletes the ApplicationSets/Applications and waits
-# for the finalizers to cascade WHILE ArgoCD is still up, before destroy-bootstrap. To reach
-# the vcfa supervisor where ArgoCD runs (not the state-backend cluster, not any ambient
-# kubectl context) it reads this output and builds a throwaway kubeconfig per namespace.
-# vcfa tokens are short-lived, so destroy-apps runs a refresh-only pass first (plan
-# -refresh-only -out + apply <planfile>) to re-read data.vcfa_kubeconfig into state,
-# making the token below fresh at read time. The two-step (var baked into the plan file,
-# no -var on apply) avoids Terraform's "can't set a variable when applying a saved plan"
-# guard — a single-shot `apply -refresh-only` trips it because the helm providers
-# configure host/token from this data source, forcing an internal plan+apply split.
+# Teardown ordering: the *-provision/*-apps Applications are created by the
+# ApplicationSet controllers at runtime, so destroying the bootstrap helm release
+# would remove ArgoCD + the appsets together and orphan them — leaking the VKS
+# clusters whose deletion rides on the Applications' finalizers. destroy-apps
+# deletes the Applications and waits for finalizers WHILE ArgoCD is still up, then
+# destroy-bootstrap. It reaches the supervisor via a throwaway per-namespace
+# kubeconfig from this output; vcfa tokens are short-lived, so it runs a
+# refresh-only plan+apply first to re-read a fresh token (two-step avoids the
+# saved-plan "can't set a variable" guard).
 
 locals {
   argo_namespaces = { for k, v in var.namespace_config : k => v if v.deploy_argo }

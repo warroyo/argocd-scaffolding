@@ -1,15 +1,11 @@
-# Namespace-level resources for the tenant-1/dev-1 supervisor namespace. Synced
-# ONCE per namespace by the namespace-resources ApplicationSet (destination =
-# this namespace), separate from the per-cluster infra builds. Put anything
-# namespace-scoped here (shared, label-gated add-on installs; quotas; etc.) — it
-# covers every cluster in the namespace. Headlamp is on by default for dev clusters:
-# envs/dev labels the Cluster addons.kubernetes.vmware.com/headlamp=enabled; opt a
-# cluster out with infrastructure/components/disable-headlamp.
+# Shared label-gated AddonInstalls for the tenant-1/dev-1 namespace. Synced once
+# per namespace by the namespace-resources ApplicationSet. See CLAUDE.md "VKS add-ons".
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- ../../../../base/headlamp
+- ../../../../base/headlamp    # on by default for dev
+- ../../../../base/istio       # opt-in (components/istio adds the label)
 components:
-# Pins the dev headlamp version (base carries a replace-me placeholder). Swap
-# `dev` to match this namespace's environment.
+# Version pins.
 - ../../../../components/envs/dev/headlamp
+- ../../../../components/envs/dev/istio

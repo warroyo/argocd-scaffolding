@@ -8,12 +8,9 @@ spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   generators:
-    # Matrix join: each supervisor-namespace ArgoCD cluster (discovered by label)
-    # is paired with its own {project}/{namespace_ref}/namespace-resources dir —
-    # one app PER NAMESPACE (not per cluster), so a namespace-scoped shared
-    # resource has a single owner even when two clusters share the namespace.
-    # Namespaces without a namespace-resources/ dir simply produce no app. Use it
-    # for any namespace-level config (shared add-on installs, quotas, etc.).
+    # Matrix join: each supervisor-ns cluster paired with its own
+    # {project}/{namespace_ref}/namespace-resources dir — one app PER NAMESPACE
+    # (single owner even when clusters share it). See CLAUDE.md "VKS add-ons".
     - matrix:
         generators:
           - clusters:

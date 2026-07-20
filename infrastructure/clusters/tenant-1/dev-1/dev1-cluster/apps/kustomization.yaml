@@ -15,12 +15,14 @@ components:
 - ../../../../../../apps/components/cluster-var-injector
 
 # This cluster's identity for the injector. Kustomize load restrictions keep the
-# apps tree from reading ../cluster-details.yaml, so cluster_name is declared
-# again here — validate.sh checks it matches the directory name.
+# apps tree from reading ../cluster-details.yaml, so cluster_name and project
+# are declared again here — validate.sh checks cluster_name matches the
+# directory name and project matches the tenant directory segment.
 configMapGenerator:
 - name: vars
   literals:
   - cluster_name=dev1-cluster
+  - project=tenant-1
 generatorOptions:
   disableNameSuffixHash: true
   annotations:

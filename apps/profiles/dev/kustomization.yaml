@@ -1,15 +1,8 @@
-# Dev environment app profile — the app stack every dev cluster inherits.
-#
-# A cluster's apps/kustomization.yaml references this profile and adds only the
-# extra stacks it wants (e.g. service-mesh). Fleet-wide app
-# defaults for dev live here, in one place.
+# Dev app profile — every dev cluster's app stack inherits this. See CLAUDE.md
+# "Changing every cluster in an environment".
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 components:
-# Always-on baseline: package installer (carvel-sa + RBAC), package repo,
-# cert-manager.
-- ../../components/stacks/standard
-# Env overlay last: real dev values (package bundle image, baseline package
-# versions) over the placeholders carried in the bases.
-- ../../components/envs/dev
+- ../../components/stacks/standard   # package installer, repo, cert-manager
+- ../../components/envs/dev           # real dev values (last)

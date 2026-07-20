@@ -1,0 +1,13 @@
+# Re-enable automated observability (automated-monitoring label = enabled) —
+# counterpart to disable-observability. CLAUDE.md "VKS add-ons" Variant B.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+- target:
+    group: cluster.x-k8s.io
+    version: v1beta1
+    kind: Cluster
+  patch: |-
+    - op: add
+      path: /metadata/labels/addons.kubernetes.vmware.com~1automated-monitoring
+      value: enabled

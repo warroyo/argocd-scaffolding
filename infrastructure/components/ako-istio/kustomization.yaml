@@ -7,7 +7,7 @@ patches:
     group: addons.kubernetes.vmware.com
     version: v1alpha1
     kind: AddonConfig
-    name: cluster-ako
+    labelSelector: "app.kubernetes.io/name=ako"
   patch: |-
     - op: replace
       path: /spec/values/AKOSettings/istioEnabled

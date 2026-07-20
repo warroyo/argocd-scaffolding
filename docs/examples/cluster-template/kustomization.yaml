@@ -1,37 +1,30 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
+# Copy-me cluster. Full guidance: CLAUDE.md "Adding a new cluster".
 resources:
-# Inherit everything a cluster in this environment gets by default. Swap `dev`
-# for the environment this cluster belongs to (must match the namespace
-# `environment` in terraform/infra/tenants.yaml).
-- ../../../../profiles/dev
-# This cluster's identity, and the per-tenant tenant-vars ConfigMap.
+- ../../../../profiles/dev        # env defaults — match namespace `environment` in tenants.yaml
 - ./cluster-details.yaml
 - ../../vars
 
 components:
-# --- Optional per-cluster features (deltas on top of the profile) ---
-# Istio (include all three lines together — the envs/{env}/istio sub-component
-# pins the addon version for this cluster's environment; swap `dev` to match
-# the profile above):
-# - ../../../../components/istio
+# CNI: exactly one, day-0 immutable. Default antrea (+antrea-nsx), or swap for cilium/calico.
+- ../../../../components/cni-antrea
+- ../../../../components/antrea-nsx
+# - ../../../../components/cni-cilium
+# - ../../../../components/cni-calico
+# Optional features — uncomment as needed:
+# - ../../../../components/istio            # istio label; pair with ako-istio
 # - ../../../../components/ako-istio
-# - ../../../../components/envs/dev/istio
-# Other add-ons:
+# - ../../../../components/istio-config     # opt-in per-cluster istio value overrides
 # - ../../../../components/cluster-autoscaling
 # - ../../../../components/ha-control-plane
-# Observability is on by default; opt out with:
-# - ../../../../components/disable-observability
-#
-# --- Variable injection MUST be last ---
-# It rewrites names/IDs across every resource pulled in above (profile + the
-# feature components), so it has to run after anything that adds resources.
+# - ../../../../components/disable-observability   # observability on by default
+# - ../../../../components/disable-ako             # AKO on by default
+# cluster-var-injector MUST be last — rewrites all resources above.
 - ../../../../components/cluster-var-injector
 
-# Override anything inherited from the profile here (escape hatch — applies
-# after all components), e.g. canary a different Kubernetes version on just
-# this cluster, or bump the control plane:
+# Per-cluster overrides / canary — uncomment and edit:
 # patches:
 # - target:
 #     kind: Cluster
@@ -39,6 +32,3 @@ components:
 #     - op: replace
 #       path: /spec/topology/version
 #       value: v1.35.0---vmware.1-vkr.1
-#     - op: replace
-#       path: /spec/topology/controlPlane/replicas
-#       value: 3

@@ -1,9 +1,5 @@
-# Renders every config artifact derived from tenants.yaml.
-#
-# This replaces the old Python generators (generate-bootstrap/tenants/details).
-# Because the repo runs Terraform twice (infra -> bootstrap), the infra run can
-# render the bootstrap wiring that the second run consumes, plus the ArgoCD
-# AppProjects and the post-apply tenant-vars handoff.
+# Renders every config artifact derived from tenants.yaml (AppProjects, tenant-vars
+# handoff, bootstrap wiring the second run consumes). See docs/DECISIONS.md #1.
 
 locals {
   # Tenant names.
@@ -52,6 +48,10 @@ resource "terraform_data" "validate_namespace_refs" {
     precondition {
       condition     = alltrue([for ns in values(local.ns_deployments) : ns.argo_namespace != null])
       error_message = "Every tenant's argo_namespace must name a namespace on the infra tenant that has deploy_argo: true. Check argo_namespace in tenants.yaml."
+    }
+    precondition {
+      condition     = length(local.unknown_policy_names) == 0
+      error_message = "Unknown policy in tenants.yaml: ${join(", ", local.unknown_policy_names)}. Valid policies: ${join(", ", keys(local.policy_catalog))}."
     }
   }
 }

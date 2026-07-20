@@ -1,0 +1,14 @@
+# SSA co-management of argocd-cm: owns ONLY the key below (per-key field manager);
+# never add Replace=true (full PUT wipes the operator's other keys). Enables sync
+# impersonation. Design + the managedFields verify step: docs/DECISIONS.md,
+# docs/GETTING-STARTED.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+  annotations:
+    # -2: ahead of the AppProjects (-1) so the flag is live before they sync.
+    argocd.argoproj.io/sync-wave: "-2"
+    argocd.argoproj.io/sync-options: ServerSideApply=true
+data:
+  application.sync.impersonation.enabled: "true"

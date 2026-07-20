@@ -2,27 +2,22 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
-# Inherit the app baseline for this environment (swap `dev` as needed).
-- ../../../../../../apps/profiles/dev
-# Include only if this cluster runs istio (via the supervisor addon) + AKO,
-# to apply the AKO-sidecar integration patch (also uncomment the injector and
-# the vars generator below — the injector rewrites the PackageInstall name):
-# - ../../../../../../apps/base/istio-ako-patch
+- ../../../../../../apps/profiles/dev        # app baseline for this env
+# - ../../../../../../apps/base/istio-ako-patch   # only if this cluster runs istio + AKO
 
 components:
-# --- Optional per-cluster app stacks (deltas on top of the profile) ---
-# (observability is not an app stack — it's a cluster addon label; see infra side)
-# --- Variable injection MUST be last (needed by istio-ako-patch) ---
-# - ../../../../../../apps/components/cluster-var-injector
+# cluster-var-injector MUST be last, and is REQUIRED on every cluster
+# (tenant-sync SA/RBAC needs cluster_name/project everywhere).
+- ../../../../../../apps/components/cluster-var-injector
 
-# This cluster's identity for the injector. Kustomize load restrictions keep the
-# apps tree from reading ../cluster-details.yaml, so cluster_name is declared
-# again here (must equal the directory name — validate.sh enforces it).
-# configMapGenerator:
-# - name: vars
-#   literals:
-#   - cluster_name=my-cluster
-# generatorOptions:
-#   disableNameSuffixHash: true
-#   annotations:
-#     config.kubernetes.io/local-config: "true"
+# Injector identity — the apps tree can't read ../cluster-details.yaml, so
+# cluster_name/project are re-declared here (validate.sh checks both).
+configMapGenerator:
+- name: vars
+  literals:
+  - cluster_name=my-cluster
+  - project=my-tenant
+generatorOptions:
+  disableNameSuffixHash: true
+  annotations:
+    config.kubernetes.io/local-config: "true"

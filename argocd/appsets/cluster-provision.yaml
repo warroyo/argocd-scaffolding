@@ -8,10 +8,8 @@ spec:
   goTemplate: true
   goTemplateOptions: ["missingkey=error"]
   generators:
-    # Matrix join: each supervisor-namespace ArgoCD cluster (discovered by label)
-    # is paired ONLY with the cluster directories under its own
-    # {project}/{namespace_ref}/ path, so the git glob performs an exact join and
-    # the vcfa-suffixed namespace name never has to live in git.
+    # Matrix join: each supervisor-ns cluster (by label) paired only with cluster
+    # dirs under its own {project}/{namespace_ref}/ path. See CLAUDE.md "Decision model".
     - matrix:
         generators:
           - clusters:
@@ -29,10 +27,7 @@ spec:
                 - path: infrastructure/clusters/{{.values.project}}/{{.values.namespaceRef}}/*/cluster-details.yaml
   template:
     metadata:
-      # One supervisor-ns fans out over every cluster dir under its path. Key the
-      # name on the full path tuple (project + namespace_ref + dir) so it is
-      # unique even when cluster names repeat across tenants/namespaces — .name
-      # is the shared supervisor-ns cluster, not usable here.
+      # Name keyed on the full path tuple — unique even when cluster names repeat.
       name: '{{.values.project}}-{{.values.namespaceRef}}-{{.path.basename}}-provision'
       finalizers:
       - resources-finalizer.argocd.argoproj.io

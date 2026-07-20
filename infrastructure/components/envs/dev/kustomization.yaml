@@ -1,11 +1,5 @@
-# Real dev-environment values, applied over the replace-me placeholders carried
-# in the bases. Every dev cluster inherits this via infrastructure/profiles/dev.
-#
-# This is also where the ALWAYS-ON versions for dev are pinned (cluster class,
-# Kubernetes version, AKO addon) — bump them here to roll dev, then mirror in
-# envs/prod when dev soaks. Versions for OPTIONAL features live in the
-# feature-scoped sub-components (e.g. ./istio). Per-cluster override: a
-# `patches:` block in the cluster kustomization (applies after all components).
+# Real dev values + always-on version pins (cluster class, k8s, AKO) over base
+# placeholders; inherited via profiles/dev. See CLAUDE.md "Rolling a version".
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
@@ -18,14 +12,13 @@ patches:
   patch: |-
     - op: replace
       path: /spec/addonConfigDefinitionRef/name
-      value: "ako.kubernetes.vmware.com.2.1.3+vmware.1-vks.1" # Dev AKO addon version
+      value: "ako.kubernetes.vmware.com.2.1.3---vmware.1-vks.1" # Dev AKO AddonConfigDefinition
 - target:
     group: cluster.x-k8s.io
     version: v1beta1
     kind: Cluster
   patch: |-
-    # Headlamp on by default for dev clusters; the shared headlamp AddonInstall
-    # (namespace-resources) selects this label. Opt out with disable-headlamp.
+    # headlamp on by default (opt out: disable-headlamp).
     - op: add
       path: /metadata/labels/addons.kubernetes.vmware.com~1headlamp
       value: enabled

@@ -204,19 +204,22 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `state-backend/`: Stateless helper that pulls the state-namespace creds and renders the gitignored `.kube-backend.config` kubeconfig (host + token; each `backend.tf` sets `config_path` to it) and `.kube-backend.env` (`KUBE_NAMESPACE`, sourced by the Makefile) for the infra/bootstrap Kubernetes backends. `namespace.auto.tfvars` holds the captured namespace name.
   - `modules/bootstrap-helm/`: Terraform module wrapping the bootstrap Helm chart (single `config` object input).
   - `modules/tenant/`, `modules/svns/`, `modules/vpc/`: vSphere infrastructure modules.
+  - `modules/cluster-policy/`, `modules/cluster-policy-template/`: Vendored (split) from [warroyo/vcfa-terraform-examples](https://github.com/warroyo/vcfa-terraform-examples/tree/main/cluster-policy-custom) — the `ClusterPolicy`/`ClusterPolicyTemplate` mechanics behind the custom cluster policy catalog. See [Cluster Policy & Namespace Self-Service](#cluster-policy--namespace-self-service).
+  - `infra/policies.tf`, `infra/rego/*.rego`: The custom cluster policy catalog, driven by each tenant's `policies:` block in `tenants.yaml`.
 - `charts/bootstrap-tenant/`: Helm chart that deploys the `ArgoNamespace` registration, ArgoCD instance + root Application.
 - `argocd/`
   - `appsets/`: ApplicationSets that discover and deploy clusters and apps (label-based join): `cluster-provisioning` (per cluster dir), `cluster-apps` (per cluster `apps/` dir), and `namespace-resources` (one app per supervisor namespace, sourced from `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/` — for namespace-scoped shared resources like label-gated add-on installs).
   - `projects/`: ArgoCD AppProject definitions, all rendered by the infra run (the `infra`-type tenant's project is rendered as `infra.yaml`, the project the ApplicationSets target).
+  - `config/`: Server-Side-Apply patch enabling ArgoCD sync impersonation (`argocd-cm-patch.yaml` — owns one `argocd-cm` key, coexisting with the argocd-service operator's own management of the rest).
   - `repo-config.yaml`: Single source of truth for the GitOps repo URL.
 - `infrastructure/`
-  - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`, `headlamp`). Bases carry `replace-me` placeholders for environment values.
-  - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`) pin optional features' versions and are included by the cluster alongside the feature. Opt-out components flip a default addon label (`disable-observability`, `disable-headlamp`).
+  - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`, `headlamp`, `istio`, `istio-config`). Bases carry `replace-me` placeholders for environment values.
+  - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp`) pin shared add-on versions and are included by the namespace's `namespace-resources` kustomization alongside the add-on base. Enablement components add a cluster label (`istio`); opt-out components flip a default addon label (`disable-observability`, `disable-headlamp`); `istio-config` opts a cluster into per-cluster istio value overrides.
   - `profiles/{env}/`: The inherited default set for an environment — bases + always-on components + the env overlay. Clusters reference a profile instead of enumerating everything.
-  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`. `clusters/{project}/{namespace_ref}/namespace-resources/` (optional) holds namespace-scoped shared resources synced once per supervisor namespace by the `namespace-resources` ApplicationSet — e.g. the shared, label-gated headlamp `AddonInstall`.
+  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`. `clusters/{project}/{namespace_ref}/namespace-resources/` (optional) holds namespace-scoped shared resources synced once per supervisor namespace by the `namespace-resources` ApplicationSet — the shared, label-gated `AddonInstall`s (headlamp, istio) and their env version pins.
 - `apps/`
-  - `base/`: Base application manifests.
-  - `components/stacks/`: Application stacks (e.g., `standard`).
+  - `base/`: Base application manifests, incl. `tenant-sync` — the per-tenant ArgoCD sync-impersonation `ServiceAccount`/RBAC (see [Cluster Policy & Namespace Self-Service](#cluster-policy--namespace-self-service)), named per-cluster by the apps-side `cluster-var-injector`.
+  - `components/stacks/`: Application stacks (e.g., `standard`, which includes `tenant-sync` — shipped to every cluster).
   - `components/envs/{env}/`: Per-environment app values and version pins — the baseline (package-repo bundle, cert-manager version) is applied via the profile. (Observability is no longer an app stack; VKS 9.1+ delivers it by default via the `automated-monitoring` addon label on the base Cluster — opt out per-cluster with `infrastructure/components/disable-observability`.)
   - `profiles/{env}/`: The inherited default app stack for an environment.
 - `docs/examples/`
@@ -239,11 +242,13 @@ It renders the argocd root and every cluster (infra + `apps/`) with kustomize an
 - each `cluster-details.yaml` matches its directory path;
 - no rendered output contains `replace-me` (i.e. no cluster skipped its
   `components/envs/{env}` overlay);
-- an `apps/` dir that declares a `vars` cluster_name (for the apps-side
-  injector) declares the directory's cluster name;
+- an `apps/` dir that declares a `vars` cluster_name/project (for the apps-side
+  injector) declares the directory's cluster name and tenant;
 - `docs/examples/cluster-template` still builds (via a temp copy at real depth).
 
-Requires `kustomize` on your PATH.
+Requires `kustomize` on your PATH. If `opa` is also on PATH, it additionally
+`opa check`s the custom cluster policy catalog (`terraform/infra/rego/`) —
+skipped cleanly if `opa` is absent.
 
 ### Running the GitHub Actions workflows locally with `act`
 
@@ -270,7 +275,7 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
 ## Tenant Types
 
 - **`type: infra`** — The platform tenant that hosts the ArgoCD instance. Generates an unrestricted ArgoCD project (`namespaceResourceWhitelist: */*`). Only one infra tenant is supported, but it may have multiple namespaces each with `deploy_argo: true`. The `infra` project owns all cluster provisioning (ApplicationSets use `project: infra`).
-- **`type: tenant`** — Developer tenants. Each gets a dedicated ArgoCD project for deploying apps into their clusters. The generated project denies the in-cluster and supervisor-namespace destinations, whitelists only `Namespace` as a cluster-scoped kind (for `CreateNamespace=true`), and allows all namespaced kinds. `sourceRepos` defaults open (tenant repos aren't known at render time) — scope it per tenant with `source_repos: [...]` in `tenants.yaml`. Note: tenants are **not** isolated from each other's workload clusters (cluster names carry no tenant prefix to match on; see `docs/BACKLOG.md`).
+- **`type: tenant`** — Developer tenants. Each gets a dedicated ArgoCD project for deploying apps into their clusters. The generated project denies the in-cluster, supervisor-namespace, and Gatekeeper-webhook-exempt-namespace destinations (`kube-system`/`gatekeeper-system`/`vmware-system-vksm`), whitelists only `Namespace` as a cluster-scoped kind (for `CreateNamespace=true`), and allows all namespaced kinds. Tenant syncs run impersonated as a per-tenant service account (`destinationServiceAccounts` → `tenant-sync-{tenant}`, see [Cluster Policy & Namespace Self-Service](#cluster-policy--namespace-self-service)), not the cluster registration's cluster-admin identity. `sourceRepos` defaults open (tenant repos aren't known at render time) — scope it per tenant with `source_repos: [...]` in `tenants.yaml`. Note: tenants are **not** isolated from each other's workload clusters by destination alone (cluster names carry no tenant prefix to match on; see `docs/BACKLOG.md`) — per-tenant sync impersonation means a tenant landing on another tenant's cluster this way fails to sync (no matching service account there) rather than acting under a trusted identity.
 
 ## Workflows
 
@@ -307,14 +312,21 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
 3. Set the environment by referencing the right profile (`profiles/{env}`) in
    both `kustomization.yaml` and `apps/kustomization.yaml`. Add only the optional
    feature components / app stacks this cluster needs, and any override patches —
-   everything else is inherited from the profile. A version-pinned optional
-   feature travels with its `envs/{env}` sub-component (e.g. `istio` +
-   `ako-istio` + `envs/dev/istio`) — the sub-component pins the feature's version
-   for the environment, and forgetting it fails validation (`replace-me` in
-   rendered output). (Observability is on by default via the base Cluster's
-   `automated-monitoring` label; opt out with
-   `infrastructure/components/disable-observability`, no version to pin.) Keep
-   `cluster-var-injector` **last** in the infra component list.
+   everything else is inherited from the profile. Declare the CNI first —
+   exactly one `cni-*` component (`cni-antrea` | `cni-cilium` | `cni-calico`;
+   the template defaults to `cni-antrea` + `antrea-nsx`), day-0 only.
+   Add-ons are enabled by cluster
+   label: `components/istio` adds the `addons.kubernetes.vmware.com/istio: enabled`
+   label the namespace's shared `AddonInstall` selects on (the install and its
+   version pin live in `namespace-resources/`, not the cluster dir); pair it with
+   `ako-istio`, and optionally `istio-config` for per-cluster istio value
+   overrides. (Observability and headlamp are on by default via base/env Cluster
+   labels; opt out with `infrastructure/components/disable-observability` /
+   `disable-headlamp`, no version to pin.) Keep `cluster-var-injector` **last**
+   in the infra component list. The apps-side injector (also last) and its
+   `vars` configMapGenerator (`cluster_name` **and** `project`) are required on
+   every cluster — the standard app stack's `tenant-sync` SA needs `project`
+   injected everywhere, not just on istio-ako-patch clusters.
 4. Commit. The `cluster-provisioning` ApplicationSet joins the directory to its
    supervisor namespace by label (`gitops.platform/project` +
    `gitops.platform/namespace-ref`) and provisions it. The vcfa-generated
@@ -327,6 +339,46 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
 3. Enable stacks for a cluster by editing its `apps/kustomization.yaml`.
 4. ArgoCD syncs the `cluster-apps` ApplicationSet and deploys the assigned apps.
 
+### 4. Adding a New VKS Add-on
+
+Every add-on follows one pattern — a shared label-gated `AddonInstall` per
+supervisor namespace, with `AddonConfig` reserved for per-cluster overrides.
+The full design (diagram + per-add-on table) is in
+[docs/ARCHITECTURE.md → "VKS add-on pattern"](docs/ARCHITECTURE.md#vks-add-on-pattern);
+headlamp is the simplest live example to crib from. To add one:
+
+1. `infrastructure/base/{addon}/` — the `AddonInstall`: cluster selector on
+   `addons.kubernetes.vmware.com/{addon}: enabled`, `stopMatchingBehavior:
+   Delete`, and `releaseFilter.ref.name: replace-me` (the version pin — an
+   `AddonRelease` name from `kubectl get addonreleases -n
+   vmware-system-vks-public`; the API has no `spec.version` field).
+2. `infrastructure/components/envs/{env}/{addon}/` — pins the release for the
+   environment (patches `/spec/releaseFilter/ref/name` by
+   `labelSelector: "app.kubernetes.io/name={addon}"`).
+3. Add both to each namespace's
+   `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/`
+   kustomization (copy `docs/examples/namespace-resources-template` if the
+   namespace has none).
+4. Wire enablement: default-on — add the label in `components/envs/{env}` plus
+   a `disable-{addon}` component (headlamp); opt-in — a `components/{addon}`
+   component that adds the label (istio).
+5. Only if clusters need values different from the addon defaults: a
+   `base/{addon}-config` `AddonConfig` named `cluster-{addon}` (values only —
+   the controller fills `addonConfigDefinitionRef`/`clusterName`) exposed as an
+   opt-in `components/{addon}-config` (istio-config). Clusters on defaults
+   ship nothing.
+6. `make validate`.
+
+### 5. Adding a Cluster Policy
+
+Full design in [Cluster Policy & Namespace Self-Service](#cluster-policy--namespace-self-service)
+and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#cluster-policy--namespace-self-service);
+step-by-step recipe in [CLAUDE.md → "Adding a policy"](CLAUDE.md). Briefly:
+write a `.rego` file (`terraform/infra/rego/`), add a `local.policy_catalog`
+entry (`terraform/infra/policies.tf`), enable it per tenant in `tenants.yaml`
+(`dryrun` first). `ClusterPolicyTemplate` is an org-wide singleton — one
+catalog entry serves every tenant that enables it, never one per tenant.
+
 ## Inheritance model (profiles, components, overrides)
 
 A cluster does not enumerate its whole stack. It references an environment
@@ -336,9 +388,13 @@ A cluster does not enumerate its whole stack. It references an environment
   always-on set for an environment — bases + always-on feature components + the
   env overlay that carries the real per-environment values. Change something for
   every cluster in an environment by editing the profile once.
-- **Deltas**: a cluster adds optional feature components (`istio`, `ako-istio`,
-  `cluster-autoscaling`, `disable-observability`, `disable-headlamp`, …) and app
-  stacks that aren't part of the baseline.
+- **Deltas**: a cluster adds its CNI (required — exactly one of `cni-antrea`,
+  `cni-cilium`, `cni-calico`, plus `antrea-nsx` for antrea on NSX) and optional
+  feature components (`istio`, `ako-istio`, `istio-config`,
+  `cluster-autoscaling`, `disable-observability`, `enable-observability`,
+  `disable-headlamp`, `disable-ako`, …) and app stacks that aren't part of the
+  baseline. The `cni-*` components are day-0 only — the CNI choice
+  (`bootstrapAddons.cniRef` in the Cluster spec) is immutable after creation.
 - **Overrides**: anything inherited can be overridden per-cluster with a
   `patches:` block in the cluster `kustomization.yaml` (escape hatch).
 
@@ -355,8 +411,7 @@ fails at PR time instead of deploying a placeholder. Versions live in three laye
 | Layer | What it pins | Where |
 |-------|--------------|-------|
 | Env (always-on) | cluster class, Kubernetes version, AKO addon; package bundle + baseline packages | `infrastructure/components/envs/{env}`, `apps/components/envs/{env}` (applied via the profiles) |
-| Env (optional feature) | istio addon | `infrastructure/components/envs/{env}/istio` — the cluster includes this alongside the feature (observability carries no version — it's on by default via the base Cluster's `automated-monitoring` label, opt-out `infrastructure/components/disable-observability`) |
-| Env (namespace add-on) | headlamp addon | `infrastructure/components/envs/{env}/headlamp` — the namespace's `namespace-resources` kustomization includes it alongside `base/headlamp`. On by default for dev clusters via the `headlamp` label (envs/dev), opt-out `infrastructure/components/disable-headlamp` |
+| Env (shared add-on) | istio + headlamp `AddonInstall` versions (`releaseFilter.ref` = an `AddonRelease` name) | `infrastructure/components/envs/{env}/{addon}` — the namespace's `namespace-resources` kustomization includes it alongside `base/{addon}`. Enablement is a cluster label: headlamp on by default for dev (envs/dev), opt-out `disable-headlamp`; istio opt-in via `components/istio`. (Observability carries no version — on by default via the base Cluster's `automated-monitoring` label, opt-out `disable-observability`) |
 | Per-cluster override | anything, e.g. a canary Kubernetes version | `patches:` block in the cluster `kustomization.yaml` (applies after all components) |
 
 To roll a version: bump it in `envs/dev`, let dev soak, then mirror the change in
@@ -367,10 +422,41 @@ cluster and remove it once the env-wide pin catches up.
 
 AKO is configured as a modular Kustomize component.
 
-- **Base**: `infrastructure/base/ako` defines `AddonConfig` and `AddonInstall` with `replace-me` placeholders for environment values.
+- **Base**: `infrastructure/base/ako` defines the per-cluster `AddonConfig` (AKO is auto-installed by the platform, so there is no `AddonInstall` to author) with a `replace-me` placeholder for the `AddonConfigDefinition` version.
 - **Variable injection**: `cluster-var-injector` injects `cluster_name`/`project`/`namespace_ref` (from `cluster-details.yaml`) and `argo_namespace` (from `tenant-vars.yaml`). It must run **last** so it rewrites resources pulled in by the profile and the feature components. The apps tree has its own smaller injector (`apps/components/cluster-var-injector`) fed by a per-cluster `vars` configMapGenerator (kustomize load restrictions keep `apps/` from reading `../cluster-details.yaml`); it makes `apps/base/istio-ako-patch` reusable across clusters.
-- **Environment overlays**: `infrastructure/components/envs/{env}` owns the real `controllerHost`/`cloudName` values and is applied via the profile, so a cluster that skips it fails loudly instead of running on stale defaults.
+- **Environment overlays**: `infrastructure/components/envs/{env}` pins the AKO `AddonConfigDefinition` version and is applied via the profile, so a cluster that skips it fails loudly instead of deploying a placeholder.
 - **Istio integration**: `infrastructure/components/ako-istio` enables Istio support (include `istio` + `ako-istio` in the cluster `kustomization.yaml`).
+
+## Cluster Policy & Namespace Self-Service
+
+Full design (diagram, the four-policy table, the argocd-cm co-management
+mechanics) is in
+[docs/ARCHITECTURE.md → "Cluster policy + namespace self-service"](docs/ARCHITECTURE.md#cluster-policy--namespace-self-service);
+rationale in [docs/DECISIONS.md #10](docs/DECISIONS.md). Summary:
+
+Tenants manage namespaces through git, but the workload cluster's
+registration identity is cluster-admin and shared by every sync. Three
+mechanisms close that gap:
+
+- **ArgoCD sync impersonation** — the generated tenant AppProject's
+  `destinationServiceAccounts` makes tenant syncs run as a per-tenant
+  `platform-gitops:tenant-sync-{tenant}` service account
+  (`apps/base/tenant-sync`, named by `apps/components/cluster-var-injector`
+  from this cluster's own `project`), not the cluster-admin registration
+  identity. Enabled via `argocd/config/argocd-cm-patch.yaml` — a Server-Side
+  Apply patch owning one `argocd-cm` key, not the whole ConfigMap.
+- **A custom `ClusterPolicy` catalog** (`terraform/infra/policies.tf` +
+  `terraform/infra/rego/`, applied via Terraform — `ClusterPolicyTemplate` is
+  org-admin-only) keys 4 policies on that per-tenant identity: namespace
+  labeling (`gitops.platform/project`/`environment`, with no-adoption),
+  namespace containment (writes limited to the tenant's own labeled
+  namespaces), hostname ownership, and service exposure. All ship `dryrun`.
+- **The AppProject itself** denies the 3 namespaces (`kube-system`,
+  `gatekeeper-system`, `vmware-system-vksm`) the Gatekeeper webhook backing
+  policy enforcement is hard-exempted from — the one seam no amount of
+  Gatekeeper policy can cover.
+
+See [CLAUDE.md → "Adding a policy"](CLAUDE.md) to extend the catalog.
 
 ## Label-based provisioning (decision model)
 

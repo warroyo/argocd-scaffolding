@@ -1,5 +1,13 @@
+# istio enablement label. Removing this uninstalls istio (AddonInstall
+# stopMatchingBehavior: Delete). Per-cluster value overrides: components/istio-config.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
-resources:
-- ../../base/istio
-
+patches:
+- target:
+    group: cluster.x-k8s.io
+    version: v1beta1
+    kind: Cluster
+  patch: |-
+    - op: add
+      path: /metadata/labels/addons.kubernetes.vmware.com~1istio
+      value: enabled

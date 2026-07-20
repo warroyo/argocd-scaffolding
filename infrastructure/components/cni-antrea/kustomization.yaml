@@ -1,0 +1,21 @@
+# antrea CNI (explicit platform default) + its AddonConfig (base/antrea; NSX is
+# the separate antrea-nsx patch, added after). Day-0 only, immutable after
+# creation. One cni-* per cluster — see CLAUDE.md "VKS add-ons" Variant B.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+- ../../base/antrea
+patches:
+- target:
+    group: cluster.x-k8s.io
+    version: v1beta1
+    kind: Cluster
+  patch: |-
+    - op: add
+      path: /spec/topology/variables/-
+      value:
+        name: bootstrapAddons
+        value:
+          cniRef:
+            name: antrea
+            namespace: vmware-system-vks-public

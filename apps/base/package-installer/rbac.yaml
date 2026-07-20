@@ -2,6 +2,13 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: infra-packages
+  labels:
+    # Taxonomy consistency with supervisor namespaces (gitops.platform/*) — also
+    # keeps this namespace explicitly outside any tenant's
+    # gitops-namespace-containment selector (which matches on absence of a
+    # matching tenant project value, not presence of this label specifically).
+    gitops.platform/project: infra
+    gitops.platform/environment: infra
 ---
 apiVersion: v1
 kind: ServiceAccount

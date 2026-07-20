@@ -191,10 +191,10 @@ templating:
 ```mermaid
 flowchart TB
     bases["bases (infrastructure/base/*, apps/base/*)<br/>shapes only — versions and env values are<br/>replace-me placeholders"]
-    comps["feature components<br/>(istio, ako, cluster-autoscaling, stacks/*)"]
-    envs["env overlays (components/envs/{env})<br/>real values + always-on version pins;<br/>feature-scoped sub-components<br/>(envs/{env}/istio) pin optional features"]
+    comps["feature components<br/>(istio label, istio-config, ako, cluster-autoscaling, stacks/*)"]
+    envs["env overlays (components/envs/{env})<br/>real values + always-on version pins;<br/>feature-scoped sub-components<br/>(envs/{env}/istio, envs/{env}/headlamp)<br/>pin shared add-on versions (via namespace-resources)"]
     profile["profiles/{env}<br/>bases + always-on components + env overlay"]
-    cluster["cluster dir<br/>profile + optional features (paired with their<br/>envs/{env} sub-component) + override patches"]
+    cluster["cluster dir<br/>profile + optional features (enablement labels,<br/>opt-in config overrides) + override patches"]
     inject["cluster-var-injector (LAST)<br/>rewrites names from cluster-details.yaml<br/>+ argo_namespace from tenant-vars.yaml"]
 
     bases --> profile
@@ -221,6 +221,160 @@ Key properties:
   injector fed by a per-cluster `vars` configMapGenerator — with `validate.sh`
   cross-checking the duplicated cluster name against the directory.
 
+## VKS add-on pattern
+
+All add-ons follow one pattern built on the VKS addon CRDs
+(`addons.kubernetes.vmware.com/v1alpha1`): **AddonInstall does label-based
+deployment, AddonConfig is per-cluster overrides only.** (Rationale:
+`docs/DECISIONS.md` #9; the step-by-step recipe: `CLAUDE.md` → "VKS add-ons".)
+
+```mermaid
+flowchart TB
+    subgraph ns["supervisor namespace (namespace-resources appset, synced ONCE)"]
+        ai["AddonInstall (one per add-on)<br/>selector: addons.kubernetes.vmware.com/{addon}=enabled<br/>releaseFilter.ref = AddonRelease name (THE version pin)<br/>stopMatchingBehavior: Delete"]
+    end
+    subgraph cl["cluster dir (cluster-provisioning appset, per cluster)"]
+        label["Cluster label<br/>addons.kubernetes.vmware.com/{addon}: enabled<br/>(components/{addon} adds it; disable-{addon} flips it)"]
+        cfg["AddonConfig &lt;cluster&gt;-{addon} (OPT-IN,<br/>components/{addon}-config)<br/>values only — no definitionRef/clusterName"]
+    end
+    ca["ClusterAddon (controller-created, one per cluster)<br/>never authored in git"]
+
+    ai -- "selects clusters by label" --> ca
+    label -. "gates" .-> ai
+    cfg -- "matched by name<br/>{{.cluster.name}}-{{.addon.name}}" --> ca
+```
+
+Two variants:
+
+- **Installable add-on (istio, headlamp).** ONE shared `AddonInstall` per
+  supervisor namespace (`base/{addon}`, delivered by the `namespace-resources`
+  ApplicationSet — one owner even when clusters share the namespace), selecting
+  clusters on the enablement label with `stopMatchingBehavior: Delete` (flip
+  the label → clean uninstall). The version is pinned in exactly one place:
+  `releaseFilter.ref.name`, an `AddonRelease` name, patched by
+  `components/envs/{env}/{addon}`. The API has **no `AddonInstall.spec.version`
+  field** — a value set there is pruned by the API server and the add-on
+  silently floats to the latest release (verified live).
+- **Auto-installed core add-on (ako, antrea).** The platform's BUILT-IN
+  AddonInstalls (in `vmware-system-vks-public`, `Delete`) install these —
+  nothing to author but the per-cluster `AddonConfig`. AKO's gate is the
+  platform-added `ako.kubernetes.vmware.com/install: "true"` cluster label
+  (`disable-ako` flips it); prometheus/telegraf gate on
+  `automated-monitoring: enabled` (`disable-observability` /
+  `enable-observability`). Antrea is different again: it's the cluster's CNI,
+  selected in the **Cluster spec itself** (`spec.topology.variables` →
+  `bootstrapAddons.cniRef: antrea`, defaulted by the cluster class) and
+  installed by the built-in `builtin-core-cni-antrea` AddonInstall — no label
+  gate, no version pin (bundled with the cluster class); its settings are still
+  tuned through the per-cluster `AddonConfig` (`base/antrea`). Every cluster
+  declares its CNI explicitly — exactly ONE `cni-*` component
+  (`cni-antrea` | `cni-cilium` | `cni-calico`) sets `bootstrapAddons.cniRef`;
+  `cni-antrea` (the platform default made explicit) also owns the antrea
+  `AddonConfig`, with `antrea-nsx` as a settings-only patch on top. The CNI is
+  never in the profile. Day-0 only: the cluster class rejects any change to
+  `bootstrapAddons` after creation (k8s 1.35+).
+
+`AddonConfig` is always opt-in, per-cluster overrides only: the addon
+controller auto-generates one named `{cluster}-{addon}` (its default
+`addonConfigNameTemplate`) for clusters that ship none, and fills
+`addonConfigDefinitionRef` + `clusterName` on authored ones — so authored
+configs (`base/istio-config`, injector-prefixed to `<cluster>-{addon}`) carry
+values only, and a cluster on defaults ships nothing at all. Every addon
+resource is labeled `app.kubernetes.io/name: {addon}` and every kustomize patch
+targets by `labelSelector`, never exact name.
+
+| Add-on | Variant | Enablement label | Version pin |
+|--------|---------|------------------|-------------|
+| headlamp | installable, default-on (dev) | `addons.kubernetes.vmware.com/headlamp` (envs/dev; `disable-headlamp`) | `envs/{env}/headlamp` → releaseFilter |
+| istio | installable, opt-in | `addons.kubernetes.vmware.com/istio` (`components/istio`) | `envs/{env}/istio` → releaseFilter |
+| ako | auto-installed | `ako.kubernetes.vmware.com/install` (platform-added; `disable-ako`) | `envs/{env}` → AddonConfig `addonConfigDefinitionRef` |
+| CNI (antrea \| cilium \| calico) | auto-installed (cluster's CNI) | — (Cluster spec: `bootstrapAddons.cniRef`, set day-0 by exactly one `cni-*` component per cluster) | — (bundled with cluster class) |
+| observability | auto-installed (prometheus/telegraf) | `addons.kubernetes.vmware.com/automated-monitoring` (base Cluster; `disable-`/`enable-observability`) | — (managed by VKS) |
+
+## Cluster policy + namespace self-service
+
+Tenants create and manage namespaces **through git only** — their Applications
+sync namespace manifests + workloads into their VKS clusters via the shared
+ArgoCD instance. The problem: the workload cluster's registration identity
+(`argo-attach-sa`, bound to `cluster-admin` — `vmware-system-auth-sync-argo-attach-sa`)
+is shared by every sync, tenant and platform alike, so nothing at the cluster
+API server can tell a tenant's own gitops flow apart from the platform's. Left
+alone, "self-service namespaces" means "tenant is cluster-admin."
+
+The fix layers three mechanisms, each holding a line the others structurally
+can't:
+
+```mermaid
+flowchart TB
+    subgraph proj["Tenant AppProject (Terraform-rendered)"]
+        dsa["destinationServiceAccounts:<br/>tenant syncs impersonate<br/>platform-gitops:tenant-sync-&lt;tenant&gt;"]
+        deny["deny-destinations:<br/>kube-system, gatekeeper-system,<br/>vmware-system-vksm<br/>(the 3 namespaces Gatekeeper itself<br/>can never see — webhook-exempt)"]
+    end
+    subgraph wl["Workload cluster (apps/base/tenant-sync)"]
+        sa["ServiceAccount tenant-sync-&lt;tenant&gt;<br/>ClusterRole admin, cluster-wide<br/>(namespaced kinds only)"]
+    end
+    subgraph gk["VKSM / Gatekeeper (Terraform ClusterPolicy, per project)"]
+        p1["require-namespace-labels:<br/>this SA's Namespace writes must carry<br/>gitops.platform/project = &lt;tenant&gt;<br/>+ environment, no relabeling (no-adoption)"]
+        p2["gitops-namespace-containment:<br/>this SA may write only into<br/>namespaces labeled as its own tenant"]
+        p3["hostname-ownership /<br/>service-exposure:<br/>scoped to this tenant's own<br/>labeled namespaces"]
+    end
+
+    dsa -- "sync impersonates" --> sa
+    sa -- "identity Gatekeeper keys on" --> p1
+    p1 -- "guarantees the label exists<br/>on everything this tenant creates" --> p2
+    p2 -. "labeled namespaces are then<br/>the guardrail surface" .-> p3
+    deny -. "covers what Gatekeeper<br/>structurally cannot see" .-> gk
+```
+
+| Layer | Mechanism | Holds |
+|-------|-----------|-------|
+| AppProject | `sourceRepos`, `clusterResourceWhitelist: Namespace` only, `destinationServiceAccounts` (per-tenant impersonation), deny-destinations for the 3 webhook-exempt namespaces | Splits tenant identity from platform identity; no cluster-scoped kinds; covers the one seam Gatekeeper can't reach |
+| Per-tenant SA + RBAC (`apps/base/tenant-sync`) | `ClusterRole: admin` bound cluster-wide (namespaced kinds only) | No cluster-scoped writes even if the AppProject were misconfigured |
+| Gatekeeper (VCF Automation `ClusterPolicy`) | The 4 policies below, keyed on the impersonated identity | Label-aware namespace ownership |
+| VKSM built-ins | Pod-security policies (shipped by the platform) | Escape-to-node from inside a tenant's own namespace |
+
+**Why per-tenant identity, not one shared `tenant-sync` SA.** The generated
+tenant AppProject's `destinations` block allows targeting *any* registered
+workload cluster by name — it does not isolate tenants from each other's
+clusters (see the block's own comment). If every tenant impersonated the same
+literal principal, a tenant landing on another tenant's cluster via that gap
+would be indistinguishable, at admission, from that cluster's own legitimate
+gitops flow. Naming the SA per tenant (`tenant-sync-<tenant>`, injected by
+`apps/components/cluster-var-injector` from this cluster's own `project`
+value) means that SA doesn't exist at all on a cluster it isn't native to —
+the sync fails outright rather than silently succeeding under a trusted
+identity.
+
+**The four policies** (catalog: `terraform/infra/policies.tf`; see CLAUDE.md
+→ "Adding a policy" to extend it):
+
+| Policy | Rule | Selector |
+|--------|------|----------|
+| `require-namespace-labels` | The tenant's own sync identity must set `gitops.platform/project`/`environment` on any Namespace it creates or updates; no-adoption blocks relabeling a namespace that didn't already carry this tenant's value | none (`Namespace` is cluster-scoped) |
+| `gitops-namespace-containment` | The tenant's own sync identity may write only into namespaces labeled as its own project | `gitops.platform/project NotIn [tenant]` (also matches unlabeled namespaces — no exclude-list) |
+| `hostname-ownership` | `Ingress` / `Gateway` (Gateway API and istio) / `HTTPRoute` hosts must fall under an allowed DNS suffix | `gitops.platform/project In [tenant]` |
+| `service-exposure` | Deny `NodePort`, steering exposure to a Gateway-backed LoadBalancer. `LoadBalancer` Services are **allowed** — a tenant exposes via its own `Gateway` (any GatewayClass: `avi-lb`, `istio`, or customer-brought), which the provider realizes as an LB Service. Not policed by controller identity (would couple the policy to one provider and miss customer-brought ones); LB sprawl is bounded by the cluster's Avi SEG / VPC IP pool instead | `gitops.platform/project In [tenant]` |
+
+All four ship in `dryrun`; see `tenants.yaml` → a tenant's `policies:` block
+and CLAUDE.md's rollout order before flipping to `deny`.
+
+**Enabling impersonation.** ArgoCD sync impersonation
+(`application.sync.impersonation.enabled`) is set via a *minimal* `ConfigMap`
+patch (`argocd/config/argocd-cm-patch.yaml`) applied with Server-Side Apply —
+it owns only that one key in `argocd-cm`, coexisting with the
+argocd-service operator's own manager rather than replacing the whole
+ConfigMap. This depends on the operator granting **per-key**, not
+whole-object, field ownership — verified against the live instance before
+relying on it (see `docs/GETTING-STARTED.md`).
+
+**Facts this design leans on, verified live** (not assumed): the Gatekeeper
+webhook backing VKSM auto-exempts only `gatekeeper-system` / `kube-system` /
+`vmware-system-vksm` — no `vmware-system-*` wildcard — so every other platform
+namespace is genuinely in scope for `gitops-namespace-containment` and needs
+no separate exclusion; the platform's own load-balanced Services live in
+`istio-ingress` and `headlamp` (not `istio-system`); VKSM ships its own
+pod-security policies already, so this catalog doesn't duplicate them.
+
 ## Pattern vs lab: the seams
 
 Not everything in this repo is the reference. The table below marks the seams —
@@ -233,20 +387,23 @@ what to keep, what to swap for your environment.
 - Committed rendered files with the `check-generated-clean` gate
 - The profile / env-overlay / feature-component / injector layering and the
   `replace-me` + `validate.sh` guardrails
+- The add-on model: shared label-gated `AddonInstall` per namespace,
+  releaseFilter version pins, opt-in per-cluster `AddonConfig`
 - The stateless-helper approach to short-lived vcfa credentials
 
 **The lab (swap these for your environment):**
 
 | Layer | In this repo | Where to swap | Notes |
 |-------|--------------|---------------|-------|
-| Load balancer | AVI (AKO addon on every cluster) | `avi_enabled` + `seg_name` (Service Engine Group, per region, `terraform/infra/variables.tf`); drop `components/ako*` from profiles/clusters | `avi_enabled=false` already switches the VPC to an NSX `LoadBalancer` CR. `seg_name` is required when `avi_enabled=true`, null otherwise. On VCF 9.1 AKO is auto-installed into VKS clusters, so there's no AKO secret to bootstrap; the `AddonConfig`/injector wiring is AVI-specific. |
-| CNI tuning | Antrea + NSX integration (`components/antrea-nsx`) | Profile component list | VKS 3.6+ ships Antrea as a managed addon, so NSX integration is an `AddonConfig` (`base/antrea`, `antreaNSX.enable: true`) — no addon version to pin, unlike AKO. |
-| App baseline | carvel package installer + cert-manager | `apps/components/stacks/*`, `apps/profiles/{env}` | Stacks are plain kustomize components — swap contents freely; the env-pinning pattern is what matters. (Observability is no longer an app stack; VKS 9.1+ delivers it by default via the `automated-monitoring` addon label on the base Cluster — opt a cluster out with `infrastructure/components/disable-observability`.) |
-| Namespace add-ons (label-gated) | headlamp (`base/headlamp` → one shared `AddonInstall` per namespace) | `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/`, version in `components/envs/{env}/headlamp`, default-on label in `components/envs/dev`, opt-out `components/disable-headlamp` | The pattern: a single label-selected `AddonInstall` per supervisor namespace (delivered by the `namespace-resources` appset, not per cluster) installs the add-on on any cluster carrying the label — swap headlamp for any VKS add-on that needs no cluster-specific overrides. Add-ons that DO need per-cluster overrides use the per-cluster `AddonInstall`+`AddonConfig` pattern (istio). |
+| Load balancer | AVI (AKO addon on every cluster) | `avi_enabled` + `seg_name` (Service Engine Group, per region, `terraform/infra/variables.tf`); drop `components/ako*` from profiles/clusters | `avi_enabled=false` already switches the VPC to an NSX `LoadBalancer` CR. `seg_name` is required when `avi_enabled=true`, null otherwise. On VCF 9.1 AKO is auto-installed into VKS clusters (the built-in `ako-global-installer` selects the platform-added `ako.kubernetes.vmware.com/install: "true"` cluster label — flip it per cluster with `components/disable-ako`), so there's no AKO secret to bootstrap; the `AddonConfig`/injector wiring is AVI-specific. |
+| CNI choice + tuning | Explicit per cluster: exactly one `cni-*` component (`cni-antrea` \| `cni-cilium` \| `cni-calico`); antrea + NSX adds `antrea-nsx` after `cni-antrea` | Cluster component list (day-0; never the profile) | The CNI is selected in the Cluster spec (`bootstrapAddons.cniRef`; immutable after creation, k8s 1.35+). `cni-antrea` owns the antrea `AddonConfig`; NSX integration is a settings-only patch on it (`antreaNSX.enable: true`); no addon version to pin, unlike AKO. |
+| App baseline | carvel package installer + cert-manager | `apps/components/stacks/*`, `apps/profiles/{env}` | Stacks are plain kustomize components — swap contents freely; the env-pinning pattern is what matters. (Observability is no longer an app stack; VKS 9.1+ delivers it by default via the `automated-monitoring` addon label on the base Cluster — opt a cluster out with `infrastructure/components/disable-observability`, back in with `enable-observability`.) |
+| Installable add-ons (label-gated) | headlamp + istio (`base/{addon}` → one shared `AddonInstall` per namespace) | `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/`, version in `components/envs/{env}/{addon}` (`releaseFilter.ref` = an `AddonRelease` name), enablement label per cluster (headlamp default-on in `components/envs/dev`, opt-out `disable-headlamp`; istio opt-in via `components/istio`) | The pattern: a single label-selected `AddonInstall` per supervisor namespace (delivered by the `namespace-resources` appset, not per cluster) installs the add-on on any cluster carrying `addons.kubernetes.vmware.com/{addon}: enabled`; `stopMatchingBehavior: Delete` uninstalls when the label flips. Per-cluster value overrides are a separate OPT-IN `AddonConfig` (`components/istio-config`) — clusters without one run the addon defaults (the controller generates the AddonConfig). Auto-installed core addons (ako, antrea) have no `AddonInstall` to author — they're `AddonConfig`-only. |
 | Package source & images | Broadcom standard package repo, ubuntu content library | `apps/components/envs/{env}` (bundle image), `infrastructure/components/envs/{env}` (os-image annotations) | Deliberately env-layer values, never in bases. |
 | Sizing & placement | `z-wld-a` zone, vSAN storage policy, class sizes | Defaults in `terraform/modules/tenant/variables.tf`; per-namespace overrides in `tenants.yaml` | Zone names vary per region — always set explicitly. |
 | GitOps repo identity | `github.com/warroyo/argocd-scaffolding` | `argocd/repo-config.yaml` — the single source; Terraform and the ApplicationSets both read it | One-file fork. |
 | ArgoCD flavor | vSphere ArgoCD operator CR (`argocd-service.vsphere.vmware.com`) | `charts/bootstrap-tenant/templates/argocd-instance.yaml` | The chart's other resources (ArgoNamespace, root app) are the pattern; the instance CR is the VCF-specific part. |
+| Cluster policy values | Lab DNS suffix `.will-org-apps.vcf.lab` (hostname-ownership) | Per-tenant `policies:` → `parameters` in `tenants.yaml` | The policy *catalog* (`terraform/infra/policies.tf`, the Rego) is the pattern; the suffix is just the value a real tenant would set to their own domain. |
 
 ## Known limitations
 
@@ -254,6 +411,14 @@ Tracked with priorities and detail in [BACKLOG.md](BACKLOG.md). The headline
 items an adopter should know before production: deletion is unguarded
 (deleting — or renaming — a cluster directory deletes the live cluster; a
 rename is a delete+recreate), a single shared ArgoCD admin credential (no
-SSO/RBAC yet),
+SSO/RBAC yet — the cluster-policy layer constrains what a tenant's *gitops
+flow* can do, not who can push to their repo),
 Terraform state lives on the platform it manages (back it up off-platform), and
-one region per install.
+one region per install. On the cluster-policy layer specifically: ArgoCD sync
+impersonation is a beta feature (v3.0.19, this repo's shipped version); the
+tenant AppProject's cross-cluster destination gap (above) is mitigated, not
+closed — a tenant landing on another tenant's cluster still fails to sync
+rather than being isolated by a positive check; and whether ArgoCD hard-fails
+or silently falls back to the un-impersonated identity when the configured
+service account is momentarily missing (e.g. a brand-new cluster) is a
+verify-live item, not yet confirmed (`docs/GETTING-STARTED.md`).

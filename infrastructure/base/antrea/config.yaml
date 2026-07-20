@@ -1,14 +1,16 @@
-# Tunes the auto-installed antrea addon (VKS 3.6+; AntreaConfig CRD is gone).
-# Defaults only — feature components flip knobs (e.g. antrea-nsx). Name and
-# clusterName/label identity are filled in by cluster-var-injector.
+# antrea CNI settings (AddonConfig, VKS 3.6+). CNI selection lives in the Cluster
+# spec — only settings go here; defaults only (antrea-nsx flips knobs). Name/
+# clusterName filled by cluster-var-injector. See CLAUDE.md "VKS add-ons" Variant B.
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonConfig
 metadata:
   name: cluster-antrea
   annotations:
+    # Vendor-recommended: delete this AddonConfig when its ClusterAddon is
+    # deleted (techdocs "Configure an Add-on at Installation Time").
     clusteraddon.addons.kubernetes.vmware.com/owned-for-deletion: "true"
   labels:
-    addon.kubernetes.vmware.com/addon-name: antrea
+    app.kubernetes.io/name: antrea
     config.k8s.io/inject-cluster-name-prefix: "true"
     cluster.x-k8s.io/cluster-name: clustername
 spec:

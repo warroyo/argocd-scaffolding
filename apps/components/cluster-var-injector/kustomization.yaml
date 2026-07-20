@@ -1,11 +1,7 @@
-# Apps-side variable injection, mirroring infrastructure/components/cluster-var-injector.
-#
-# The apps tree cannot reference the cluster's cluster-details.yaml (kustomize
-# load restrictions forbid FILES outside the kustomization root), so each
-# cluster's apps/kustomization.yaml declares a tiny `vars` configMapGenerator
-# with its cluster_name (validate.sh checks it matches the directory). Keep
-# this component LAST in the apps component list — it rewrites resources
-# brought in by the profile and the stacks.
+# Apps-side variable injection (mirrors infrastructure/components/cluster-var-injector).
+# Reads cluster_name/project from each cluster's apps/kustomization.yaml `vars`
+# configMapGenerator. Keep LAST in the component list. See CLAUDE.md "Adding a
+# new cluster".
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
@@ -22,3 +18,25 @@ replacements:
         options:
           delimiter: '-'
           index: 0
+
+  # tenant-sync SA/RBAC naming (apps/base/tenant-sync): replace the "replaceme"
+  # segment with this cluster's tenant. Two targets: object name vs subject ref.
+  - source:
+      kind: ConfigMap
+      name: vars
+      fieldPath: data.project
+    targets:
+      - select:
+          labelSelector: "config.k8s.io/inject-project-suffix=true"
+        fieldPaths:
+        - metadata.name
+        options:
+          delimiter: '-'
+          index: 2
+      - select:
+          labelSelector: "config.k8s.io/inject-project-subject=true"
+        fieldPaths:
+        - subjects.0.name
+        options:
+          delimiter: '-'
+          index: 2
