@@ -13,11 +13,10 @@ spec:
   # not known at render time).
   sourceRepos:
   - '*'
-  # Tenants may target any registered workload cluster, but never the local
-  # (in-cluster) ArgoCD cluster or a supervisor-namespace registration. Deny
-  # rules ('!') take precedence over the allow-all entry. NOTE: this does not
-  # isolate tenants from EACH OTHER's workload clusters — cluster names carry
-  # no tenant prefix to match on (see README, decision model).
+  # Any registered workload cluster, never in-cluster or a supervisor-ns
+  # registration ('!' deny wins). The three explicit namespace denies are the
+  # ones the gatekeeper webhook can't police. Full rationale (cross-tenant gap,
+  # impersonation): docs/ARCHITECTURE.md "Cluster policy + namespace self-service".
   destinations:
   - name: '!in-cluster'
     namespace: '*'
@@ -25,6 +24,12 @@ spec:
     namespace: '*'
   - name: '!supervisor-ns-*'
     namespace: '*'
+  - name: '*'
+    namespace: '!kube-system'
+  - name: '*'
+    namespace: '!gatekeeper-system'
+  - name: '*'
+    namespace: '!vmware-system-vksm'
   - name: '*'
     namespace: '*'
   # Namespace creation only (for CreateNamespace=true) — no other
@@ -35,3 +40,10 @@ spec:
   namespaceResourceWhitelist:
   - group: '*'
     kind: '*'
+  # Sync impersonation: tenant syncs run as this tenant's own SA (apps/base/tenant-sync).
+  # Needs application.sync.impersonation.enabled in argocd-cm. `server: '*'` glob
+  # is unverified on ArgoCD 3.0.19 — verify live (docs/GETTING-STARTED.md).
+  destinationServiceAccounts:
+  - server: '*'
+    namespace: '*'
+    defaultServiceAccount: 'platform-gitops:tenant-sync-tenant-1'
