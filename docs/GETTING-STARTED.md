@@ -35,10 +35,16 @@ don't need either to finish this.
   `TF_VAR_avi_enabled` (and, for AVI, a **Service Engine Group** name for
   `TF_VAR_seg_name`). Getting it wrong fails `apply-infra` at VPC creation. Ask
   your provider admin if unsure.
-- a **Supervisor-admin session** — a more privileged login than the org-level
-  one used for everything else. Needed once, in Part 1.2, to register the
-  external-secrets chart repo (part of the default add-on bundle). Part 1.2
-  says what to drop if you can't get one.
+
+**Separately, Supervisor access.** Everything above is tenant-facing vcfa. One
+step — Part 1.2, registering the external-secrets chart repo that the default
+add-on bundle installs from — writes to `vmware-system-vks-public`, a namespace
+on the **Supervisor cluster itself**. That's the VCF infrastructure layer, a
+different access domain from your vcfa org: no vcfa role grants it, and the
+org-level context can only read there. You need a Supervisor-admin kubeconfig,
+obtained however your VCF install does it — ask whoever administers the
+vSphere/VCF fleet, not your vcfa provider admin. Part 1.2 says what to drop if
+you can't get one.
 
 **A fork of this repo.** GitOps means ArgoCD pulls from git, so you need a
 repo you can push to:
@@ -54,6 +60,11 @@ Two things have to exist before Terraform or ArgoCD can do anything, and
 neither can be created by this repo's automation — both are hand-applied with
 `kubectl`, once. Do them in either order, but do both **before** Part 3
 provisions a cluster.
+
+They use **different credentials**: 1.1 runs against your vcfa org context
+(`vcf context use`), 1.2 against the Supervisor cluster. Getting a Supervisor
+kubeconfig is usually the longer pole — start asking for it now if you don't
+have one.
 
 ### 1.1 State backend (~10 min)
 
@@ -120,10 +131,11 @@ write there either. So, unlike everything else in this repo, this step is
 hand-authored YAML applied manually — never Terraform, never ArgoCD, never
 CI. Full reasoning in `docs/DECISIONS.md` #14.
 
-You need a **Supervisor-admin session** — a different, more privileged login
-than the org-level `vcf context use` used everywhere else in this guide. How
-you obtain one is specific to your VCF install (ask your platform admin if you
-don't already have one).
+You need a **Supervisor-admin kubeconfig** — not a more privileged vcfa role,
+a different layer entirely: `vmware-system-vks-public` lives on the Supervisor
+cluster, which your vcfa org sits on top of. `vcf context use` won't get you
+there no matter what org role you hold. How you obtain one is specific to your
+VCF install; ask whoever administers the vSphere/VCF fleet.
 
 ```sh
 kubectl apply -f supervisor-addons/external-secrets.yaml
