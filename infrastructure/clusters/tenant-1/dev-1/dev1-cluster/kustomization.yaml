@@ -10,9 +10,9 @@ components:
 # CNI: exactly one, day-0 immutable.
 - ../../../../components/cni-antrea
 - ../../../../components/antrea-nsx
-# Optional features. istio = enablement label; istio-config = opt-in per-cluster
-# overrides (drop for defaults). Opt out of on-by-default: components/disable-observability.
-- ../../../../components/istio
+# istio comes from the standard add-on bundle; ako-istio is separate because
+# the pairing only applies when AKO/AVI is installed. istio-config = opt-in
+# per-cluster value overrides (drop for defaults).
 - ../../../../components/ako-istio
 - ../../../../components/istio-config
 - ../../../../components/cluster-autoscaling

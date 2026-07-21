@@ -18,7 +18,8 @@ patches:
     version: v1beta1
     kind: Cluster
   patch: |-
-    # headlamp on by default (opt out: disable-headlamp).
+    # headlamp is dev-only, so it stays an env label rather than joining an
+    # add-on bundle (opt out: disable-headlamp).
     - op: add
       path: /metadata/labels/addons.kubernetes.vmware.com~1headlamp
       value: enabled

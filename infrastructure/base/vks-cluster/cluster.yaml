@@ -4,8 +4,6 @@ metadata:
   name: clustername
   labels:
     config.k8s.io/inject-cluster-name: "true"
-    # Automated monitoring stack (VKS 9.1+); opt out with disable-observability.
-    addons.kubernetes.vmware.com/automated-monitoring: enabled
 spec:
   clusterNetwork:
     pods:

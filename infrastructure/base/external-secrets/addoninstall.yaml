@@ -1,19 +1,18 @@
-# Shared label-gated istio AddonInstall (one per supervisor namespace).
-# Pattern: CLAUDE.md "VKS add-ons" Variant A.
+# Shared label-gated external-secrets AddonInstall (one per supervisor
+# namespace). Pattern: CLAUDE.md "VKS add-ons" Variant A.
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonInstall
 metadata:
-  name: istio-addoninstall
+  name: external-secrets-addoninstall
   labels:
-    app.kubernetes.io/name: istio
+    app.kubernetes.io/name: external-secrets
 spec:
   addonRef:
-    name: istio
-  # Version (AddonRelease name) pinned per-env by components/envs/{env}/istio.
+    name: external-secrets
+  # Helm-based addon: ref.name is "<chart>.<version>", no AddonRelease CR.
   releaseFilter:
     ref:
       name: replace-me
-      namespace: vmware-system-vks-public
   # Selectors OR; expressions within one AND. Profile grants unless explicitly
   # disabled; the per-addon label also works standalone. CLAUDE.md "VKS add-ons".
   clusters:
@@ -22,12 +21,12 @@ spec:
       - key: addons.kubernetes.vmware.com/profile
         operator: In
         values: ["standard"]
-      - key: addons.kubernetes.vmware.com/istio
+      - key: addons.kubernetes.vmware.com/external-secrets
         operator: NotIn
         values: ["disabled"]
   - selector:
       matchExpressions:
-      - key: addons.kubernetes.vmware.com/istio
+      - key: addons.kubernetes.vmware.com/external-secrets
         operator: In
         values: ["enabled"]
   stopMatchingBehavior: Delete

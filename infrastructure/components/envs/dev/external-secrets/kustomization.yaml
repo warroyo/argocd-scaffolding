@@ -1,0 +1,16 @@
+# Dev external-secrets version pin (helm chart name.version, not an
+# AddonRelease), included by a namespace's namespace-resources after
+# base/external-secrets. See CLAUDE.md "Rolling a version".
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+- target:
+    group: addons.kubernetes.vmware.com
+    version: v1alpha1
+    kind: AddonInstall
+    labelSelector: "app.kubernetes.io/name=external-secrets"
+  patch: |-
+    - op: replace
+      path: /spec/releaseFilter/ref/name
+      value: "external-secrets.2.8.0" # Dev external-secrets chart version

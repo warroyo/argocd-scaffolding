@@ -1,0 +1,18 @@
+# Standard add-on bundle: istio + external-secrets + observability. One label,
+# many AddonInstalls. See CLAUDE.md "VKS add-ons" → add-on bundles.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+- target:
+    group: cluster.x-k8s.io
+    version: v1beta1
+    kind: Cluster
+  patch: |-
+    - op: add
+      path: /metadata/labels/addons.kubernetes.vmware.com~1profile
+      value: standard
+    # Observability's AddonInstall is built-in (not ours to give a profile
+    # selector), so bundle membership sets its own native label.
+    - op: add
+      path: /metadata/labels/addons.kubernetes.vmware.com~1automated-monitoring
+      value: enabled

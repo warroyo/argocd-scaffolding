@@ -22,7 +22,7 @@ don't need either to finish this.
 | `terraform` | ≥ 1.9 | provisioning + rendering |
 | `kustomize` | 5.x | `make validate` (same version CI pins) |
 | `kubectl` | recent | one-time state-namespace setup, verification |
-| `envsubst` | any (gettext) | rendering the state-namespace manifest (Part 1); macOS: `brew install gettext` |
+| `envsubst` | any (gettext) | rendering the state-namespace manifest (Part 1.1); macOS: `brew install gettext` |
 | `vcf` CLI | recent | pointing kubectl at your VCF endpoint |
 | `make`, `git` | any | orchestration |
 
@@ -35,6 +35,10 @@ don't need either to finish this.
   `TF_VAR_avi_enabled` (and, for AVI, a **Service Engine Group** name for
   `TF_VAR_seg_name`). Getting it wrong fails `apply-infra` at VPC creation. Ask
   your provider admin if unsure.
+- a **Supervisor-admin session** — a more privileged login than the org-level
+  one used for everything else. Needed once, in Part 1.2, to register the
+  external-secrets chart repo (part of the default add-on bundle). Part 1.2
+  says what to drop if you can't get one.
 
 **A fork of this repo.** GitOps means ArgoCD pulls from git, so you need a
 repo you can push to:
@@ -44,7 +48,14 @@ repo you can push to:
    **single** place the repo URL lives — Terraform and the ApplicationSets
    both read it.
 
-## Part 1 — One-time state backend (~10 min)
+## Part 1 — One-time, out-of-band setup (~15 min)
+
+Two things have to exist before Terraform or ArgoCD can do anything, and
+neither can be created by this repo's automation — both are hand-applied with
+`kubectl`, once. Do them in either order, but do both **before** Part 3
+provisions a cluster.
+
+### 1.1 State backend (~10 min)
 
 Terraform state lives as Kubernetes Secrets in a small, dedicated supervisor
 namespace, so any machine (or CI) with VCF credentials can run the pipeline.
@@ -89,11 +100,60 @@ Two things worth knowing:
 You never touch this again. Every `make` target refreshes its own short-lived
 credentials against this namespace automatically.
 
+### 1.2 Custom VKS addon repositories (~5 min, once per addon)
+
+**Required if you keep the shipped defaults** — the `standard` add-on bundle
+includes `external-secrets`, which is *not* in VMware's built-in catalog
+(istio and headlamp are, and need nothing here). Its `AddonInstall` pins
+`releaseFilter.ref.name: external-secrets.2.8.0`; if the chart repo isn't
+registered when Part 3's first cluster comes up, that reference resolves
+against nothing and the add-on install fails. Registering it now costs one
+`kubectl apply`.
+
+That registration (`AddonRepository` + `AddonRepositoryInstall`,
+`addons.kubernetes.vmware.com`) can **only** be created in
+`vmware-system-vks-public`, a genuine Supervisor-scope namespace this repo's
+Terraform/GitOps automation cannot reach: the org-level context Terraform
+uses elsewhere (`vcf context use`, `kubernetes.vcfa-org`) has read-only
+visibility into it, and no per-tenant supervisor namespace credential can
+write there either. So, unlike everything else in this repo, this step is
+hand-authored YAML applied manually — never Terraform, never ArgoCD, never
+CI. Full reasoning in `docs/DECISIONS.md` #14.
+
+You need a **Supervisor-admin session** — a different, more privileged login
+than the org-level `vcf context use` used everywhere else in this guide. How
+you obtain one is specific to your VCF install (ask your platform admin if you
+don't already have one).
+
+```sh
+kubectl apply -f supervisor-addons/external-secrets.yaml
+```
+
+*You should see* both objects created:
+
+```sh
+kubectl get addonrepository,addonrepositoryinstall -n vmware-system-vks-public | grep external-secrets
+```
+
+One-time per addon — re-run the same `kubectl apply` (it's idempotent) only
+when you add a `versions` entry or bump `spec.version` in the file. To
+register another custom addon, add a new `supervisor-addons/{addon}.yaml`
+following the same shape and repeat this step; CLAUDE.md's "Adding a custom
+helm addon" has the rest of the recipe (the ordinary GitOps `AddonInstall`
+wiring).
+
+**If you can't get a Supervisor-admin session**, drop external-secrets instead
+of leaving it broken: remove `base/external-secrets` and the
+`envs/{env}/external-secrets` pin from the namespace's `namespace-resources`
+kustomization. (`components/disable-external-secrets` on a cluster stops that
+cluster installing it, but the `AddonInstall` itself still gets created in the
+namespace.)
+
 ## Part 2 — Tenants and the GitOps control plane (~20 min)
 
 ### 2.1 Credentials
 
-You created `.env` in Part 1 (region + `STATE_NS_*`). Now finish the vcfa
+You created `.env` in Part 1.1 (region + `STATE_NS_*`). Now finish the vcfa
 values (`TF_VAR_vcfa_url`, `TF_VAR_vcfa_org`, `TF_VAR_vcfa_refresh_token`). The
 Makefile loads `.env` into every Terraform run — no per-directory tfvars
 needed.
@@ -245,11 +305,11 @@ Then open `kustomization.yaml` in the same directory: it already inherits the
 dev profile; uncomment optional features you want. The CNI is declared
 explicitly — the template ships `cni-antrea` + `antrea-nsx`; swap both lines
 for `cni-cilium` or `cni-calico` BEFORE the first commit (the choice is
-immutable after cluster creation). Add-ons are label-gated:
-`components/istio` adds the enablement label the namespace's shared istio
-`AddonInstall` selects on (pair it with `components/ako-istio`; add
-`components/istio-config` only if this cluster needs istio values different
-from the defaults). The `AddonInstall` itself and its version pin
+immutable after cluster creation). Add-ons come from the dev profile's bundle
+(`addon-bundles/standard`: istio, external-secrets, observability) — drop one
+with the matching `disable-*` component. Add `components/ako-istio` only if
+this cluster runs AKO/AVI, and `components/istio-config` only if it needs istio
+values different from the defaults. The `AddonInstall` itself and its version pin
 (`components/envs/dev/istio`) live in the namespace's `namespace-resources/`
 dir — copy `docs/examples/namespace-resources-template` if this namespace
 doesn't have one yet. Same idea in `apps/kustomization.yaml` for app stacks.
@@ -447,6 +507,8 @@ sync), not as a sync failure. Restore the labels before continuing.
   mirror to prod — see the README's *Version management* section.
 - **Change every dev cluster at once:** edit `infrastructure/profiles/dev`.
 - **Add a cluster policy:** see CLAUDE.md's "Adding a policy" workflow.
+- **Add a custom helm addon:** see Part 1.2 above, then CLAUDE.md's "Adding a
+  custom helm addon" workflow.
 
 One warning before you experiment freely:
 

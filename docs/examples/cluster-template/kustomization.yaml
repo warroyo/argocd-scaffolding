@@ -14,13 +14,15 @@ components:
 # - ../../../../components/cni-cilium
 # - ../../../../components/cni-calico
 # Optional features — uncomment as needed:
-# - ../../../../components/istio            # istio label; pair with ako-istio
-# - ../../../../components/ako-istio
+# - ../../../../components/ako-istio        # istio<->AKO pairing; only when AKO/AVI is installed
 # - ../../../../components/istio-config     # opt-in per-cluster istio value overrides
 # - ../../../../components/cluster-autoscaling
 # - ../../../../components/ha-control-plane
-# - ../../../../components/disable-observability   # observability on by default
 # - ../../../../components/disable-ako             # AKO on by default
+# Opting out of the standard add-on bundle (istio, external-secrets, observability):
+# - ../../../../components/disable-istio
+# - ../../../../components/disable-external-secrets
+# - ../../../../components/disable-observability
 # cluster-var-injector MUST be last — rewrites all resources above.
 - ../../../../components/cluster-var-injector
 

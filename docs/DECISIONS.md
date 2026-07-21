@@ -387,3 +387,112 @@ now only pins the `PackageInstall`'s version constraint, nothing else.
 with the platform's own bundle cadence — at the cost of being bound to
 whatever package versions the platform ships (no custom/private Carvel
 packages without reintroducing a repository).
+
+---
+
+## 14. Why does the custom helm addon catalog (`AddonRepository`) live in a hand-applied manifest, not Terraform or GitOps?
+
+**The problem.** External Secrets Operator (ESO), needed to consume the VCF
+Secret Store Service, isn't in the built-in VKS addon catalog the way
+istio/headlamp are — nothing in `vmware-system-vks-public` already knows how
+to install it. VKS 3.7 added helm-based addons: registering a helm chart repo
+as an installable addon source is a plain CR (`AddonRepository`, plus an
+`AddonRepositoryInstall` to activate it), no Carvel packaging pipeline
+required for a public chart repo.
+
+**Two wrong turns before landing here.** The first attempt reasoned by
+surface analogy to `ClusterPolicyTemplate` (decision #10): another
+admin-sounding resource, so put it in Terraform via the same
+`kubernetes.vcfa-org` provider. That's wrong — verified live, the
+`addons.kubernetes.vmware.com` API isn't served in the org (vcfa) context at
+all, so that provider can't even reach it, let alone create anything. The
+second attempt moved it to GitOps instead, one `AddonRepository`/
+`AddonRepositoryInstall` per tenant's own supervisor namespace (the same
+destination `namespace-resources` already syncs `AddonInstall` into) — also
+wrong, also verified live: both CRs can **only** be created in
+`vmware-system-vks-public`, a genuine Supervisor-scope namespace, not any
+arbitrary tenant supervisor namespace.
+
+**The actual boundary.** `vmware-system-vks-public` sits at a privilege level
+this repo's automation has never held a credential for. Every `kubernetes`
+provider here comes from `vcfa_kubeconfig`, scoped either to the org (no
+args) or to one tenant's supervisor namespace (`project_name` +
+`supervisor_namespace_name`) — and the org-scoped context has only read
+visibility into `vmware-system-vks-public`, not write. `ClusterPolicyTemplate`
+being org-admin-scoped and reachable by `kubernetes.vcfa-org` said nothing
+about where *this* resource lives — same "admin-sounding" shape, a
+genuinely different, non-overlapping privilege boundary underneath.
+
+**The choice.** Since no credential of that shape exists anywhere in this
+repo's automation, and shouldn't be minted just for this, registration is a
+hand-authored manifest (`supervisor-addons/{addon}.yaml`) applied manually
+with `kubectl` by a human holding real Supervisor-admin access — never
+Terraform, never ArgoCD, never CI. This is the same category of problem
+`terraform/state-namespace/` already solved (a resource needing privilege no
+automation here holds, so it's a one-time hand-applied CR, documented in
+`docs/GETTING-STARTED.md`) — same answer, applied a second time. Once
+registered, *consuming* the addon (`AddonInstall`, version pin, enablement
+label) is ordinary GitOps — identical to any other add-on (CLAUDE.md "VKS
+add-ons") — because that part carries no more privilege than installing
+istio or headlamp already did; only the registration step sits outside both
+Terraform and GitOps.
+
+**The trade-off.** Adding a brand-new custom helm addon needs a manual,
+out-of-band step (Part 1.2 of `docs/GETTING-STARTED.md`) before the usual
+kustomize wiring, with no PR review and no audit trail beyond the committed
+YAML and whatever the human running it remembers to do — one more kind of
+step than istio/headlamp needed (they were pre-registered by VMware), and a
+different kind of step than everything else in this repo, which is either
+Terraform or GitOps. Worth it because the alternative is minting and storing
+a Supervisor-admin credential somewhere in this repo's automation, which is a
+bigger and more permanent risk than one rare manual `kubectl apply`.
+
+## 15. Why are add-ons gated by a profile label instead of one label per add-on?
+
+**The problem.** The original model gave every installable add-on its own
+enablement label, and "on by default" meant an `op: add` patch in
+`infrastructure/components/envs/{env}`. That makes the default add-on set a
+property of the *environment layer* — so adding one default-on add-on costs
+one patch per environment, and the same env layer that holds version pins also
+decides membership. There is no way to say "these clusters get this set of
+add-ons" without repeating the set, and no way to run two different add-on
+sets inside one environment.
+
+**The choice.** A bundle label — `addons.kubernetes.vmware.com/profile:
+standard`, added once by `components/addon-bundles/{bundle}` and inherited
+through `profiles/{env}` — that every add-on in the bundle selects on.
+Membership moves into each add-on's own `AddonInstall`, so joining the default
+set is one edit in one file regardless of how many environments exist, and
+`components/envs/{env}` goes back to holding versions only.
+
+**Why the override isn't a second selector.** `AddonInstall.spec.clusters` is
+a list and its entries OR (stated in the CRD's own field docs). A profile
+selector plus a per-add-on selector is therefore a union: a `disabled` label
+could only ever fail to add a cluster, never remove one the profile already
+matched. The override has to live inside the profile selector, where
+`matchExpressions` AND together — `profile In [standard]` AND `{addon} NotIn
+[disabled]`, with a second selector for `{addon} In [enabled]` so an
+off-profile cluster can still opt in. `NotIn` matches objects lacking the key,
+so a profile-only cluster installs. This is the vendor's own documented
+opt-out idiom (the `cluster-autoscaler` example in `kubectl explain
+addoninstall.spec.clusters`), not an invention.
+
+**Two deliberate exceptions.** headlamp is dev-only, so it stays an `envs/dev`
+label — an env-scoped add-on genuinely is an env-layer concern. Observability
+is in the bundle but its `AddonInstall` is built-in and not ours to edit, so
+the profile component sets that add-on's *native* `automated-monitoring` label
+instead. General rule: profile label for add-ons we author, native label for
+platform-installed ones. `ako-istio` stayed out of the bundle for a different
+reason — istio being on says nothing about whether the cluster runs AKO/AVI,
+and the pairing patch is wrong on a cluster without it.
+
+**The trade-off.** At today's scale (one env, three owned add-ons) this is a
+net line increase: two selectors of `matchExpressions` per add-on replace one
+`matchLabels`, and there's a new component. The payoff is entirely forward —
+it arrives with the second environment (no duplicated default-on patches) and
+with the fourth add-on (membership edited in one file). The standing cost is
+that the selector block is subtle enough to copy wrong; hence the recipe in
+CLAUDE.md rather than leaving future authors to re-derive the OR/AND
+semantics. A cluster that skips the profile component now also gets no
+observability, where before the base Cluster carried that label —
+`enable-observability` is the escape hatch.

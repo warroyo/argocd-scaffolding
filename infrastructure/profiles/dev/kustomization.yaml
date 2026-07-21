@@ -11,5 +11,8 @@ components:
 # CNI is NOT here — each cluster picks exactly one cni-* (day-0, immutable).
 - ../../components/argocd-tenant-cluster
 - ../../components/ako
+# Add-on bundle: istio + external-secrets + observability. Opt out per cluster
+# with the matching disable-* component (listed after the profile).
+- ../../components/addon-bundles/standard
 # Env overlay last — fills real dev values over base placeholders.
 - ../../components/envs/dev

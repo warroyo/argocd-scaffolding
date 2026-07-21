@@ -1,5 +1,5 @@
-# istio enablement label — only needed on a cluster with no add-on bundle
-# (the standard bundle already grants istio). Values: components/istio-config.
+# Opt out of istio (granted by the standard add-on bundle). Pair with dropping
+# components/ako-istio. See CLAUDE.md "VKS add-ons" → add-on bundles.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 patches:
@@ -10,4 +10,4 @@ patches:
   patch: |-
     - op: add
       path: /metadata/labels/addons.kubernetes.vmware.com~1istio
-      value: enabled
+      value: disabled

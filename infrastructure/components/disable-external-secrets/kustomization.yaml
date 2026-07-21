@@ -1,4 +1,4 @@
-# Opt out of automated observability (granted by the standard add-on bundle).
+# Opt out of external-secrets (granted by the standard add-on bundle).
 # See CLAUDE.md "VKS add-ons" → add-on bundles.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
@@ -9,5 +9,5 @@ patches:
     kind: Cluster
   patch: |-
     - op: add
-      path: /metadata/labels/addons.kubernetes.vmware.com~1automated-monitoring
+      path: /metadata/labels/addons.kubernetes.vmware.com~1external-secrets
       value: disabled

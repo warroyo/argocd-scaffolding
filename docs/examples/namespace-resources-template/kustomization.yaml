@@ -6,9 +6,11 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-- ../../../../base/headlamp     # on by default for dev
-- ../../../../base/istio        # opt-in (components/istio adds the label)
+- ../../../../base/headlamp          # dev-only (envs/dev label)
+- ../../../../base/istio             # standard add-on bundle
+- ../../../../base/external-secrets  # standard add-on bundle
 components:
 # Version pins — swap `dev` to the namespace's environment.
 - ../../../../components/envs/dev/headlamp
 - ../../../../components/envs/dev/istio
+- ../../../../components/envs/dev/external-secrets
