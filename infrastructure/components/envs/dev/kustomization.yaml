@@ -30,7 +30,7 @@ patches:
   patch: |-
     - op: replace
       path: /spec/topology/class
-      value: "builtin-generic-v3.6.0" # Dev cluster class
+      value: "builtin-generic-v3.7.0" # Dev cluster class (3.7 = helm-controller/addon framework)
     - op: replace
       path: /spec/topology/version
       value: "v1.35.5---vmware.1-vkr.1" # Dev Kubernetes version
