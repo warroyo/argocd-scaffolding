@@ -14,5 +14,7 @@ components:
 # Add-on bundle: istio + external-secrets + observability. Opt out per cluster
 # with the matching disable-* component (listed after the profile).
 - ../../components/addon-bundles/standard
+# external-secrets installs to `default` unless told otherwise.
+- ../../components/external-secrets-config
 # Env overlay last — fills real dev values over base placeholders.
 - ../../components/envs/dev

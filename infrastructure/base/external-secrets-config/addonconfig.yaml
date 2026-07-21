@@ -1,0 +1,15 @@
+# Helm-based add-on: `helmOptions.targetNamespace` is the only way to move it off
+# the schema default (`default`). Name injector-prefixed to <cluster>-external-secrets,
+# matching the controller's addonConfigNameTemplate so this replaces the auto-generated
+# config. See CLAUDE.md "VKS add-ons" Variant A.
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonConfig
+metadata:
+  name: cluster-external-secrets
+  labels:
+    app.kubernetes.io/name: external-secrets
+    config.k8s.io/inject-cluster-name-prefix: "true"
+spec:
+  values:
+    helmOptions:
+      targetNamespace: external-secrets

@@ -1,0 +1,6 @@
+# Always-on: pins external-secrets' install namespace (the schema default is
+# `default`). Applied via profiles/{env}, not per cluster. See CLAUDE.md "VKS add-ons".
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+- ../../base/external-secrets-config

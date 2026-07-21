@@ -352,10 +352,12 @@ Two variants:
   never ArgoCD (`docs/DECISIONS.md` #14). Once registered, `addonRef.name`
   is the chart name and `releaseFilter.ref.name` is `"<chart>.<version>"` —
   registration does mint an `AddonRelease`, just under a shorter name than a
-  vendor-packaged add-on. One extra requirement: the add-on needs
+  vendor-packaged add-on. Two extra requirements: the add-on needs
   **helm-controller** on the cluster, which comes from a **3.7+ cluster
-  class** — the class makes the platform install it. See CLAUDE.md "Adding a
-  custom helm addon".
+  class** (the class makes the platform install it); and its `AddonConfig`
+  carries `helmOptions.targetNamespace`, because a helm add-on otherwise
+  installs into `default` — so that config is profile-inherited, not opt-in
+  like `istio-config`. See CLAUDE.md "Adding a custom helm addon".
 
 `AddonConfig` is always opt-in, per-cluster overrides only: the addon
 controller auto-generates one named `{cluster}-{addon}` (its default

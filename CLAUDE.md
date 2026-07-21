@@ -222,7 +222,12 @@ add-on fails with `dependency "helm-controller" not installed`.
    name. Registration *does* mint an `AddonRelease` (verified live:
    `external-secrets.2.8.0`), so the `namespace` field works the same as any
    other add-on and only the naming convention differs.
-3. Everything else — env version pin, default-on/opt-in label, namespace-
+3. `infrastructure/base/{addon}-config/` — an `AddonConfig` setting
+   `values.helmOptions.targetNamespace`. Helm add-ons install to the schema
+   default `default` otherwise, so unlike `istio-config` this one is **not**
+   opt-in: wire its component into `profiles/{env}`. Chart values go under
+   `values.helmValues` (free-form), install options under `values.helmOptions`.
+4. Everything else — env version pin, default-on/opt-in label, namespace-
    resources wiring — follows CLAUDE.md "VKS add-ons" exactly.
 
 Note: registering a repo makes VKS create an internal `helm-repo`
