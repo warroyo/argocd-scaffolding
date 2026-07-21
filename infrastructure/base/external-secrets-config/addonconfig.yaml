@@ -13,3 +13,7 @@ spec:
   values:
     helmOptions:
       targetNamespace: external-secrets
+    helmValues:
+      # Flux derives the release name as <targetNamespace>-<AddonConfig name>, so
+      # without this every resource is external-secrets-<cluster>-external-secrets.
+      fullnameOverride: external-secrets
