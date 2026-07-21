@@ -447,44 +447,31 @@ Terraform or GitOps. Worth it because the alternative is minting and storing
 a Supervisor-admin credential somewhere in this repo's automation, which is a
 bigger and more permanent risk than one rare manual `kubectl apply`.
 
-**The bigger trade-off, found the hard way.** The privilege boundary above is
-not the worst part. Registering the repo makes the platform auto-create a
-`helm-repo` `AddonInstall` in `vmware-system-vks-public` with `clusters: []`
-and `crossNamespaceSelection: Allowed` — which, per the CRD's own field docs,
-means **every cluster on the Supervisor**, other tenants' included. Each one
-tries to render a `HelmRepository` CR; any cluster lacking helm-controller
-fails that ClusterAddon and error-loops the shared addon controller until it
-gets one. Registering a custom helm repo is a **fleet-wide act, not a tenant
-one**, and nothing in the API says so.
+**The real prerequisite.** Helm-based add-ons need **helm-controller** on the
+cluster, which means a **3.7+ cluster class** (`builtin-generic-v3.7.0`, pinned
+in `components/envs/{env}`). The 3.7 class is what makes the platform label the
+Cluster `addon.addons.kubernetes.vmware.com/helm-controller: automatic` and
+install it, supplying the `HelmRepository` CRD and the `vmware-system-helm`
+namespace the add-on renders into. On a 3.6 class none of that exists and the
+add-on sits at `dependency "helm-controller" not installed` — which is exactly
+how this was found.
 
-There is no way to scope it. All four verified live:
-- The CRs are rejected outside `vmware-system-vks-public` — *"only allowed in
-  public namespace `vmware-system-vks-public` or supervisor service
-  namespace"*. A tenant-namespaced repo is not possible.
-- `AddonRepositoryInstall.spec` has exactly one field, `addonRepositoryRef`.
-  No cluster selector, no namespace selector.
-- The generated `helm-repo` `AddonInstall` can be neither patched nor deleted,
-  even by Supervisor-admin (`Forbidden` on both) — so a selector cannot be
-  added after the fact, and the object outlives the `AddonRepository` that
-  created it.
-- The vendor's own 3.7 documentation describes no scoping mechanism.
+How VKS distributes registered repos: it creates an internal `helm-repo`
+`AddonInstall` in `vmware-system-vks-public` with `clusters: []` and
+`crossNamespaceSelection: Allowed`, i.e. every cluster on the Supervisor. That
+is the intended fan-out mechanism, not a misconfiguration. It's platform-owned
+— `Forbidden` to patch or delete even as Supervisor-admin — and there's no
+scoping knob (the CRs are rejected outside `vmware-system-vks-public`,
+`AddonRepositoryInstall.spec` has only `addonRepositoryRef`, and the vendor
+documents none). Clusters not yet on 3.7 log addon-controller errors for that
+ClusterAddon; nothing else about them is affected.
 
-The only mitigation is fleet-level: **every cluster must be on a 3.7+ cluster
-class** (`builtin-generic-v3.7.0`), because that is what makes the platform
-label the Cluster `addon.addons.kubernetes.vmware.com/helm-controller:
-automatic` and install helm-controller, which supplies the `HelmRepository`
-CRD and `vmware-system-helm` namespace. On a 3.6 class none of that exists.
-Consequence for this repo: a custom helm add-on cannot be turned on until the
-whole Supervisor fleet is on 3.7 — which is a shared-environment
-coordination problem, not something a single tenant's git repo can solve.
-
-Two API details worth recording, both undocumented and both discovered by
-being rejected: the `AddonRepository` must carry an
-`addons.kubernetes.vmware.com/package-offerings` annotation (JSON, mirroring
-`spec.version` and `spec.addonFilters`) or the validating webhook refuses it;
-and registration *does* mint an `AddonRelease` (`external-secrets.2.8.0`),
-contrary to an earlier assumption here that the helm flow skips them — only
-the naming convention differs from a vendor-packaged add-on.
+Two undocumented API details, both found by being rejected: the
+`AddonRepository` must carry an `addons.kubernetes.vmware.com/package-offerings`
+annotation (JSON, mirroring `spec.version` and `spec.addonFilters`) or the
+validating webhook refuses it; and registration *does* mint an `AddonRelease`
+(`external-secrets.2.8.0`), contrary to an earlier assumption here that the
+helm flow skips them — only the naming convention differs.
 
 ## 15. Why are add-ons gated by a profile label instead of one label per add-on?
 

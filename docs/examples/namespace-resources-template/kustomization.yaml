@@ -8,10 +8,9 @@ kind: Kustomization
 resources:
 - ../../../../base/headlamp          # dev-only (envs/dev label)
 - ../../../../base/istio             # standard add-on bundle
-# external-secrets is blocked on the helm-controller prerequisite — see
-# docs/DECISIONS.md #14. Re-add with the envs/{env} pin once that is resolved.
-# - ../../../../base/external-secrets
+- ../../../../base/external-secrets  # standard add-on bundle
 components:
 # Version pins — swap `dev` to the namespace's environment.
 - ../../../../components/envs/dev/headlamp
 - ../../../../components/envs/dev/istio
+- ../../../../components/envs/dev/external-secrets

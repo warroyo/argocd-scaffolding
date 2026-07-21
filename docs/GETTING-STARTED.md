@@ -36,15 +36,15 @@ don't need either to finish this.
   `TF_VAR_seg_name`). Getting it wrong fails `apply-infra` at VPC creation. Ask
   your provider admin if unsure.
 
-**Separately, Supervisor access — only if you register a custom helm add-on.**
-Everything above is tenant-facing vcfa. One *optional* step, Part 1.2, writes
-to `vmware-system-vks-public`, a namespace on the **Supervisor cluster
-itself**. That's the VCF infrastructure layer, a different access domain from
-your vcfa org: no vcfa role grants it, and the org-level context can only read
-there. You'd need a Supervisor-admin kubeconfig, obtained however your VCF
-install does it — ask whoever administers the vSphere/VCF fleet, not your vcfa
-provider admin. The walkthrough completes fine without it; Part 1.2 explains
-what you give up.
+**Separately, Supervisor access.** Everything above is tenant-facing vcfa. One
+step — Part 1.2, registering the external-secrets chart repo that the default
+add-on bundle installs from — writes to `vmware-system-vks-public`, a namespace
+on the **Supervisor cluster itself**. That's the VCF infrastructure layer, a
+different access domain from your vcfa org: no vcfa role grants it, and the
+org-level context can only read there. You need a Supervisor-admin kubeconfig,
+obtained however your VCF install does it — ask whoever administers the
+vSphere/VCF fleet, not your vcfa provider admin. Part 1.2 says what to drop if
+you can't get one.
 
 **A fork of this repo.** GitOps means ArgoCD pulls from git, so you need a
 repo you can push to:
@@ -113,29 +113,20 @@ credentials against this namespace automatically.
 
 ### 1.2 Custom VKS addon repositories (~5 min, once per addon)
 
-**Skip this unless you have read the two warnings below.** The shipped
-`namespace-resources` kustomizations ship with `external-secrets` commented
-out precisely because of them; the rest of its wiring (base, env pin, bundle
-membership) is committed and ready to uncomment.
+**Required if you keep the shipped defaults** — the `standard` add-on bundle
+includes `external-secrets`, which is *not* in VMware's built-in catalog
+(istio and headlamp are, and need nothing here). Its `AddonInstall` pins
+`releaseFilter.ref.name: external-secrets.2.8.0`; if the chart repo isn't
+registered when Part 3's first cluster comes up, that reference resolves
+against nothing and the add-on install fails. Registering it now costs one
+`kubectl apply`.
 
-`external-secrets` is *not* in VMware's built-in catalog (istio and headlamp
-are, and need nothing here), so its chart repo has to be registered as an
-`AddonRepository` before any cluster can install it.
-
-> **Warning 1 — every cluster on the Supervisor needs a 3.7+ cluster class.**
-> A helm-based add-on renders a `HelmRepository` CR, which requires
-> helm-controller. The 3.7 class is what makes the platform auto-label the
-> Cluster `addon.addons.kubernetes.vmware.com/helm-controller: automatic` and
-> install it. On a 3.6 class the CRD and the `vmware-system-helm` namespace
-> simply don't exist and the add-on fails. Pin the class in
-> `infrastructure/components/envs/{env}`.
->
-> **Warning 2 — registration is Supervisor-wide, not tenant-scoped.** The
-> platform reacts by creating a `helm-repo` `AddonInstall` that targets *every
-> cluster on the Supervisor*, other tenants' included, and any cluster without
-> helm-controller error-loops the shared addon controller until it gets one.
-> There is no way to scope this (`docs/DECISIONS.md` #14 has the four
-> verifications). Confirm the whole fleet is on 3.7 before registering.
+One prerequisite: your clusters need a **3.7+ cluster class**
+(`builtin-generic-v3.7.0`, pinned in `infrastructure/components/envs/{env}`).
+That is what makes the platform install helm-controller, which supplies the
+`HelmRepository` CRD and `vmware-system-helm` namespace a helm-based add-on
+renders into. On a 3.6 class the add-on stalls at `dependency
+"helm-controller" not installed`.
 
 That registration (`AddonRepository` + `AddonRepositoryInstall`,
 `addons.kubernetes.vmware.com`) can **only** be created in
@@ -163,9 +154,6 @@ kubectl apply -f supervisor-addons/external-secrets.yaml
 kubectl get addonrepository,addonrepositoryinstall -n vmware-system-vks-public | grep external-secrets
 ```
 
-Then uncomment `base/external-secrets` and the `envs/{env}/external-secrets`
-pin in the namespace's `namespace-resources` kustomization and push.
-
 One-time per addon — re-run the same `kubectl apply` (it's idempotent) only
 when you add a `versions` entry or bump `spec.version` in the file. To
 register another custom addon, add a new `supervisor-addons/{addon}.yaml`
@@ -173,12 +161,12 @@ following the same shape and repeat this step; CLAUDE.md's "Adding a custom
 helm addon" has the rest of the recipe (the ordinary GitOps `AddonInstall`
 wiring).
 
-**If you skip this step** — no Supervisor-admin session, or a fleet not yet on
-3.7 — just leave the `namespace-resources` lines commented out, which is how
-they ship. Everything else works; only external-secrets is absent.
-(`components/disable-external-secrets` opts a single *cluster* out, but the
-shared `AddonInstall` is still created in the namespace, so it is not the
-right tool for this.)
+**If you can't get a Supervisor-admin session**, drop external-secrets instead
+of leaving it broken: remove `base/external-secrets` and the
+`envs/{env}/external-secrets` pin from the namespace's `namespace-resources`
+kustomization. (`components/disable-external-secrets` opts a single *cluster*
+out, but the shared `AddonInstall` is still created in the namespace, so it is
+not the right tool for this.)
 
 **To undo a registration:** the `AddonRepositoryInstall` cannot be deleted
 while a `ClusterAddon` still references its `AddonRelease`, so remove the

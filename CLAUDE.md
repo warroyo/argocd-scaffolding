@@ -190,16 +190,13 @@ CR, no Carvel packaging pipeline needed. Full rationale in `docs/DECISIONS.md`
 #14. This section is the recipe; once registered, consumption is the exact
 same Variant A pattern as any other add-on (CLAUDE.md "VKS add-ons").
 
-**Two hard prerequisites — check both before registering anything:**
-- **Every cluster on the Supervisor needs helm-controller**, which means a
-  **3.7+ cluster class** (`builtin-generic-v3.7.0`, pinned in
-  `components/envs/{env}`). The 3.7 class makes the platform auto-label the
-  Cluster `addon.addons.kubernetes.vmware.com/helm-controller: automatic`; a
-  built-in `AddonInstall` then installs it, which is what creates the
-  `HelmRepository` CRD and `vmware-system-helm` namespace a helm add-on
-  renders into. On a 3.6 class none of that exists and the add-on fails.
-- **Registration is Supervisor-wide, not tenant-scoped.** See the blast-radius
-  warning below. Verify the whole fleet is on 3.7 first.
+**Prerequisite: a 3.7+ cluster class** (`builtin-generic-v3.7.0`, pinned in
+`components/envs/{env}`). Helm-based add-ons render a `HelmRepository` CR,
+which needs helm-controller: the 3.7 class makes the platform auto-label the
+Cluster `addon.addons.kubernetes.vmware.com/helm-controller: automatic` and a
+built-in `AddonInstall` installs it, creating the CRD and the
+`vmware-system-helm` namespace. On a 3.6 class none of that exists and the
+add-on fails with `dependency "helm-controller" not installed`.
 
 1. Write `supervisor-addons/{addon}.yaml`: an `AddonRepository`
    (`spec.fetch.helmRepository.url`, `spec.addonFilters` — the upstream
@@ -228,17 +225,12 @@ same Variant A pattern as any other add-on (CLAUDE.md "VKS add-ons").
 3. Everything else — env version pin, default-on/opt-in label, namespace-
    resources wiring — follows CLAUDE.md "VKS add-ons" exactly.
 
-**Blast radius — the reason to think twice.** Registering the repo makes the
-platform auto-create a `helm-repo` `AddonInstall` in `vmware-system-vks-public`
-with `clusters: []` and `crossNamespaceSelection: Allowed`, which per the CRD
-means *every cluster on the Supervisor*, including other tenants'. Any cluster
-without helm-controller then fails that ClusterAddon and error-loops the shared
-addon controller until it gets one. There is **no way to scope this** (all
-verified live): the CRs are rejected outside `vmware-system-vks-public`,
-`AddonRepositoryInstall` has no selector field, and the generated `helm-repo`
-`AddonInstall` can be neither patched nor deleted — even by Supervisor-admin.
-Registering a custom helm repo is therefore a fleet-wide decision, not a
-tenant one.
+Note: registering a repo makes VKS create an internal `helm-repo`
+`AddonInstall` (`clusters: []`, `crossNamespaceSelection: Allowed`) — that's
+how it fans registered helm repos out to clusters. It's platform-owned
+(`Forbidden` to patch or delete) and not scopeable; clusters without
+helm-controller log addon-controller errors for it, which is expected and
+harmless.
 
 ### Changing every cluster in an environment
 Edit `infrastructure/profiles/{env}` (or `apps/profiles/{env}`) — every cluster that
