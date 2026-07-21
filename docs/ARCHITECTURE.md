@@ -350,10 +350,14 @@ Two variants:
   (per-tenant namespace only) cannot reach, so it's applied manually with
   `kubectl` by a human holding Supervisor-admin access, never Terraform,
   never ArgoCD (`docs/DECISIONS.md` #14). Once registered, `addonRef.name`
-  is the chart name and `releaseFilter.ref.name` is `"<chart>.<version>"`
-  (no `AddonRelease` CR, so no `namespace` field on `ref`) — otherwise
-  identical to the installable-add-on recipe. See CLAUDE.md "Adding a custom
-  helm addon".
+  is the chart name and `releaseFilter.ref.name` is `"<chart>.<version>"` —
+  registration does mint an `AddonRelease`, just under a shorter name than a
+  vendor-packaged add-on. Two constraints make this variant unlike the others:
+  the add-on needs **helm-controller** on the cluster (a **3.7+ cluster
+  class**, which is what makes the platform install it), and registration is
+  **Supervisor-wide** — it fans out to every cluster on the Supervisor,
+  including other tenants', with no way to scope it. See CLAUDE.md "Adding a
+  custom helm addon".
 
 `AddonConfig` is always opt-in, per-cluster overrides only: the addon
 controller auto-generates one named `{cluster}-{addon}` (its default

@@ -35,11 +35,10 @@ The short version, for orientation:
 2. One-time: create the Terraform state namespace and capture its generated
    name ([Part 1.1](docs/GETTING-STARTED.md#11-state-backend-10-min)
    of the walkthrough).
-3. One-time, needs Supervisor-admin: `kubectl apply -f
-   supervisor-addons/external-secrets.yaml` — registers the chart repo the
-   default add-on bundle installs from
+3. Optional, needs Supervisor-admin **and** a fleet on 3.7: register a custom
+   helm chart repo
    ([Part 1.2](docs/GETTING-STARTED.md#12-custom-vks-addon-repositories-5-min-once-per-addon)).
-   Skip it and the first cluster's external-secrets install fails.
+   external-secrets ships commented out — read the warnings there first.
 4. `cp .env.example .env`, fill in the vcfa creds + bootstrap secrets — the
    Makefile loads it into every terraform root.
 5. Declare tenants in `terraform/infra/tenants.yaml` (one `type: infra`
@@ -387,7 +386,14 @@ is a genuine Supervisor-scope namespace neither reaches (see
 [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) Part 1.2,
 [CLAUDE.md → "Adding a custom helm addon"](CLAUDE.md), and
 [docs/DECISIONS.md #14](docs/DECISIONS.md)). `releaseFilter.ref.name` is then
-`"<chart>.<version>"` instead of an `AddonRelease` name.
+`"<chart>.<version>"` — a shorter `AddonRelease` name, not the absence of one.
+
+Two prerequisites gate this, both fleet-wide: **every** cluster on the
+Supervisor needs a **3.7+ cluster class** (that's what installs
+helm-controller, which supplies the `HelmRepository` CRD the add-on renders
+into), and registration **fans out to every cluster on the Supervisor**,
+other tenants' included, with no way to scope it. Read
+[docs/DECISIONS.md #14](docs/DECISIONS.md) before registering anything.
 
 ### 5. Adding a Cluster Policy
 

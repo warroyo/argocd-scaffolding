@@ -190,12 +190,28 @@ CR, no Carvel packaging pipeline needed. Full rationale in `docs/DECISIONS.md`
 #14. This section is the recipe; once registered, consumption is the exact
 same Variant A pattern as any other add-on (CLAUDE.md "VKS add-ons").
 
+**Two hard prerequisites — check both before registering anything:**
+- **Every cluster on the Supervisor needs helm-controller**, which means a
+  **3.7+ cluster class** (`builtin-generic-v3.7.0`, pinned in
+  `components/envs/{env}`). The 3.7 class makes the platform auto-label the
+  Cluster `addon.addons.kubernetes.vmware.com/helm-controller: automatic`; a
+  built-in `AddonInstall` then installs it, which is what creates the
+  `HelmRepository` CRD and `vmware-system-helm` namespace a helm add-on
+  renders into. On a 3.6 class none of that exists and the add-on fails.
+- **Registration is Supervisor-wide, not tenant-scoped.** See the blast-radius
+  warning below. Verify the whole fleet is on 3.7 first.
+
 1. Write `supervisor-addons/{addon}.yaml`: an `AddonRepository`
    (`spec.fetch.helmRepository.url`, `spec.addonFilters` — the upstream
    `chart_name` and the `versions` list to make selectable, `spec.version` as
    the catalog-entry version, bumped when `versions` changes, not the chart
    version) plus an `AddonRepositoryInstall` referencing it, both in
-   `vmware-system-vks-public`. **Not Terraform, not GitOps** —
+   `vmware-system-vks-public`. The `AddonRepository` **must** carry the
+   `addons.kubernetes.vmware.com/package-offerings` annotation — a JSON string
+   with `repositoryVersion` (= `spec.version`) and a `packages` map mirroring
+   `spec.addonFilters`. It is undocumented in the CRD but enforced by the
+   validating webhook, which rejects the object outright without it. **Not
+   Terraform, not GitOps** —
    `AddonRepository`/`AddonRepositoryInstall` need genuine Supervisor-admin
    access; this repo's org-admin (`kubernetes.vcfa-org`) and per-tenant
    credentials can't reach that namespace (read-only at best). Apply by hand:
@@ -205,10 +221,24 @@ same Variant A pattern as any other add-on (CLAUDE.md "VKS add-ons").
    apply` or CI.
 2. `infrastructure/base/{addon}/` — the `AddonInstall`, same shape as any
    other add-on, with one difference: `releaseFilter.ref.name` is
-   `"<chart_name>.<version>"` (no `namespace` field, no `AddonRelease` CR —
-   the helm-addon flow doesn't mint one) instead of an `AddonRelease` name.
+   `"<chart_name>.<version>"` instead of the vendor's longer `AddonRelease`
+   name. Registration *does* mint an `AddonRelease` (verified live:
+   `external-secrets.2.8.0`), so the `namespace` field works the same as any
+   other add-on and only the naming convention differs.
 3. Everything else — env version pin, default-on/opt-in label, namespace-
    resources wiring — follows CLAUDE.md "VKS add-ons" exactly.
+
+**Blast radius — the reason to think twice.** Registering the repo makes the
+platform auto-create a `helm-repo` `AddonInstall` in `vmware-system-vks-public`
+with `clusters: []` and `crossNamespaceSelection: Allowed`, which per the CRD
+means *every cluster on the Supervisor*, including other tenants'. Any cluster
+without helm-controller then fails that ClusterAddon and error-loops the shared
+addon controller until it gets one. There is **no way to scope this** (all
+verified live): the CRs are rejected outside `vmware-system-vks-public`,
+`AddonRepositoryInstall` has no selector field, and the generated `helm-repo`
+`AddonInstall` can be neither patched nor deleted — even by Supervisor-admin.
+Registering a custom helm repo is therefore a fleet-wide decision, not a
+tenant one.
 
 ### Changing every cluster in an environment
 Edit `infrastructure/profiles/{env}` (or `apps/profiles/{env}`) — every cluster that
