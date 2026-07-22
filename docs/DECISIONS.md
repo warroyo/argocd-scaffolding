@@ -522,3 +522,51 @@ CLAUDE.md rather than leaving future authors to re-derive the OR/AND
 semantics. A cluster that skips the profile component now also gets no
 observability, where before the base Cluster carried that label —
 `enable-observability` is the escape hatch.
+
+## 16. Why does required add-on config live in `addon-defaults` rather than the bundle or the profile?
+
+**The problem.** external-secrets installs into the guest cluster's `default`
+namespace unless its `AddonConfig` sets `helmOptions.targetNamespace`. That's
+not a per-cluster preference — it's wrong everywhere — so the config has to
+reach every cluster running the add-on, stay overridable per cluster, and not
+make adding the *next* add-on messy. The first attempt wired it into
+`infrastructure/profiles/dev`, which meant a second environment would repeat it.
+
+**What constrains the answer.** An `AddonConfig` must be named
+`{cluster}-{addon}` to take over the one the controller auto-generates, so it
+needs the cluster-name injector and can only live in the cluster tree — not in
+`namespace-resources` beside the `AddonInstall`. Pointing
+`AddonInstall.addonConfigNameTemplate` at a fixed shared name would sidestep
+that, but the field docs say it *"should be unique per addon and cluster"* and
+the field is **immutable**, so a mistake there can't be corrected without
+recreating the `AddonInstall`. That leaves three candidate homes, all in the
+cluster tree.
+
+**The choice.** A dedicated `components/addon-defaults`, pulled once by
+`profiles/common`:
+
+- **Not `addon-bundles/{bundle}`.** Bundle membership is declared exactly once,
+  by the selector in the add-on's own `AddonInstall`. Putting config in the
+  bundle would make a second file assert the same membership, and the bundle
+  would stop reading as a plain list of what's on — the thing that makes bundles
+  legible. Its only real advantage is that clusters outside the bundle get
+  nothing, which is moot while there's one bundle.
+- **Not `profiles/common` directly.** That's a cluster-composition root; adding
+  an entry per add-on would turn it into an add-on registry and it would churn
+  on every add-on.
+- **`addon-defaults`** absorbs that growth in a file whose whole purpose is the
+  list, leaves `profiles/common` stable, and keeps membership single-sourced.
+
+The paired rule — **required config ships by default, optional config stays
+opt-in** — is what makes the split decidable. Test: *if a cluster ships nothing,
+is the add-on wrong, or merely unopinionated?* Wrong → `addon-defaults`
+(external-secrets). Unopinionated → an opt-in `components/{addon}-config`
+(istio). Values then follow the same base → env → cluster chain as every other
+value in the repo.
+
+**The trade-off.** Config ships to every cluster, so a cluster that opts out of
+an add-on still carries its `AddonConfig`. It is inert — with no `ClusterAddon`
+to adopt it, nothing fills `addonConfigDefinitionRef`, so it renders no output
+resources and nothing reaches the workload cluster — but it is one unused object
+in the supervisor namespace. Accepted in exchange for a single, obvious place to
+declare add-on config and an add-on-addition flow that touches one file for it.

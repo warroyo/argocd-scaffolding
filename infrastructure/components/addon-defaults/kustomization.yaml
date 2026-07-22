@@ -1,0 +1,9 @@
+# Default AddonConfigs shipped to every cluster — the values an add-on is wrong
+# without. Patch per env in components/envs/{env}, per cluster in the cluster
+# kustomization. See CLAUDE.md "VKS add-ons" → add-on config.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+- ../../base/external-secrets/config
+# Add base/{addon}/config here when an add-on needs config shipped by default.
+# Optional per-cluster overrides stay opt-in components (components/istio-config).

@@ -219,15 +219,16 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `config/`: Server-Side-Apply patch enabling ArgoCD sync impersonation (`argocd-cm-patch.yaml` — owns one `argocd-cm` key, coexisting with the argocd-service operator's own management of the rest).
   - `repo-config.yaml`: Single source of truth for the GitOps repo URL.
 - `infrastructure/`
-  - `base/`: Reusable base Kustomize configs (e.g., `ako`, `antrea`, `vks-cluster`, `headlamp`, `istio`, `istio-config`, `external-secrets`). Bases carry `replace-me` placeholders for environment values.
-  - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp`) pin shared add-on versions and are included by the namespace's `namespace-resources` kustomization alongside the add-on base. `addon-bundles/{bundle}` adds the bundle label (`addons.kubernetes.vmware.com/profile: standard` — istio + external-secrets + observability) that a whole set of `AddonInstall`s selects on; per-add-on components override it in either direction (`istio` / `disable-istio`, `disable-external-secrets`, `disable-observability`, `disable-headlamp`); `istio-config` opts a cluster into per-cluster istio value overrides; `external-secrets-config` is profile-inherited (not opt-in) because it sets the add-on's `helmOptions.targetNamespace` — helm add-ons install to `default` without it.
-  - `profiles/{env}/`: The inherited default set for an environment — bases + always-on components + the env overlay. Clusters reference a profile instead of enumerating everything.
-  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`. `clusters/{project}/{namespace_ref}/namespace-resources/` (optional) holds namespace-scoped shared resources synced once per supervisor namespace by the `namespace-resources` ApplicationSet — the shared, label-gated `AddonInstall`s (headlamp, istio, external-secrets) and their env version pins.
+  - `base/`: Reusable base Kustomize configs. Add-ons are laid out as `base/{addon}/install/` (the `AddonInstall`, pulled by `namespace-resources`) and `base/{addon}/config/` (the `AddonConfig`, pulled into the cluster tree) — separate kustomizations because the two objects have different sync scopes. Non-add-on bases (`vks-cluster`, `cluster-argocd-attach`) are flat. Bases carry `replace-me` placeholders for environment values.
+  - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp`) pin shared add-on versions and are included by the namespace's `namespace-resources` kustomization alongside the add-on base. `addon-bundles/{bundle}` adds the bundle label (`addons.kubernetes.vmware.com/profile: standard` — istio + external-secrets + observability) that a whole set of `AddonInstall`s selects on; per-add-on components override it in either direction (`istio` / `disable-istio`, `disable-external-secrets`, `disable-observability`, `disable-headlamp`); `addon-defaults` lists the `AddonConfig`s shipped to every cluster (values an add-on is wrong without, e.g. external-secrets' `helmOptions.targetNamespace` — helm add-ons install to `default` otherwise), while `istio-config` is the opt-in form for values a cluster merely *might* want to change.
+  - `profiles/common/`: The env-agnostic half of every profile — bases + always-on components + the add-on bundle + `addon-defaults`. Edit to change every cluster in every environment.
+  - `profiles/{env}/`: References `profiles/common` and adds only the `envs/{env}` overlay, so adding an environment is a two-line file. Clusters reference a profile instead of enumerating everything.
+  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`. `clusters/{project}/{namespace_ref}/namespace-resources/` (optional) holds namespace-scoped shared resources synced once per supervisor namespace by the `namespace-resources` ApplicationSet — the shared, label-gated `AddonInstall`s (`base/{addon}/install` for headlamp, istio, external-secrets) and their env version pins.
 - `apps/`
   - `base/`: Base application manifests, incl. `tenant-sync` — the per-tenant ArgoCD sync-impersonation `ServiceAccount`/RBAC (see [Cluster Policy & Namespace Self-Service](#cluster-policy--namespace-self-service)), named per-cluster by the apps-side `cluster-var-injector`.
   - `components/stacks/`: Application stacks (e.g., `standard`, which includes `tenant-sync` — shipped to every cluster).
   - `components/envs/{env}/`: Per-environment app values and version pins — the baseline (package-repo bundle, cert-manager version) is applied via the profile. (Observability is no longer an app stack; VKS 9.1+ delivers it via the `automated-monitoring` addon label, set by the standard add-on bundle — opt out per-cluster with `infrastructure/components/disable-observability`.)
-  - `profiles/{env}/`: The inherited default app stack for an environment.
+  - `profiles/common/`, `profiles/{env}/`: Same split as the infra tree — `common` holds the stack, `{env}` adds its overlay.
 - `docs/examples/`
   - `cluster-template/`: Copy-me template for onboarding a new cluster.
   - `sample-tenant-repo/`: Example of what a tenant keeps in their **own** app repo (not deployed by this platform).
@@ -354,7 +355,7 @@ The full design (diagram + per-add-on table) is in
 [docs/ARCHITECTURE.md → "VKS add-on pattern"](docs/ARCHITECTURE.md#vks-add-on-pattern);
 headlamp is the simplest live example to crib from. To add one:
 
-1. `infrastructure/base/{addon}/` — the `AddonInstall`: cluster selectors
+1. `infrastructure/base/{addon}/install/` — the `AddonInstall`: cluster selectors
    (bundle membership + per-add-on override — see
    [ARCHITECTURE](docs/ARCHITECTURE.md#vks-add-on-pattern)),
    `stopMatchingBehavior: Delete`, and `releaseFilter.ref.name: replace-me` (the version pin — an
@@ -371,11 +372,12 @@ headlamp is the simplest live example to crib from. To add one:
    keyed on `addons.kubernetes.vmware.com/profile`) plus a `disable-{addon}`
    component; env-scoped — add the label in `components/envs/{env}` instead
    (headlamp).
-5. Only if clusters need values different from the addon defaults: a
-   `base/{addon}-config` `AddonConfig` named `cluster-{addon}` (values only —
-   the controller fills `addonConfigDefinitionRef`/`clusterName`) exposed as an
-   opt-in `components/{addon}-config` (istio-config). Clusters on defaults
-   ship nothing.
+5. Config, if it needs any — `infrastructure/base/{addon}/config/`, an
+   `AddonConfig` named `cluster-{addon}` (values only — the controller fills
+   `addonConfigDefinitionRef`/`clusterName`). If the add-on is *wrong* without
+   it, list it in `components/addon-defaults` so every cluster gets it; if it's
+   merely per-cluster taste, expose it as an opt-in `components/{addon}-config`
+   (istio-config). Clusters on defaults ship nothing.
 6. `make validate`.
 
 If the add-on isn't in the built-in VKS catalog (e.g. `external-secrets`),
@@ -407,10 +409,12 @@ catalog entry serves every tenant that enables it, never one per tenant.
 A cluster does not enumerate its whole stack. It references an environment
 **profile** and layers deltas on top:
 
-- **Profile** (`infrastructure/profiles/{env}`, `apps/profiles/{env}`): the
-  always-on set for an environment — bases + always-on feature components + the
-  env overlay that carries the real per-environment values. Change something for
-  every cluster in an environment by editing the profile once.
+- **Profile** (`infrastructure/profiles/common` + `profiles/{env}`, same for
+  `apps/`): `common` holds the env-agnostic always-on set — bases, always-on
+  feature components, the add-on bundle, `addon-defaults`. Each `{env}` profile
+  references `common` and adds only its env overlay. Change every cluster in one
+  environment by editing that profile; every cluster everywhere by editing
+  `common`.
 - **Deltas**: a cluster adds its CNI (required — exactly one of `cni-antrea`,
   `cni-cilium`, `cni-calico`, plus `antrea-nsx` for antrea on NSX) and optional
   feature components (`istio`, `ako-istio`, `istio-config`,

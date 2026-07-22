@@ -1,0 +1,7 @@
+# Env-agnostic half of every app profile. Environment profiles reference this and
+# add only their envs/{env} overlay. See CLAUDE.md "Changing every cluster in an environment".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+components:
+- ../../components/stacks/standard   # package installer, repo, cert-manager

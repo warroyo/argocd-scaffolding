@@ -55,8 +55,10 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `terraform/infra/policies.tf`, `terraform/infra/rego/*.rego` | The custom cluster policy catalog (`local.policy_catalog`) — one entry per policy kind, referenced by name from a tenant's `policies:` block in `tenants.yaml`. See "Adding a policy". |
 | `supervisor-addons/{addon}.yaml` | Registers a third-party helm chart repo as an installable VKS addon (`AddonRepository`/`AddonRepositoryInstall` in `vmware-system-vks-public`). **Not Terraform, not GitOps** — `vmware-system-vks-public` is genuine Supervisor-scope, unreachable by this repo's org-admin (`kubernetes.vcfa-org`) or per-tenant-namespace credentials. Hand-authored, applied manually out-of-band with `kubectl` by a human holding Supervisor-admin access; commands in `docs/GETTING-STARTED.md` Part 1.2. See "Adding a custom helm addon". |
 | `terraform/modules/cluster-policy/`, `terraform/modules/cluster-policy-template/` | Vendored from [warroyo/vcfa-terraform-examples](https://github.com/warroyo/vcfa-terraform-examples/tree/main/cluster-policy-custom) (split into two modules — see "Adding a policy" for why). Not tenant-specific; do not edit for a new policy, only to change the underlying `ClusterPolicy`/`ClusterPolicyTemplate` mechanics. |
-| `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | The inherited default set per environment (bases + always-on components + the add-on bundle + env overlay). Edit to change every cluster in an environment at once. |
-| `infrastructure/components/addon-bundles/{bundle}/` | Which add-ons a bundle turns on, as one cluster label (`addons.kubernetes.vmware.com/profile`). See "VKS add-ons" → add-on bundles. |
+| `infrastructure/profiles/common/`, `apps/profiles/common/` | The env-agnostic half of every profile — bases + always-on components + the add-on bundle + `addon-defaults`. Edit to change every cluster in EVERY environment. |
+| `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | Per-environment profile: references `profiles/common` and adds only the `envs/{env}` overlay, so a new environment is one small file. |
+| `infrastructure/components/addon-bundles/{bundle}/` | Which add-ons a bundle turns on, as one cluster label (`addons.kubernetes.vmware.com/profile`). Labels only — config lives in `addon-defaults`. See "VKS add-ons" → add-on bundles. |
+| `infrastructure/components/addon-defaults/` | The `AddonConfig`s shipped to every cluster (values an add-on is wrong without). One line per add-on; patch per env or per cluster on top. See "VKS add-ons" → add-on config. |
 | `infrastructure/components/envs/{env}/`, `apps/components/envs/{env}/` | Real per-environment values AND version pins (bases hold only `replace-me` placeholders). Always-on versions (cluster class, k8s, AKO; package bundle/baseline) apply via the profiles; shared add-on versions live in feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp` — `releaseFilter.ref.name`, an `AddonRelease` name) included by the namespace's `namespace-resources` kustomization. Per-cluster canary: `patches:` in the cluster kustomization. |
 | `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
 | `terraform/bootstrap/locals.tf` | Merges secrets (argo_password) into the per-namespace config from the infra run's `namespace_config` output; repo_url defaults from `argocd/repo-config.yaml`. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. Per-namespace helm tokens are minted fresh by `terraform/bootstrap/vcfa.tf` (no kubeconfigs shuttle). |
@@ -222,10 +224,10 @@ add-on fails with `dependency "helm-controller" not installed`.
    name. Registration *does* mint an `AddonRelease` (verified live:
    `external-secrets.2.8.0`), so the `namespace` field works the same as any
    other add-on and only the naming convention differs.
-3. `infrastructure/base/{addon}-config/` — an `AddonConfig` setting
+3. `infrastructure/base/{addon}/config/` — an `AddonConfig` setting
    `values.helmOptions.targetNamespace`. Helm add-ons install to the schema
-   default `default` otherwise, so unlike `istio-config` this one is **not**
-   opt-in: wire its component into `profiles/{env}`. Chart values go under
+   default `default` otherwise, so this is **required** config: list it in
+   `components/addon-defaults`, not an opt-in component. Chart values go under
    `values.helmValues` (free-form), install options under `values.helmOptions`.
 4. Everything else — env version pin, default-on/opt-in label, namespace-
    resources wiring — follows CLAUDE.md "VKS add-ons" exactly.
@@ -240,7 +242,10 @@ harmless.
 ### Changing every cluster in an environment
 Edit `infrastructure/profiles/{env}` (or `apps/profiles/{env}`) — every cluster that
 references that profile inherits the change. Real per-environment values live in
-`infrastructure/components/envs/{env}`.
+`infrastructure/components/envs/{env}`. To change every cluster in EVERY
+environment, edit `profiles/common` instead — the env profiles hold nothing but a
+reference to it plus their `envs/{env}` overlay, so adding an environment is a
+two-line file.
 
 ### VKS add-ons: one pattern, two variants
 The design (diagram, variant table, CRD semantics) lives in
@@ -254,7 +259,13 @@ mandatory (`validate.sh` rejects it in rendered output).
 
 **Variant A — installable add-on (istio, headlamp).** ONE shared `AddonInstall`
 per supervisor namespace, gated by a cluster label — never a per-cluster install:
-1. `infrastructure/base/{addon}/` — the `AddonInstall`: the two-selector
+Layout: everything for an add-on lives under `infrastructure/base/{addon}/`, split
+by sync scope — `install/` (the `AddonInstall`, pulled by `namespace-resources`)
+and `config/` (the `AddonConfig`, pulled into the cluster tree). They can't share
+one kustomization: `namespace-resources` would drag the `AddonConfig` into the
+namespace un-prefixed. Variant B add-ons have `config/` only.
+
+1. `infrastructure/base/{addon}/install/` — the `AddonInstall`: the two-selector
    profile block below, `stopMatchingBehavior: Delete`, and
    `releaseFilter.ref: {name: replace-me, namespace: vmware-system-vks-public}`.
    The version pin is the `releaseFilter` (an `AddonRelease` name) — the API has
@@ -263,21 +274,47 @@ per supervisor namespace, gated by a cluster label — never a per-cluster insta
 2. `infrastructure/components/envs/{env}/{addon}/` — pins the `AddonRelease`
    (patches `/spec/releaseFilter/ref/name`).
 3. `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/` — a
-   kustomization pulling in `base/{addon}` + the `envs/{env}/{addon}` component
+   kustomization pulling in `base/{addon}/install` + the `envs/{env}/{addon}` component
    (copy `docs/examples/namespace-resources-template`). The `namespace-resources`
    ApplicationSet syncs this dir ONCE into the supervisor namespace (one owner,
    even when clusters share the namespace).
 4. Enablement — see "Add-on profiles" below. Default-on: join a bundle. Add a
    `disable-{addon}` component (`op: add`, value `disabled`) so clusters can opt
    out; `Delete` handles uninstall when the label flips.
-5. Per-cluster value overrides are OPT-IN and separate: a
-   `components/{addon}-config` component pulling `base/{addon}-config` — an
-   `AddonConfig` named `cluster-{addon}` (injector-prefixed to
-   `<cluster>-{addon}`, matching the controller's default
-   `addonConfigNameTemplate`), values only. Omit `addonConfigDefinitionRef` and
-   `clusterName` — the addon controller fills both, and auto-generates the whole
-   `AddonConfig` for clusters that ship none (so a cluster on defaults ships
-   nothing). Istio is wired this way (`base/istio` + `base/istio-config`).
+5. Config, if the add-on needs any — see "Add-on config" below.
+
+**Add-on config.** An `AddonConfig` is always named `cluster-{addon}`
+(injector-prefixed to `<cluster>-{addon}`, matching the controller's default
+`addonConfigNameTemplate`) and carries values only — omit
+`addonConfigDefinitionRef` and `clusterName`, the controller fills both and
+auto-generates the whole object for clusters that ship none. Two kinds, and the
+difference decides where it is wired:
+
+- **Required** — the add-on is *wrong* without it. Lives in
+  `base/{addon}/config/`, listed in `components/addon-defaults`, which
+  `profiles/common` pulls, so every cluster running the add-on is correct.
+  external-secrets is this (`helmOptions.targetNamespace`; the schema default is
+  `default`).
+- **Optional** — the add-on is fine on defaults and this is per-cluster taste.
+  Lives in `base/{addon}/config/` too, but is pulled by an opt-in
+  `components/{addon}-config` and never ships unless a cluster asks. istio is this.
+
+Test when adding an add-on: *if a cluster ships nothing, is the add-on wrong, or
+merely unopinionated?* Wrong → `addon-defaults`. Unopinionated → opt-in component.
+
+Override chain is base → env → cluster, same as every other value here:
+`base/{addon}/config` holds defaults, `components/envs/{env}` may patch per
+environment, and a cluster's own `patches:` block overrides per cluster. Always
+target by `labelSelector: app.kubernetes.io/name={addon}`, never by name — the
+injector renames the object before cluster-level patches run.
+
+**Adding a new add-on — the whole checklist:**
+1. `base/{addon}/install/` — `AddonInstall` with the bundle selector block
+2. `base/{addon}/config/` — `AddonConfig`, if it needs any
+3. `components/envs/{env}/{addon}/` — version pin, per environment
+4. each namespace's `namespace-resources/` — the install + the pin
+5. `components/addon-defaults` (required config) **or** a
+   `components/{addon}-config` opt-in component (optional config)
 
 **Add-on bundles.** Clusters carry a bundle label —
 `addons.kubernetes.vmware.com/profile: standard`, added by

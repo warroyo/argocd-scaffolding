@@ -1,0 +1,19 @@
+# Env-agnostic half of every profile — bases + always-on components. Environment
+# profiles reference this and add only their envs/{env} overlay, so a new
+# environment is one small file. See CLAUDE.md "Changing every cluster in an environment".
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../../base/vks-cluster
+- ../../base/cluster-argocd-attach
+
+components:
+# CNI is NOT here — each cluster picks exactly one cni-* (day-0, immutable).
+- ../../components/argocd-tenant-cluster
+- ../../components/ako
+# Add-on bundle: istio + external-secrets + observability. Opt out per cluster
+# with the matching disable-* component.
+- ../../components/addon-bundles/standard
+# Default AddonConfigs for the add-ons above.
+- ../../components/addon-defaults

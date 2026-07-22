@@ -191,9 +191,9 @@ templating:
 ```mermaid
 flowchart TB
     bases["bases (infrastructure/base/*, apps/base/*)<br/>shapes only — versions and env values are<br/>replace-me placeholders"]
-    comps["feature components<br/>(istio label, istio-config, ako, cluster-autoscaling, stacks/*)"]
+    comps["feature components<br/>(bundle labels, addon-defaults, ako,<br/>istio-config, cluster-autoscaling, stacks/*)"]
     envs["env overlays (components/envs/{env})<br/>real values + always-on version pins;<br/>feature-scoped sub-components<br/>(envs/{env}/istio, envs/{env}/headlamp)<br/>pin shared add-on versions (via namespace-resources)"]
-    profile["profiles/{env}<br/>bases + always-on components + env overlay"]
+    profile["profiles/common + profiles/{env}<br/>common = bases + always-on components;<br/>{env} = common + its envs/{env} overlay"]
     cluster["cluster dir<br/>profile + optional features (enablement labels,<br/>opt-in config overrides) + override patches"]
     inject["cluster-var-injector (LAST)<br/>rewrites names from cluster-details.yaml<br/>+ argo_namespace from tenant-vars.yaml"]
 
@@ -221,10 +221,20 @@ Key properties:
   injector fed by a per-cluster `vars` configMapGenerator — with `validate.sh`
   cross-checking the duplicated cluster name against the directory.
 
-### Why `profiles/{env}` and `components/envs/{env}` are separate
+### Why `profiles/common`, `profiles/{env}` and `components/envs/{env}` all exist
 
-They look redundant — both are per-environment, and today there is exactly one
-of each. They split on axis, not on scope:
+Three layers, splitting on two different axes.
+
+**`common` vs `{env}` — how much varies.** Almost nothing in a profile is
+environment-specific: the bases, the always-on components, the add-on bundle and
+`addon-defaults` are identical everywhere, and only the `envs/{env}` overlay
+differs. So `profiles/common` holds the invariant part and each
+`profiles/{env}` is two lines — a reference to `common` plus its own overlay.
+Adding an environment doesn't copy a component list, and a new always-on
+component is added once rather than once per environment.
+
+**`profiles/*` vs `components/envs/{env}` — which axis.** They split on kind,
+not scope:
 
 | | `profiles/{env}` | `components/envs/{env}` |
 |---|---|---|
@@ -249,6 +259,10 @@ version rolls a one-line PR (*"all env pins live under
 `components/envs/{env}`"*). The 1:1 is also an artifact of one env with one
 profile, not a structural property — a second profile in the same environment
 would share the same env overlay.
+
+Net effect: `profiles/common` = every cluster everywhere, `profiles/{env}` =
+every cluster in one environment, the cluster directory = one cluster. Three
+scopes, each with one obvious place to edit.
 
 ## VKS add-on pattern
 
@@ -315,7 +329,7 @@ a cluster with no profile component gets no observability —
 Two variants:
 
 - **Installable add-on (istio, headlamp).** ONE shared `AddonInstall` per
-  supervisor namespace (`base/{addon}`, delivered by the `namespace-resources`
+  supervisor namespace (`base/{addon}/install`, delivered by the `namespace-resources`
   ApplicationSet — one owner even when clusters share the namespace), selecting
   clusters on the enablement label with `stopMatchingBehavior: Delete` (flip
   the label → clean uninstall). The version is pinned in exactly one place:
@@ -356,17 +370,39 @@ Two variants:
   **helm-controller** on the cluster, which comes from a **3.7+ cluster
   class** (the class makes the platform install it); and its `AddonConfig`
   carries `helmOptions.targetNamespace`, because a helm add-on otherwise
-  installs into `default` — so that config is profile-inherited, not opt-in
-  like `istio-config`. See CLAUDE.md "Adding a custom helm addon".
+  installs into `default` — so that config is shipped by default via
+  `addon-defaults`, not opt-in like `istio-config`. See CLAUDE.md "Adding a
+  custom helm addon".
 
-`AddonConfig` is always opt-in, per-cluster overrides only: the addon
-controller auto-generates one named `{cluster}-{addon}` (its default
-`addonConfigNameTemplate`) for clusters that ship none, and fills
+### Add-on config: required vs optional
+
+The addon controller auto-generates an `AddonConfig` named `{cluster}-{addon}`
+(its default `addonConfigNameTemplate`) for clusters that ship none, and fills
 `addonConfigDefinitionRef` + `clusterName` on authored ones — so authored
-configs (`base/istio-config`, injector-prefixed to `<cluster>-{addon}`) carry
-values only, and a cluster on defaults ships nothing at all. Every addon
+configs (`base/{addon}/config`, injector-prefixed to `<cluster>-{addon}`) carry
+values only. Which leaves one question per add-on: does it need config at all?
+
+- **Required** — the add-on is *wrong* on defaults. Listed in
+  `components/addon-defaults`, which `profiles/common` pulls, so every cluster
+  running the add-on is correct without anyone remembering. external-secrets is
+  this: the schema default installs it into the `default` namespace.
+- **Optional** — the add-on is fine on defaults and this is per-cluster taste.
+  Pulled by an opt-in `components/{addon}-config` and ships only when asked.
+  istio is this.
+
+Required config is deliberately **not** in `addon-bundles/{bundle}`. Bundle
+membership is declared once, by the selector in the add-on's own `AddonInstall`;
+putting config in the bundle would make a second file assert the same
+membership, and the bundle would stop reading as a plain list of what's on.
+Nor is it in `profiles/common` directly, which would turn a cluster-composition
+root into a growing add-on registry. See `DECISIONS.md` #16.
+
+Values then follow the same base → env → cluster chain as everything else:
+`base/{addon}/config` holds defaults, `components/envs/{env}` may patch per
+environment, a cluster's `patches:` block overrides per cluster. Every addon
 resource is labeled `app.kubernetes.io/name: {addon}` and every kustomize patch
-targets by `labelSelector`, never exact name.
+targets by `labelSelector`, never exact name — the injector renames the object
+before cluster-level patches run.
 
 | Add-on | Variant | Enablement label | Version pin |
 |--------|---------|------------------|-------------|
@@ -489,7 +525,7 @@ what to keep, what to swap for your environment.
 | Load balancer | AVI (AKO addon on every cluster) | `avi_enabled` + `seg_name` (Service Engine Group, per region, `terraform/infra/variables.tf`); drop `components/ako*` from profiles/clusters | `avi_enabled=false` already switches the VPC to an NSX `LoadBalancer` CR. `seg_name` is required when `avi_enabled=true`, null otherwise. On VCF 9.1 AKO is auto-installed into VKS clusters (the built-in `ako-global-installer` selects the platform-added `ako.kubernetes.vmware.com/install: "true"` cluster label — flip it per cluster with `components/disable-ako`), so there's no AKO secret to bootstrap; the `AddonConfig`/injector wiring is AVI-specific. |
 | CNI choice + tuning | Explicit per cluster: exactly one `cni-*` component (`cni-antrea` \| `cni-cilium` \| `cni-calico`); antrea + NSX adds `antrea-nsx` after `cni-antrea` | Cluster component list (day-0; never the profile) | The CNI is selected in the Cluster spec (`bootstrapAddons.cniRef`; immutable after creation, k8s 1.35+). `cni-antrea` owns the antrea `AddonConfig`; NSX integration is a settings-only patch on it (`antreaNSX.enable: true`); no addon version to pin, unlike AKO. |
 | App baseline | carvel package installer + cert-manager | `apps/components/stacks/*`, `apps/profiles/{env}` | Stacks are plain kustomize components — swap contents freely; the env-pinning pattern is what matters. (Observability is no longer an app stack; VKS 9.1+ delivers it via the `automated-monitoring` addon label, set by the `standard` add-on bundle — opt a cluster out with `infrastructure/components/disable-observability`, back in with `enable-observability`.) |
-| Installable add-ons (label-gated) | headlamp + istio + external-secrets (`base/{addon}` → one shared `AddonInstall` per namespace); bundle `addon-bundles/standard` = istio + external-secrets + observability | `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/`, version in `components/envs/{env}/{addon}` (`releaseFilter.ref` = an `AddonRelease` name), membership in `components/addon-bundles/{bundle}` (headlamp is the env-scoped exception, `components/envs/dev`) | The pattern: a single label-selected `AddonInstall` per supervisor namespace (delivered by the `namespace-resources` appset, not per cluster) installs the add-on on any cluster in the bundle (`addons.kubernetes.vmware.com/profile`) that hasn't opted out with the per-add-on label; `stopMatchingBehavior: Delete` uninstalls when the label flips. Per-cluster value overrides are a separate OPT-IN `AddonConfig` (`components/istio-config`) — clusters without one run the addon defaults (the controller generates the AddonConfig). Auto-installed core addons (ako, antrea) have no `AddonInstall` to author — they're `AddonConfig`-only. |
+| Installable add-ons (label-gated) | headlamp + istio + external-secrets (`base/{addon}/install` → one shared `AddonInstall` per namespace); bundle `addon-bundles/standard` = istio + external-secrets + observability | `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/`, version in `components/envs/{env}/{addon}` (`releaseFilter.ref` = an `AddonRelease` name), membership in `components/addon-bundles/{bundle}` (headlamp is the env-scoped exception, `components/envs/dev`) | The pattern: a single label-selected `AddonInstall` per supervisor namespace (delivered by the `namespace-resources` appset, not per cluster) installs the add-on on any cluster in the bundle (`addons.kubernetes.vmware.com/profile`) that hasn't opted out with the per-add-on label; `stopMatchingBehavior: Delete` uninstalls when the label flips. Required config (`base/{addon}/config`) ships to every cluster via `components/addon-defaults`; optional per-cluster overrides are a separate OPT-IN component (`components/istio-config`). Auto-installed core addons (ako, antrea) have no `AddonInstall` to author — they're `AddonConfig`-only. |
 | Package source & images | Broadcom standard package repo, ubuntu content library | `apps/components/envs/{env}` (bundle image), `infrastructure/components/envs/{env}` (os-image annotations) | Deliberately env-layer values, never in bases. |
 | Sizing & placement | `z-wld-a` zone, vSAN storage policy, class sizes | Defaults in `terraform/modules/tenant/variables.tf`; per-namespace overrides in `tenants.yaml` | Zone names vary per region — always set explicitly. |
 | GitOps repo identity | `github.com/warroyo/argocd-scaffolding` | `argocd/repo-config.yaml` — the single source; Terraform and the ApplicationSets both read it | One-file fork. |
