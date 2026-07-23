@@ -570,3 +570,56 @@ to adopt it, nothing fills `addonConfigDefinitionRef`, so it renders no output
 resources and nothing reaches the workload cluster — but it is one unused object
 in the supervisor namespace. Accepted in exchange for a single, obvious place to
 declare add-on config and an add-on-addition flow that touches one file for it.
+
+## 17. The three namespace handles (and why the secret store adds `ns-vars` instead of dropping `ns_ref`)
+
+**The problem.** The VCF Secret Store Service auto-creates a per-cluster
+OpenBao k8s-auth mount and role whose names are fixed by the service:
+`kubernetes-<supervisor_ns>-<cluster>` and `<supervisor_ns>-<cluster>`. The
+`ClusterSecretStore` on the workload cluster must name them exactly — so it
+needs the **vcfa-suffixed** supervisor namespace (`dev-1-abcde`), which by
+`DECISIONS.md` #2 is deliberately *not* in git as a targeting handle.
+
+**Why three handles, not one.** "The namespace" is really three separate values
+with different jobs and different lifetimes:
+
+| Handle | Value | Known when | Job |
+|--------|-------|-----------|-----|
+| `namespace_ref` | `dev-1` | author time | directory path **and** appset join key |
+| suffixed name | `dev-1-abcde` | after `terraform apply` | deploy target (`gitops.platform/namespace` label) **and** secret-store mount/role |
+| `argo_namespace` | `infra-84jfn` | after apply (infra tenant) | which ArgoCD manages the namespace |
+
+The supervisor-ns registration already carries **both** `namespace-ref` and the
+suffixed `namespace` label — not redundancy: the join must key on the *logical*
+name (the git path is authored before the suffix exists), while the deploy
+target must be the *real* name.
+
+**The choice.** Render the suffixed name into a per-namespace `ns-vars.yaml`
+(`terraform/infra/generate.tf`, one per `(tenant, namespace_ref)`), and have
+`cluster-var-injector` build the mount/role from it plus `cluster_name`. This is
+the same class of TF→git value handoff as `tenant-vars.yaml`/`argo_namespace`
+(#3), at per-namespace granularity — a *value* a resource reads, never a
+targeting handle. It does **not** replace `namespace_ref`, and it doesn't
+re-introduce the coupling #2 avoids: routine git changes (add a cluster, add an
+app) never run Terraform, because `ns-vars` already exists for the namespace and
+the suffix is immutable for the namespace's life.
+
+**Why not drop `ns_ref` and name directories with the suffix.** Considered and
+rejected *for now* (tracked in `docs/BACKLOG.md`). It would simplify the appset
+join, but its original justification — surviving suffix "rotation" — doesn't
+hold: a supervisor namespace's suffix is fixed at creation and a namespace is
+all-or-nothing (deleting it destroys every cluster in it), so the suffix only
+"changes" in a total-rebuild event. The real trade-off is ergonomics/coupling,
+and switching is a standalone refactor (three appsets' join, `validate.sh`, the
+directory contract) with modest payoff and zero benefit to the secret store —
+so `ns_ref` stays and the suffix rides in as a narrow `ns-vars` handoff.
+
+**Endpoint IP and CA are hand-captured, split by tree.** The Secret Store
+external IP and CA bundle are Supervisor-scope facts this repo's credentials
+can't read, so they're captured out-of-band per environment (like
+`supervisor-addons/`). The IP is an ESO **helm value** (a `hostAlias` so the
+service cert `CN=secret-store` verifies) → it lands on the external-secrets
+`AddonConfig` in the **infra** `envs/{env}`. The CA is a `ClusterSecretStore`
+field → it lands in the **apps** `envs/{env}`. The CA is a public cert, safe to
+commit; the IP is not a secret either. Default-on because external-secrets
+without a store is inert — the operator is useless without something to consume.

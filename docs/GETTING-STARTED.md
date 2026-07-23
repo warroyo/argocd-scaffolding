@@ -176,6 +176,42 @@ add-on from git first and let ArgoCD prune, then delete the
 and even Supervisor-admin gets `Forbidden` deleting them — but they go inert
 once no `AddonRepository` exists.
 
+### 1.3 VCF Secret Store Service — endpoint + CA (~5 min, once per Supervisor)
+
+**Required if you keep the shipped defaults** — the standard app stack ships a
+`ClusterSecretStore` (`vcf-cluster-store`) that points external-secrets at the
+**VCF Secret Store Service** (OpenBao). Two per-Supervisor facts — the service's
+external IP and its CA — aren't reachable by this repo's credentials, so capture
+them here and paste them into the env layers. Background:
+`docs/DECISIONS.md` #17, `docs/ARCHITECTURE.md` "Secret store".
+
+Prerequisite: deploy the Secret Store Supervisor Service, **version
+`9.1.0+25367485` or newer** (the KeyValueSecret API + automated k8s-auth
+features this relies on). Its namespace is `svc-secret-store-<suffix>` (find it
+with `kubectl get ns | grep secret-store`; this lab's is
+`svc-secret-store-0iid0`) — substitute yours below.
+
+```sh
+SS_NS=$(kubectl get ns -o name | grep svc-secret-store | head -1 | cut -d/ -f2)
+
+# External IP — the `secret-store` LoadBalancer address (connect on https:8200).
+kubectl get svc secret-store -n "$SS_NS"
+
+# CA certificate, already base64 (do NOT decode).
+kubectl get secret server-cert -n "$SS_NS" -o jsonpath='{.data.ca\.crt}'
+```
+
+Then set two placeholders (both marked `# SET ME` / `PLACEHOLDER` in the files):
+
+- **IP** → `infrastructure/components/envs/{env}/kustomization.yaml`, the
+  external-secrets `AddonConfig` `hostAliases[0].ip` patch. This host-aliases
+  `secret-store` so the service cert (`CN=secret-store`) verifies.
+- **CA** → `apps/components/envs/{env}/kustomization.yaml`, the
+  `ClusterSecretStore` `caBundle` patch. It's a public cert — safe to commit.
+
+Both are per-environment. Neither is a secret; there's no out-of-band apply —
+they ride the normal git flow. Re-capture only if the service is redeployed.
+
 ## Part 2 — Tenants and the GitOps control plane (~20 min)
 
 ### 2.1 Credentials
@@ -454,6 +490,34 @@ NAME                        READY   STATUS    RESTARTS   AGE
 cart-5f6c…                  1/1     Running   0          1m
 catalog-7d9b…               1/1     Running   0          1m
 ```
+
+### 4.1 Secret store smoke test (optional)
+
+Confirms the whole external-secrets ↔ Secret Store path works. First, the
+platform-provisioned store should be healthy on the workload cluster:
+
+```sh
+kubectl get clustersecretstore vcf-cluster-store -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}{"\n"}'
+# -> ValidConnection   (an auth error here = mount/role name mismatch; cross-check
+#    the supervisor namespace's real suffixed name in ns-vars.yaml)
+```
+
+Then create a **cluster-scoped** secret (name prefixed with the cluster) in the
+**supervisor namespace**, and consume it from the workload cluster:
+
+```sh
+# supervisor namespace context — writes straight to OpenBao, never etcd
+kubectl apply -f docs/examples/keyvaluesecret.yaml -n <supervisor-namespace>
+
+# workload cluster context — ESO materializes the k8s Secret
+kubectl apply -f docs/examples/externalsecret.yaml     # edit the KV path first
+kubectl get secret db-cred -n default -o jsonpath='{.data.username}' | base64 -d; echo
+```
+
+`remoteRef.key` is `<supervisor_ns>/<cluster>-<name>` — the suffixed namespace is
+the same value in this cluster's `ns-vars.yaml`. A tenant would ship the
+`ExternalSecret` in their own repo (Part 4); the `KeyValueSecret` is applied by
+hand or by whatever owns the secret's lifecycle.
 
 ## Part 5 — Cluster policy & namespace self-service (~15 min, optional)
 

@@ -37,6 +37,8 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 | `argocd/projects/kustomization.yaml` | `terraform/infra` → `templates/projects-kustomization.yaml.tftpl` |
 | `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (needs state: `argo_namespace`) |
 | `infrastructure/clusters/*/vars/kustomization.yaml` | `terraform/infra` → `templates/vars-kustomization.yaml.tftpl` |
+| `infrastructure/clusters/*/*/vars/ns-vars.yaml` | `terraform/infra` → `templates/ns-vars.yaml.tftpl` (needs state: the vcfa-**suffixed** supervisor namespace name; per `(tenant, namespace_ref)`, feeds the secret-store mount/role) |
+| `infrastructure/clusters/*/*/vars/kustomization.yaml` | `terraform/infra` → `templates/ns-vars-kustomization.yaml.tftpl` |
 | `terraform/bootstrap/providers.tf` | `terraform/infra` → `templates/bootstrap-providers.tf.tftpl` |
 | `terraform/bootstrap/main.tf` | `terraform/infra` → `templates/bootstrap-main.tf.tftpl` |
 | `.kube-backend.config` | `terraform/state-backend` → `local_sensitive_file` in `generate.tf` (kubeconfig with host + token for the kubernetes backend; each root's `backend.tf` sets `config_path` to it; holds a token; **gitignored**, never commit) |
@@ -59,6 +61,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | Per-environment profile: references `profiles/common` and adds only the `envs/{env}` overlay, so a new environment is one small file. |
 | `infrastructure/components/addon-bundles/{bundle}/` | Which add-ons a bundle turns on, as one cluster label (`addons.kubernetes.vmware.com/profile`). Labels only — config lives in `addon-defaults`. See "VKS add-ons" → add-on bundles. |
 | `infrastructure/components/addon-defaults/` | The `AddonConfig`s shipped to every cluster (values an add-on is wrong without). One line per add-on; patch per env or per cluster on top. See "VKS add-ons" → add-on config. |
+| `apps/base/secret-store/` | Workload-cluster wiring that consumes external-secrets against the VCF Secret Store Service (OpenBao): the `secret-store-access` SA + `system:auth-delegator` CRB and the `vcf-cluster-store` `ClusterSecretStore`. Ships default-on via the standard app stack; opt out with `apps/components/disable-secret-store`. Mount/role are injected from `ns-vars` + `cluster_name`; the endpoint IP is an infra env value (`components/envs/{env}` patch on the external-secrets `AddonConfig` `hostAliases`), the CA bundle an apps env value (`apps/components/envs/{env}` patch). See "Wiring the secret store" and `docs/ARCHITECTURE.md`. |
 | `infrastructure/components/envs/{env}/`, `apps/components/envs/{env}/` | Real per-environment values AND version pins (bases hold only `replace-me` placeholders). Always-on versions (cluster class, k8s, AKO; package bundle/baseline) apply via the profiles; shared add-on versions live in feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp` — `releaseFilter.ref.name`, an `AddonRelease` name) included by the namespace's `namespace-resources` kustomization. Per-cluster canary: `patches:` in the cluster kustomization. |
 | `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
 | `terraform/bootstrap/locals.tf` | Merges secrets (argo_password) into the per-namespace config from the infra run's `namespace_config` output; repo_url defaults from `argocd/repo-config.yaml`. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. Per-namespace helm tokens are minted fresh by `terraform/bootstrap/vcfa.tf` (no kubeconfigs shuttle). |
@@ -132,7 +135,12 @@ validate` in `validate.yml`. Requires `kustomize`.
    `apps/base/istio-ako-patch` — the standard app stack's `apps/base/tenant-sync`
    (this tenant's ArgoCD sync-impersonation identity, see "Adding a policy" and
    `docs/ARCHITECTURE.md`) needs `project` injected everywhere. `validate.sh`
-   cross-checks both against the directory path.
+   cross-checks both against the directory path. `apps/kustomization.yaml` also
+   **requires** `- ../../vars` in `resources` (the per-namespace `ns-vars` —
+   suffixed supervisor namespace name), which the injector feeds into the
+   secret-store `ClusterSecretStore`; the standard stack ships that store
+   default-on (opt out with `apps/components/disable-secret-store`). See
+   "Wiring the secret store".
 4. Commit. The `cluster-provisioning` ApplicationSet picks it up via label join — the
    vcfa-generated namespace name is resolved from the cluster registration, not git.
 
@@ -238,6 +246,48 @@ how it fans registered helm repos out to clusters. It's platform-owned
 (`Forbidden` to patch or delete) and not scopeable; clusters without
 helm-controller log addon-controller errors for it, which is expected and
 harmless.
+
+### Wiring the secret store
+Consumes the external-secrets add-on against the **VCF Secret Store Service**
+(a Supervisor service that runs OpenBao and auto-creates, per cluster, a k8s
+auth mount + role + policy). Full design in `docs/ARCHITECTURE.md` → "Secret
+store"; rationale in `docs/DECISIONS.md`. This is the recipe; it's default-on,
+so a normal cluster needs nothing beyond the required `../../vars` line.
+
+The service makes the names fully derivable — nothing is looked up at author
+time:
+- auth mount path: `kubernetes-<supervisor_ns>-<cluster_name>`
+- role: `<supervisor_ns>-<cluster_name>`
+- cluster-scoped KV path: `secret/<supervisor_ns>/<cluster_name>-*` (KV v2), a
+  secret is cluster-scoped by being **named with the cluster prefix**.
+
+Pieces (all shipped, don't re-author for a normal cluster):
+1. `apps/base/secret-store/` — the `secret-store-access` SA + `system:auth-delegator`
+   CRB and the `vcf-cluster-store` `ClusterSecretStore`, in the standard app
+   stack (default-on). `mountPath`/`role` carry no-hyphen placeholders
+   (`replacemens`/`replacemecluster`) that `cluster-var-injector` fills by
+   **segment** replacement — order matters: `cluster_name` (index 1) runs
+   before the two `ns-vars` index-0 replacements. Objects labeled
+   `app.kubernetes.io/name: secret-store`; select `kind: ClusterSecretStore`
+   in the replacement so it skips the SA/CRB.
+2. `ns-vars` (per-namespace, TF-generated) supplies the suffixed
+   `supervisor_namespace` + `secret_store_auth_mount`. **Required:** every
+   `apps/kustomization.yaml` lists `- ../../vars`.
+3. **Endpoint IP** (a `hostAlias` so the service cert `CN=secret-store` verifies)
+   is an ESO helm value → patched on the external-secrets `AddonConfig` in
+   `infrastructure/components/envs/{env}` (base carries `replace-me`).
+4. **CA bundle** is patched on the `ClusterSecretStore` in
+   `apps/components/envs/{env}` (base carries `replace-me`). The CA is a public
+   cert — safe to commit; capture both out-of-band (`docs/GETTING-STARTED.md`).
+5. Opt out per cluster with `apps/components/disable-secret-store`.
+
+Identity/scope: the SA/CRB/store are platform-provisioned (synced by
+`cluster-apps` under the `infra` project as `argo-attach-sa`), so they need no
+tenant RBAC. A **tenant's own** `ExternalSecret` runs under `tenant-sync-<project>`,
+whose built-in `admin` role doesn't cover `external-secrets.io` — hence the
+`tenant-sync-external-secrets` ClusterRole in `apps/base/tenant-sync/rbac.yaml`
+(namespaced kinds only; the shared cluster-scoped store stays platform-owned via
+the tenant AppProject's Namespace-only `clusterResourceWhitelist`).
 
 ### Changing every cluster in an environment
 Edit `infrastructure/profiles/{env}` (or `apps/profiles/{env}`) — every cluster that

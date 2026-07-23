@@ -1,0 +1,25 @@
+# Opt out of the secret-store wiring (shipped by the standard app stack). Removes
+# the SA/CRB/ClusterSecretStore so a cluster that doesn't use the VCF Secret
+# Store carries none of it. See CLAUDE.md "Adding a new cluster".
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+- patch: |-
+    $patch: delete
+    apiVersion: external-secrets.io/v1
+    kind: ClusterSecretStore
+    metadata:
+      name: vcf-cluster-store
+- patch: |-
+    $patch: delete
+    apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: secret-store-access
+      namespace: external-secrets
+- patch: |-
+    $patch: delete
+    apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: ss-auth-binding

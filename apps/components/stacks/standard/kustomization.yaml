@@ -4,4 +4,5 @@ resources:
 - ../../../base/package-installer
 - ../../../base/cert-manager
 - ../../../base/tenant-sync
+- ../../../base/secret-store
 

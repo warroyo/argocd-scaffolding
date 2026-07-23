@@ -41,6 +41,11 @@ build_check() {
   if grep -q "replace-me" <<<"$out"; then
     fail "$dir: rendered output contains 'replace-me' — an environment overlay (components/envs/{env}) is missing or incomplete"
   fi
+  # 'replaceme' (no hyphen) is the secret-store mount/role placeholder; surviving
+  # it means cluster-var-injector or the ns-vars wiring didn't fire.
+  if grep -q "replaceme" <<<"$out"; then
+    fail "$dir: rendered output contains 'replaceme' — the secret-store injector/ns-vars wiring is missing (apps: '../../vars' + cluster-var-injector)"
+  fi
 }
 
 echo "building argocd"
@@ -111,9 +116,11 @@ rm -rf "$TPL_PROJECT"
 mkdir -p "$TPL_PROJECT/tmpl-ns"
 cp -r docs/examples/cluster-template "$TPL_PROJECT/tmpl-ns/tmpl-cluster"
 cp -r infrastructure/clusters/tenant-1/vars "$TPL_PROJECT/vars"
+# Per-namespace ns-vars (suffixed supervisor ns) sits at the namespace level, so
+# the template's apps `../../vars` resolves. Reuse an existing namespace's copy.
+cp -r infrastructure/clusters/tenant-1/dev-1/vars "$TPL_PROJECT/tmpl-ns/vars"
 build_check "$TPL_PROJECT/tmpl-ns/tmpl-cluster"
-kustomize build "$TPL_PROJECT/tmpl-ns/tmpl-cluster/apps" >/dev/null \
-  || fail "kustomize build failed: docs/examples/cluster-template/apps"
+build_check "$TPL_PROJECT/tmpl-ns/tmpl-cluster/apps"
 
 # Same trick for the namespace-resources template (shared add-on installs).
 echo "building docs/examples/namespace-resources-template (temp copy)"

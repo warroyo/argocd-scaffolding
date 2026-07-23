@@ -17,3 +17,10 @@ spec:
       # Flux derives the release name as <targetNamespace>-<AddonConfig name>, so
       # without this every resource is external-secrets-<cluster>-external-secrets.
       fullnameOverride: external-secrets
+      # hostAlias so the VCF Secret Store cert (CN secret-store) verifies. IP is
+      # an env value (patched by components/envs/{env}). See docs/ARCHITECTURE.md.
+      global:
+        hostAliases:
+        - ip: replace-me
+          hostnames:
+          - secret-store

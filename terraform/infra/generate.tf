@@ -93,6 +93,25 @@ resource "local_file" "vars_kustomization" {
   content  = templatefile("${path.module}/templates/vars-kustomization.yaml.tftpl", {})
 }
 
+# ── Per-namespace vars: the suffixed supervisor namespace name ─────────────────
+# One dir per (tenant, namespace_ref), keyed the same as ns_deployments. Carries
+# the vcfa-suffixed name that resources needing the literal namespace (the
+# secret-store ClusterSecretStore) read via cluster-var-injector.
+
+resource "local_file" "ns_vars" {
+  for_each = local.ns_deployments
+  filename = "${path.module}/../../infrastructure/clusters/${each.value.tenant_name}/${each.value.ns_ref}/vars/ns-vars.yaml"
+  content = templatefile("${path.module}/templates/ns-vars.yaml.tftpl", {
+    supervisor_namespace = each.value.ns_name
+  })
+}
+
+resource "local_file" "ns_vars_kustomization" {
+  for_each = local.ns_deployments
+  filename = "${path.module}/../../infrastructure/clusters/${each.value.tenant_name}/${each.value.ns_ref}/vars/kustomization.yaml"
+  content  = templatefile("${path.module}/templates/ns-vars-kustomization.yaml.tftpl", {})
+}
+
 # ── Bootstrap wiring consumed by the second Terraform run ──────────────────────
 
 resource "local_file" "bootstrap_providers" {

@@ -14,6 +14,15 @@ patches:
       path: /spec/addonConfigDefinitionRef/name
       value: "ako.kubernetes.vmware.com.2.1.3---vmware.1-vks.1" # Dev AKO AddonConfigDefinition
 - target:
+    group: addons.kubernetes.vmware.com
+    version: v1alpha1
+    kind: AddonConfig
+    labelSelector: "app.kubernetes.io/name=external-secrets"
+  patch: |-
+    - op: replace
+      path: /spec/values/helmValues/global/hostAliases/0/ip
+      value: "10.47.7.13" # Dev VCF Secret Store external IP (svc secret-store, ns svc-secret-store-0iid0)
+- target:
     group: cluster.x-k8s.io
     version: v1beta1
     kind: Cluster

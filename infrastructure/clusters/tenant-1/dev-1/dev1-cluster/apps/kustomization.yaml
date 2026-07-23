@@ -7,6 +7,9 @@ resources:
 # This cluster runs istio + AKO, so it ships the AKO-sidecar integration patch
 # (cluster-var-injector below rewrites its PackageInstall name).
 - ../../../../../../apps/base/istio-ako-patch
+# Per-namespace vars (ns-vars: suffixed supervisor namespace) — feeds the
+# secret-store ClusterSecretStore mount/role via the injector. TF-generated.
+- ../../vars
 
 components:
 # --- Optional per-cluster app stacks (deltas on top of the profile) ---

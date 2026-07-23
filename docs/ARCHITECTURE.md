@@ -502,6 +502,72 @@ no separate exclusion; the platform's own load-balanced Services live in
 `istio-ingress` and `headlamp` (not `istio-system`); VKSM ships its own
 pod-security policies already, so this catalog doesn't duplicate them.
 
+## Secret store
+
+Tenants need real secrets (image pulls, DB creds) on day one without committing
+them. The platform consumes the **external-secrets** add-on against the **VCF
+Secret Store Service** — a Supervisor service running OpenBao that does the
+OpenBao-admin toil automatically: for every VKS cluster it creates a k8s-auth
+mount, a role, and a policy scoped to that cluster's KV path. Nothing has to be
+provisioned in OpenBao by hand, and the names are fully derivable — so a
+`ClusterSecretStore` can be authored in git without any lookup:
+
+- auth mount path: `kubernetes-<supervisor_ns>-<cluster>`
+- role: `<supervisor_ns>-<cluster>`
+- cluster-scoped KV path: `secret/<supervisor_ns>/<cluster>-*` (KV v2) — a secret
+  is cluster-scoped by being **named with the cluster prefix**
+
+```mermaid
+flowchart LR
+    subgraph sup["Supervisor namespace (dev-1-abcde)"]
+        kvs["KeyValueSecret<br/>dev1-cluster-db-cred<br/>(applied by hand)"]
+    end
+    subgraph oss["VCF Secret Store (OpenBao)"]
+        kv["KV: secret/dev-1-abcde/<br/>dev1-cluster-db-cred"]
+        auth["k8s-auth mount<br/>kubernetes-dev-1-abcde-dev1-cluster<br/>role dev-1-abcde-dev1-cluster<br/>(auto-created per cluster)"]
+    end
+    subgraph wl["Workload cluster (dev1-cluster)"]
+        sa["SA secret-store-access<br/>+ system:auth-delegator"]
+        css["ClusterSecretStore<br/>vcf-cluster-store"]
+        es["ExternalSecret (tenant app)"]
+        sec["k8s Secret db-cred"]
+    end
+    kvs --> kv
+    sa -- "TokenReview" --> auth
+    css -- "uses SA" --> sa
+    css -- "reads" --> kv
+    es -- "secretStoreRef" --> css
+    es --> sec
+```
+
+**How the pieces land — split by who owns them:**
+
+| Piece | Where | Synced by / applied by | Why there |
+|-------|-------|------------------------|-----------|
+| SA `secret-store-access` + `system:auth-delegator` CRB, `ClusterSecretStore` | `apps/base/secret-store` (standard app stack, default-on) | `cluster-apps` appset, **`infra` project** as `argo-attach-sa` | Platform-provisioned; the store is shared, one per workload cluster. Cluster-scoped, so it can't be tenant-owned. |
+| Suffixed `supervisor_namespace` (+ `secret_store_auth_mount`) | `ns-vars.yaml`, per `(tenant, namespace_ref)` | `terraform/infra` (generated) | The one value a cluster author can't know; injected into the store's mount/role. See DECISIONS #17. |
+| Endpoint IP (`hostAlias` for cert `CN=secret-store`) | external-secrets `AddonConfig` `hostAliases`, `infrastructure/components/envs/{env}` | ESO helm value (infra tree) | It's a helm value the operator needs, so it rides the add-on config. |
+| CA bundle | `ClusterSecretStore.caBundle`, `apps/components/envs/{env}` | apps tree patch | It's a store field; public cert, safe to commit. |
+| `KeyValueSecret` (writes the secret) | applied by hand into the supervisor namespace | human / tenant, out-of-band | Writes straight to OpenBao KV, never etcd; not a repo artifact. |
+| `ExternalSecret` (reads it) | the tenant's own app | tenant sync, **tenant project** as `tenant-sync-<project>` | Tenant-owned; needs the `tenant-sync-external-secrets` RBAC (below). |
+
+**The mount/role are built by segment replacement**, not concatenation (kustomize
+can't concatenate). The base `ClusterSecretStore` carries no-hyphen placeholders
+`replacemens-replacemecluster`; `cluster-var-injector` replaces `cluster_name`
+into segment 1 **first**, then the suffixed name / mount into segment 0 — order
+matters because the index-0 values are themselves multi-segment. `validate.sh`
+rejects a surviving `replaceme`, the same guardrail as `replace-me`.
+
+**Identity — why two grants aren't needed.** The store SA/CRB/CSS ride the
+`infra` project (full whitelist, `argo-attach-sa`), so they need no tenant RBAC.
+A tenant's own `ExternalSecret`, though, syncs under `tenant-sync-<project>`,
+whose built-in `admin` role doesn't cover `external-secrets.io` — so
+`apps/base/tenant-sync/rbac.yaml` adds a `tenant-sync-external-secrets`
+ClusterRole (namespaced kinds only). The tenant AppProject's Namespace-only
+`clusterResourceWhitelist` keeps the tenant from creating its own
+cluster-scoped `ClusterSecretStore` even though the RBAC group grant would allow
+the API — defense in depth, same as the gateway-api grant.
+
 ## Pattern vs lab: the seams
 
 Not everything in this repo is the reference. The table below marks the seams —
@@ -531,6 +597,7 @@ what to keep, what to swap for your environment.
 | GitOps repo identity | `github.com/warroyo/argocd-scaffolding` | `argocd/repo-config.yaml` — the single source; Terraform and the ApplicationSets both read it | One-file fork. |
 | ArgoCD flavor | vSphere ArgoCD operator CR (`argocd-service.vsphere.vmware.com`) | `charts/bootstrap-tenant/templates/argocd-instance.yaml` | The chart's other resources (ArgoNamespace, root app) are the pattern; the instance CR is the VCF-specific part. |
 | Cluster policy values | Lab DNS suffix `.will-org-apps.vcf.lab` (hostname-ownership) | Per-tenant `policies:` → `parameters` in `tenants.yaml` | The policy *catalog* (`terraform/infra/policies.tf`, the Rego) is the pattern; the suffix is just the value a real tenant would set to their own domain. |
+| Secret store endpoint | VCF Secret Store external IP + CA (lab values captured from `svc-secret-store-*`) | IP → external-secrets `AddonConfig` `hostAliases` in `infrastructure/components/envs/{env}`; CA → `ClusterSecretStore` `caBundle` in `apps/components/envs/{env}` | The `secret-store` wiring (SA + CRB + `ClusterSecretStore`, injected mount/role) is the pattern; the IP/CA are per-Supervisor facts captured out-of-band (`docs/GETTING-STARTED.md`). See "Secret store". |
 
 ## Known limitations
 
