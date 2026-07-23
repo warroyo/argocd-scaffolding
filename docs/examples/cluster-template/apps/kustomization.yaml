@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
 - ../../../../../../apps/profiles/dev        # app baseline for this env
 # - ../../../../../../apps/base/istio-ako-patch   # only if this cluster runs istio + AKO
+- ../../vars                                 # ns-vars (suffixed supervisor ns) — feeds secret-store; TF-generated
 
 components:
 # cluster-var-injector MUST be last, and is REQUIRED on every cluster

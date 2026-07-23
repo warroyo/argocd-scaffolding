@@ -43,6 +43,9 @@ improvement · **P3** = nice-to-have / hygiene.
 - **Action:** Rotate the leaked credentials (they are in git history), then wire the
   workload secret through Terraform/external-secrets instead of git.
 - **Owner note:** Intentionally left untouched on request.
+- **Now unblocked:** the secret-store wiring (see Done) gives a working
+  `ClusterSecretStore` — the AVI secret can move to a `KeyValueSecret` +
+  `ExternalSecret`. Still out of scope until the creds are rotated.
 - **Size:** M.
 
 ### P1 — ArgoCD human access (SSO + per-tenant RBAC)
@@ -92,12 +95,28 @@ improvement · **P3** = nice-to-have / hygiene.
   owner review.
 - **Size:** S.
 
-### P2 — Tenant secrets pattern
-- **What:** tenants deploying real apps need image-pull secrets and app
-  credentials on day one; there's no external-secrets / sealed-secrets / SOPS
-  pattern for them to follow — which is how credentials end up committed.
-- **Action:** pick one (external-secrets fits the stack), ship it in the
-  standard stack, document the tenant workflow.
+### P3 — Revisit `ns_ref` vs. Terraform-owned suffixed directories
+- **What:** the directory/join spine uses a logical `namespace_ref` (`dev-1`);
+  the vcfa-suffixed name (`dev-1-abcde`) is carried as a sync-time label and,
+  now, a TF-rendered `ns-vars.yaml`. An alternative is to drop `ns_ref` and let
+  Terraform scaffold `{project}/{suffixed-ns}/` directories, so the appsets join
+  directly on the suffix and the `(project, ns_ref)` uniqueness invariant goes
+  away.
+- **Why revisit:** removes one layer of logical/physical indirection and one
+  concept. Originally justified by suffix-rotation resilience — but the suffix
+  is immutable-for-life and namespace deletion is all-or-nothing (every cluster
+  in it dies with it), so that resilience argument does **not** hold. The real
+  trade-off is ergonomics/coupling, not durability. See `docs/DECISIONS.md`
+  (namespace handles) for the analysis and why we kept `ns_ref` for now.
+- **Trade-offs:** current (A) = human-readable paths, human-owned dir layout,
+  CI-validatable, no TF ownership of structure. Option B = simpler join, suffix
+  correct-by-construction, but Terraform owns the namespace directory (extends
+  the existing generated-files coupling to dir structure). Option C (human types
+  the suffixed dir) is worst — hand-copied opaque suffix, and CI can't validate
+  it (the registration is runtime).
+- **Blocker/scope:** rewrites the join in all three appsets
+  (`cluster-provision`, `cluster-apps`, `namespace-resources`), `validate.sh`,
+  and the directory contract in the docs. Orthogonal to any feature.
 - **Size:** M.
 
 ### P2 — ArgoCD instance upgrade ownership
@@ -210,6 +229,16 @@ improvement · **P3** = nice-to-have / hygiene.
 
 ## Done
 <!-- Move completed items here with the PR/commit that closed them. -->
+- **Tenant secrets pattern (secret-store wiring)** — external-secrets now
+  consumes the VCF Secret Store Service (OpenBao). Shipped `apps/base/secret-store`
+  (SA + `system:auth-delegator` CRB + `vcf-cluster-store` `ClusterSecretStore`)
+  in the standard app stack (default-on, `disable-secret-store` opt-out);
+  per-namespace `ns-vars` (TF-generated suffixed namespace) feeds the injected
+  mount/role; endpoint IP (infra `envs/{env}`) + CA bundle (apps `envs/{env}`)
+  are env values; `tenant-sync-external-secrets` RBAC lets tenants create their
+  own `ExternalSecret`s. Docs: ARCHITECTURE "Secret store", DECISIONS (namespace
+  handles), GETTING-STARTED capture + smoke test. Tenant workflow examples:
+  `docs/examples/keyvaluesecret.yaml`, `docs/examples/externalsecret.yaml`.
 - **Version decoupling** (branch `claude/terraform-kustomize-review-1bbie5`):
   bases carry `replace-me` placeholders; always-on versions (cluster class,
   k8s, AKO) pinned in `infrastructure/components/envs/{env}`; optional-feature

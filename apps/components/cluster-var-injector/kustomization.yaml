@@ -40,3 +40,50 @@ replacements:
         options:
           delimiter: '-'
           index: 2
+
+  # secret-store ClusterSecretStore (apps/base/secret-store): build the Secret
+  # Store auth mountPath (kubernetes-<supervisor_ns>-<cluster>) and role
+  # (<supervisor_ns>-<cluster>) by segment replacement. ORDER MATTERS — the
+  # cluster_name (index 1) MUST run before the index-0 replacements below, which
+  # substitute a multi-segment value and would otherwise shift index 1. Both
+  # source segments carry hyphens; that's fine, a replacement value may.
+  - source:
+      kind: ConfigMap
+      name: vars
+      fieldPath: data.cluster_name
+    targets:
+      - select:
+          kind: ClusterSecretStore
+          labelSelector: "app.kubernetes.io/name=secret-store"
+        fieldPaths:
+        - spec.provider.vault.auth.kubernetes.mountPath
+        - spec.provider.vault.auth.kubernetes.role
+        options:
+          delimiter: '-'
+          index: 1
+  - source:
+      kind: ConfigMap
+      name: ns-vars
+      fieldPath: data.secret_store_auth_mount
+    targets:
+      - select:
+          kind: ClusterSecretStore
+          labelSelector: "app.kubernetes.io/name=secret-store"
+        fieldPaths:
+        - spec.provider.vault.auth.kubernetes.mountPath
+        options:
+          delimiter: '-'
+          index: 0
+  - source:
+      kind: ConfigMap
+      name: ns-vars
+      fieldPath: data.supervisor_namespace
+    targets:
+      - select:
+          kind: ClusterSecretStore
+          labelSelector: "app.kubernetes.io/name=secret-store"
+        fieldPaths:
+        - spec.provider.vault.auth.kubernetes.role
+        options:
+          delimiter: '-'
+          index: 0
