@@ -33,6 +33,17 @@ improvement · **P3** = nice-to-have / hygiene.
   before deleting the appsets/apps, so AppProjects stay alive until the workload
   Applications finish finalizing. The general tenant-removal ordering (terraform
   destroying the namespace while clusters run) is still undefined.
+- **Observed 2026-07-29 (the `dev2-cluster` wedge):** deletion also fails *open*
+  in the other direction — an Application can hang in deletion indefinitely. The
+  `dev2-cluster` directory was removed from git on 2026-07-15; the appset deleted
+  its Application, but the `resources-finalizer` could not prune the `ArgoCluster`,
+  whose own `field.vmware.com/argo-attach-cluster-cleanup` finalizer was trying to
+  delete a secret in `infra-9lg5w` — a supervisor namespace that no longer existed
+  (the infra namespace had been rebuilt as `infra-84jfn`). Permanent forbidden, so
+  the object sat with a `deletionTimestamp` for **two weeks** unnoticed. Cleared by
+  removing the dead finalizer by hand. Teardown ordering therefore has to cover
+  rebuilding the *infra* namespace too, not just tenant namespaces — any
+  ArgoCluster outliving its argo namespace is unfinalizable.
 - **Size:** S.
 
 ### P1 — Rotate and externalize credentials
@@ -84,6 +95,17 @@ improvement · **P3** = nice-to-have / hygiene.
 - **Action:** argocd-notifications (if the operator CR allows it) for sync
   failures; a periodic check comparing cluster dirs in git vs generated
   Applications; consider a scheduled `terraform plan` drift job.
+- **Sharpened 2026-07-29 — two real misses, both invisible for weeks:** (a) the
+  `dev2-cluster` Application sat stuck-deleting for two weeks (see the deletion
+  item); (b) `cluster-apps` reported **`Synced`** while its `AddonInstall` did not
+  match git at all — ArgoCD's server-side diff dry-run was being rejected by a
+  validating webhook, and a failed *comparison* leaves the previous status in
+  place rather than surfacing `OutOfSync`. Only a hard refresh exposed the
+  `ComparisonError`. So the check must not just diff git-dirs vs Applications: it
+  needs to alert on `status.conditions[].type == ComparisonError`, on any
+  non-empty `metadata.deletionTimestamp` older than ~1h, and on
+  `operationState.phase == Failed` — none of which show up in the sync/health
+  columns everyone actually looks at.
 - **Size:** M.
 
 ### P2 — Git boundary for tenants (CODEOWNERS / branch protection)
@@ -94,6 +116,22 @@ improvement · **P3** = nice-to-have / hygiene.
   teams and everything else to the platform team; branch protection requiring
   owner review.
 - **Size:** S.
+
+### P2 — ArgoCD instance upgrade ownership
+- **What:** the ArgoCD version (`3.0.19` in chart values) is set at bootstrap
+  and never reconciled afterwards; nobody owns upgrading the instances.
+- **Action:** decide the path (bump chart value + `make apply-bootstrap` as the
+  documented procedure, or move the ArgoCD CR under gitops management).
+- **Size:** S (document) / M (gitops-manage).
+
+### P2 — Tenant-to-tenant cluster isolation in AppProjects
+- **What:** The tenant AppProject denies the in-cluster and supervisor-namespace
+  destinations and drops the cluster-resource grant, but a tenant can still
+  target ANOTHER tenant's workload clusters — cluster names carry no tenant
+  prefix to match a destination glob on.
+- **Options:** prefix workload cluster names with the project (join + validate
+  changes), or per-tenant destination labels.
+- **Size:** M.
 
 ### P3 — Revisit `ns_ref` vs. Terraform-owned suffixed directories
 - **What:** the directory/join spine uses a logical `namespace_ref` (`dev-1`);
@@ -119,67 +157,6 @@ improvement · **P3** = nice-to-have / hygiene.
   and the directory contract in the docs. Orthogonal to any feature.
 - **Size:** M.
 
-### P2 — ArgoCD instance upgrade ownership
-- **What:** the ArgoCD version (`3.0.19` in chart values) is set at bootstrap
-  and never reconciled afterwards; nobody owns upgrading the instances.
-- **Action:** decide the path (bump chart value + `make apply-bootstrap` as the
-  documented procedure, or move the ArgoCD CR under gitops management).
-- **Size:** S (document) / M (gitops-manage).
-
-### P2 — Tenant-to-tenant cluster isolation in AppProjects
-- **What:** The tenant AppProject denies the in-cluster and supervisor-namespace
-  destinations and drops the cluster-resource grant, but a tenant can still
-  target ANOTHER tenant's workload clusters — cluster names carry no tenant
-  prefix to match a destination glob on.
-- **Options:** prefix workload cluster names with the project (join + validate
-  changes), or per-tenant destination labels.
-- **Size:** M.
-
-### P2 — Bring cluster policy APIs under gitops (via Terraform)
-- **What:** cluster policy APIs are not represented in the repo at all — any
-  policies are applied out-of-band, invisible to review and drift detection.
-  Constraint: cluster policy has to be managed through Terraform, so it cannot
-  ride the kustomize tree / ApplicationSets like other addons.
-- **Action:** model policies in `terraform/infra` — decide the input surface
-  (per-tenant/per-namespace fields in `tenants.yaml` vs a dedicated policy
-  vars file), add the policy resources to the infra run, and document the
-  workflow (edit tenants.yaml → `make apply`, same as adding a tenant).
-  Terraform ownership also means the scheduled-`terraform plan` drift idea
-  under "Failure visibility" would cover policy drift.
-- **Size:** M.
-
-### P2 — Document the addon-addition workflow
-- **What:** the repo has a clear addon pattern (VKS `AddonConfig` base with a
-  `replace-me` version placeholder + optional-feature component + feature-scoped
-  `envs/{env}/{feature}` version pin + per-cluster opt-in; apps-side stacks for
-  non-AddonConfig software), but it's only discoverable by reading the istio
-  example. Nothing in `docs/` walks through adding a brand-new addon end-to-end.
-- **Action:** add a "adding an addon" guide (docs/ or ARCHITECTURE.md section):
-  infra-side AddonConfig addons vs apps-side stacks, where the version pin
-  goes, the `cluster-var-injector` ordering rule, the validate.sh
-  `replace-me` check as the safety net, and a checklist mirroring the istio
-  layout. Cross-link from the cluster-template README.
-- **Size:** S.
-
-### P2 — Commit `.terraform.lock.hcl` files
-- **What:** Provider versions are pinned (`~>` constraints) but the dependency
-  lock files are not committed, so CI still resolves fresh each run.
-- **Action:** Run `terraform init` in each root (`-backend=false` is fine) and
-  commit the lock files.
-- **Blocker:** Needs registry access from a dev machine (provider binaries are
-  fetched from github release assets).
-- **Size:** XS.
-
-### P3 — Headlamp addon
-- **What:** no cluster UI ships with the standard stack; Headlamp is a
-  lightweight candidate tenants could opt into per cluster.
-- **Action:** add it via the standard addon pattern — check whether a VKS
-  `AddonConfig` definition exists for Headlamp (infra-side addon) or ship it
-  as an apps-side stack (helm chart via the package-installer / a
-  `apps/components/stacks/` entry); include the auth story (SSO vs
-  token) in the docs. Good first consumer of the addon-addition guide above.
-- **Size:** S–M.
-
 ### P3 — Region dimension
 - **What:** `region_name` is one global variable; VPC names embed it; zones
   default to one name; tenants.yaml has no region field. Multi-region means
@@ -203,18 +180,15 @@ improvement · **P3** = nice-to-have / hygiene.
 - **Action:** add a backup stack tenants can opt into.
 - **Size:** M.
 
-### P3 — `infrastructure/clusters/infra-1/vars/`
-- **What:** `kustomization.yaml` is committed but its `tenant-vars.yaml` is not
-  (regenerated by `make apply-infra`). Harmless but untidy; the Apply workflow's
-  `git add -A` will commit it on the next tenants.yaml change.
-- **Size:** S.
-
 ### P3 — Add a `prod` profile when the first prod cluster lands
 - **What:** Only `profiles/dev` (infra + apps) exists; `infra-1` is
   `environment: prod` with no cluster dir yet.
-- **Action:** Copy the dev profiles + `envs/dev*` components to prod with prod
-  values/versions (this is now also the mechanism for staged version rollouts).
-  Consider a shared "common" profile to avoid duplicating the component list.
+- **Action:** Add `profiles/prod` (infra + apps) and `components/envs/prod` with
+  prod values/versions (this is now also the mechanism for staged version
+  rollouts).
+- **Note:** the shared-`common`-profile prerequisite is done — `profiles/common`
+  holds the whole component list, so each env profile is a two-line file
+  referencing it plus its `envs/{env}` overlay. Adding prod is now genuinely small.
 - **Size:** S.
 
 ### P3 — Parameterize TLS verification
@@ -229,6 +203,31 @@ improvement · **P3** = nice-to-have / hygiene.
 
 ## Done
 <!-- Move completed items here with the PR/commit that closed them. -->
+- **Cluster policy APIs under gitops (via Terraform)** — modelled in
+  `terraform/infra/policies.tf` as `local.policy_catalog` (one entry per policy
+  kind) over `terraform/infra/rego/*.rego`, enabled per tenant from a `policies:`
+  block in `tenants.yaml`, on the vendored `cluster-policy` /
+  `cluster-policy-template` modules. Four policies ship
+  (`gitops-namespace-containment`, `hostname-ownership`,
+  `require-namespace-labels`, `service-exposure`). Gating identity is the
+  per-tenant ArgoCD sync-impersonation SA (`tenant-sync-<tenant>`). Recipe:
+  CLAUDE.md "Adding a policy"; design: ARCHITECTURE "Cluster policy + namespace
+  self-service"; rationale: DECISIONS #10–#11.
+- **Addon-addition workflow documented** — CLAUDE.md "VKS add-ons: one pattern,
+  two variants" (Variant A/B, the add-on-config required-vs-optional test, the
+  bundle selector block and its three rules, and the full new-add-on checklist)
+  plus "Adding a custom helm addon" for chart repos outside the VKS catalog;
+  ARCHITECTURE "VKS add-on pattern" carries the diagram; README the summary.
+  DECISIONS #9, #14, #15, #16, #18 hold the rationale.
+- **Headlamp addon** — shipped as a Variant A installable add-on
+  (`infrastructure/base/headlamp/install` + `components/envs/dev/headlamp`
+  version pin, wired through each namespace's `namespace-resources/`).
+  Deliberately **not** in the `standard` bundle: it is dev-only, enabled by an
+  `op: add` label in `components/envs/dev`, with a `disable-headlamp` opt-out.
+- **Commit `.terraform.lock.hcl` files** — all three roots (`infra`,
+  `bootstrap`, `state-backend`) have committed lock files.
+- **`infrastructure/clusters/infra-1/vars/`** — `tenant-vars.yaml` is now
+  committed alongside its `kustomization.yaml`.
 - **Tenant secrets pattern (secret-store wiring)** — external-secrets now
   consumes the VCF Secret Store Service (OpenBao). Shipped `apps/base/secret-store`
   (SA + `system:auth-delegator` CRB + `vcf-cluster-store` `ClusterSecretStore`)
