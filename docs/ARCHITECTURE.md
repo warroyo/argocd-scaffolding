@@ -582,6 +582,12 @@ what to keep, what to swap for your environment.
   `replace-me` + `validate.sh` guardrails
 - The add-on model: shared label-gated `AddonInstall` per namespace,
   releaseFilter version pins, opt-in per-cluster `AddonConfig`
+- The workload-cluster platform identity: with sync impersonation on globally,
+  `cluster-apps` (infra project) needs `default:argo-attach-sa` cluster-admin on
+  each guest to sync the standard stack. The mandatory `argocd-attach-rbac`
+  addon renders one ClusterRoleBinding to the existing `cluster-admin` for it
+  (Stakater `application` chart via `extraObjects`); tenant syncs still scope to
+  `tenant-sync-<project>`. Full reasoning: `docs/DECISIONS.md` #18.
 - The stateless-helper approach to short-lived vcfa credentials
 
 **The lab (swap these for your environment):**

@@ -1,0 +1,26 @@
+# Mandatory baseline addon — every workload cluster. Renders (via the Stakater
+# `application` chart) one ClusterRoleBinding granting the existing cluster-admin
+# to default:argo-attach-sa — the identity ArgoCD's cluster-apps sync
+# impersonates under the infra project. Without it the standard app stack can't
+# sync to the guest. Full rationale: docs/DECISIONS.md #18, docs/ARCHITECTURE.md.
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonInstall
+metadata:
+  name: argocd-attach-rbac-addoninstall
+  labels:
+    app.kubernetes.io/name: argocd-attach-rbac
+spec:
+  addonRef:
+    name: application
+  # Helm-based addon: ref.name is "<chart>.<version>", no AddonRelease CR.
+  releaseFilter:
+    ref:
+      name: replace-me
+  # Always-on: every VKS cluster (every CAPI Cluster carries this label). Not
+  # bundle-gated and no opt-out — cluster-apps is broken without it.
+  clusters:
+  - selector:
+      matchExpressions:
+      - key: cluster.x-k8s.io/cluster-name
+        operator: Exists
+  stopMatchingBehavior: Delete

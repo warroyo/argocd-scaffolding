@@ -1,0 +1,16 @@
+# Dev argocd-attach-rbac version pin (Stakater application chart name.version,
+# not an AddonRelease), included by a namespace's namespace-resources after
+# base/argocd-attach-rbac/install. See CLAUDE.md "Rolling a version".
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+- target:
+    group: addons.kubernetes.vmware.com
+    version: v1alpha1
+    kind: AddonInstall
+    labelSelector: "app.kubernetes.io/name=argocd-attach-rbac"
+  patch: |-
+    - op: replace
+      path: /spec/releaseFilter/ref/name
+      value: "application.9.0.0" # Dev Stakater application chart version

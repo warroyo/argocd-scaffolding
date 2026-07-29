@@ -146,12 +146,21 @@ VCF install; ask whoever administers the vSphere/VCF fleet.
 
 ```sh
 kubectl apply -f supervisor-addons/external-secrets.yaml
+kubectl apply -f supervisor-addons/stakater-application.yaml
 ```
 
-*You should see* both objects created:
+The second registers the Stakater `application` chart used by the **mandatory**
+`argocd-attach-rbac` addon — it renders the `default:argo-attach-sa`
+cluster-admin identity on each workload cluster that ArgoCD's `cluster-apps`
+sync impersonates. **Without it the standard app stack cannot sync to any
+workload cluster** (the sync fails resolving `default:argo-attach-sa`). Full
+rationale: `docs/DECISIONS.md` #18.
+
+*You should see* the objects created:
 
 ```sh
-kubectl get addonrepository,addonrepositoryinstall -n vmware-system-vks-public | grep external-secrets
+kubectl get addonrepository,addonrepositoryinstall -n vmware-system-vks-public \
+  | grep -E 'external-secrets|stakater'
 ```
 
 One-time per addon — re-run the same `kubectl apply` (it's idempotent) only
