@@ -376,11 +376,16 @@ Two variants:
 
 ### Add-on config: required vs optional
 
-The addon controller auto-generates an `AddonConfig` named `{cluster}-{addon}`
-(its default `addonConfigNameTemplate`) for clusters that ship none, and fills
-`addonConfigDefinitionRef` + `clusterName` on authored ones — so authored
-configs (`base/{addon}/config`, injector-prefixed to `<cluster>-{addon}`) carry
-values only. Which leaves one question per add-on: does it need config at all?
+The addon controller auto-generates an `AddonConfig` named
+`{cluster}-{addonRef.name}` (its default `addonConfigNameTemplate`) for clusters
+that ship none, and fills `addonConfigDefinitionRef` + `clusterName` on authored
+ones — so authored configs (`base/{addon}/config`, injector-prefixed to
+`<cluster>-{addon}`) carry values only. Note the lookup keys on the **addon**
+name, so an add-on whose directory differs from its `addonRef` (a generic chart
+used for one purpose, like `argocd-attach-rbac` on Stakater `application`) must
+set `addonConfigNameTemplate` explicitly or its values are silently dropped —
+see CLAUDE.md "Add-on config" → generic charts. Which leaves one question per
+add-on: does it need config at all?
 
 - **Required** — the add-on is *wrong* on defaults. Listed in
   `components/addon-defaults`, which `profiles/common` pulls, so every cluster

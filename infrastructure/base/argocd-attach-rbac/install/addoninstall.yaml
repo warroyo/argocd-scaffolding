@@ -12,6 +12,10 @@ metadata:
 spec:
   addonRef:
     name: application
+  # Required: the addon name is the generic chart (`application`), so the default
+  # config name would be <cluster>-application, not our config. See CLAUDE.md
+  # "Add-on config" → generic charts.
+  addonConfigNameTemplate: "{{.cluster.name}}-argocd-attach-rbac"
   # Helm-based addon: ref.name is "<chart>.<version>", no AddonRelease CR.
   releaseFilter:
     ref:

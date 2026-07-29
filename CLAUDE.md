@@ -334,9 +334,8 @@ namespace un-prefixed. Variant B add-ons have `config/` only.
    out; `Delete` handles uninstall when the label flips.
 5. Config, if the add-on needs any — see "Add-on config" below.
 
-**Add-on config.** An `AddonConfig` is always named `cluster-{addon}`
-(injector-prefixed to `<cluster>-{addon}`, matching the controller's default
-`addonConfigNameTemplate`) and carries values only — omit
+**Add-on config.** An `AddonConfig` is named `cluster-{addon}`
+(injector-prefixed to `<cluster>-{addon}`) and carries values only — omit
 `addonConfigDefinitionRef` and `clusterName`, the controller fills both and
 auto-generates the whole object for clusters that ship none. Two kinds, and the
 difference decides where it is wired:
@@ -352,6 +351,22 @@ difference decides where it is wired:
 
 Test when adding an add-on: *if a cluster ships nothing, is the add-on wrong, or
 merely unopinionated?* Wrong → `addon-defaults`. Unopinionated → opt-in component.
+
+**Generic charts: set `addonConfigNameTemplate`.** The controller resolves the
+config by `<cluster>-<spec.addonRef.name>` — the **addon** name, not the
+directory or `app.kubernetes.io/name` label. Those coincide for most add-ons
+(`external-secrets`), so `cluster-{addon}` just works. They do **not** coincide
+when the add-on is one purpose-specific use of a generic chart:
+`argocd-attach-rbac` installs the Stakater `application` chart, so the default
+lookup is `<cluster>-application`. Get this wrong and it fails silently in a
+way that looks like a chart bug — the controller auto-generates an empty
+config, your values never reach helm, and the chart dies on its own defaults
+(`Undefined image for application container`). Fix is one field on the
+`AddonInstall`:
+```yaml
+addonConfigNameTemplate: "{{.cluster.name}}-argocd-attach-rbac"
+```
+Rule: if the directory name differs from `addonRef.name`, set the template.
 
 Override chain is base → env → cluster, same as every other value here:
 `base/{addon}/config` holds defaults, `components/envs/{env}` may patch per

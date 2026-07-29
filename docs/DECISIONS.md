@@ -208,7 +208,7 @@ model already fans out for free.
 
 `AddonConfig` is always per-cluster overrides ONLY, and opt-in
 (`components/istio-config`): the addon controller auto-generates an
-`AddonConfig` named `{cluster}-{addon}` (its default `addonConfigNameTemplate`)
+`AddonConfig` named `{cluster}-{addonRef.name}` (its default `addonConfigNameTemplate`)
 for clusters without one, filling `addonConfigDefinitionRef` and `clusterName`
 itself — which is why authored configs omit both fields. Every addon resource
 carries `app.kubernetes.io/name: {addon}` and all patches target by
@@ -674,6 +674,15 @@ one binding, register the public Stakater `application` chart
 exactly that one `ClusterRoleBinding` — verified it renders nothing else. Same
 custom-helm-addon path as external-secrets (#14): one-time Supervisor-admin
 `AddonRepository` registration, then ordinary GitOps `AddonInstall`.
+
+One consequence of reusing a generic chart: the controller resolves an add-on's
+`AddonConfig` by `<cluster>-<addonRef.name>`, which here is
+`<cluster>-application`, not `<cluster>-argocd-attach-rbac`. Every other add-on
+in this repo is named after its own chart so the default just works; this one
+must set `addonConfigNameTemplate` on the `AddonInstall`. Without it the failure
+is silent and misleading — the controller auto-generates an empty config, the
+`helmValues` above never reach helm, and the chart fails on its own defaults
+(`Undefined image for application container`) as though the chart were at fault.
 
 **Mandatory, not bundled.** Every cluster's `cluster-apps` is broken without
 this, so the `AddonInstall` selects *every* cluster

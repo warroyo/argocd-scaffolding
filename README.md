@@ -374,7 +374,9 @@ headlamp is the simplest live example to crib from. To add one:
    (headlamp).
 5. Config, if it needs any — `infrastructure/base/{addon}/config/`, an
    `AddonConfig` named `cluster-{addon}` (values only — the controller fills
-   `addonConfigDefinitionRef`/`clusterName`). If the add-on is *wrong* without
+   `addonConfigDefinitionRef`/`clusterName`; if the directory name differs from
+   `addonRef.name`, also set `addonConfigNameTemplate` on the `AddonInstall`).
+   If the add-on is *wrong* without
    it, list it in `components/addon-defaults` so every cluster gets it; if it's
    merely per-cluster taste, expose it as an opt-in `components/{addon}-config`
    (istio-config). Clusters on defaults ship nothing.
