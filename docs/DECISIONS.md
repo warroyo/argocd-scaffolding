@@ -623,3 +623,68 @@ service cert `CN=secret-store` verifies) → it lands on the external-secrets
 field → it lands in the **apps** `envs/{env}`. The CA is a public cert, safe to
 commit; the IP is not a secret either. Default-on because external-secrets
 without a store is inert — the operator is useless without something to consume.
+
+## 18. How workload-cluster syncs get an impersonation identity (the `argocd-attach-rbac` addon)
+
+**The problem.** Sync impersonation is a single global switch
+(`application.sync.impersonation.enabled: true`, argocd-cm) — once on, *every*
+sync must resolve a `destinationServiceAccount` from its AppProject, and a
+no-match is a deliberate hard-fail (ArgoCD refuses to fall back to the
+controller's own identity). Tenant syncs need it (scope to
+`tenant-sync-<project>`); but it also forces the **platform** `cluster-apps`
+sync — which runs under the `infra` project against **workload** clusters — to
+impersonate `argo-attach-sa`. The `infra` project names it **bare**, which
+ArgoCD resolves in the sync's destination namespace (`default`), i.e.
+`default:argo-attach-sa`. That identity doesn't exist on workload clusters, so
+the entire standard app stack (cert-manager, tenant-sync, secret-store) fails to
+sync there. (Supervisor-namespace syncs are fine: their destination namespace
+*is* the supervisor namespace, where `argo-attach-sa` lives — the bare-name
+trick only works when destination == where the SA is.)
+
+**Why not the obvious alternatives.**
+- *Register the workload cluster with an SA token like `ArgoNamespace` does* —
+  the `ArgoCluster` CRD has no auth-mode knob (only 4 fields); the operator
+  hard-codes admin-cert attach.
+- *Scope impersonation off workload clusters* — no-match hard-fails, so there's
+  no "use the admin cert" fallback.
+- *Per-namespace platform projects naming `<supervisor-ns>:argo-attach-sa`* —
+  works (VKS auth-sync already binds that identity cluster-admin on every guest,
+  for free), but restructures the tenant/project model — too much surface for
+  this.
+- *ClusterResourceSet / AddonConfigDefinition targetClusterOutput* — both need
+  genuine Supervisor-admin the org-admin credential lacks (`Forbidden` live);
+  CRS also isn't wired for VKS guests.
+
+**The choice.** Deliver the missing identity **to the guest** as a mandatory
+addon, so ArgoCD's existing bare-name config resolves unchanged. The addon
+creates a single `ClusterRoleBinding` granting the **existing** `cluster-admin`
+ClusterRole to subject `default:argo-attach-sa`. No SA object, no token, no
+bespoke role — ArgoCD connects with the admin cert (`system:masters`, which
+holds `impersonate`) and impersonates the SA; the binding is what grants
+cluster-admin, and RBAC (like impersonation) is string-based, so the SA needn't
+exist. This is the same `cluster-admin` role VKS auth-sync binds for the
+supervisor-ns SA, just under a uniform `default:…` subject so one bare name
+works for every cluster.
+
+**Why the Stakater `application` chart, not a bespoke one.** The addon needs a
+helm chart (VKS helm addons render one). Rather than build and host a chart for
+one binding, register the public Stakater `application` chart
+(`supervisor-addons/stakater-application.yaml`) and drive it via `helmValues`
+(`deployment/service/rbac` all off, the binding in `extraObjects`) to emit
+exactly that one `ClusterRoleBinding` — verified it renders nothing else. Same
+custom-helm-addon path as external-secrets (#14): one-time Supervisor-admin
+`AddonRepository` registration, then ordinary GitOps `AddonInstall`.
+
+**Mandatory, not bundled.** Every cluster's `cluster-apps` is broken without
+this, so the `AddonInstall` selects *every* cluster
+(`cluster.x-k8s.io/cluster-name Exists`) — not the `standard` bundle — and has
+no opt-out. Its config is in `addon-defaults` (required, like external-secrets'
+`targetNamespace`). Delivery rides `namespace-resources` (which impersonates the
+*supervisor-ns* `argo-attach-sa` — the path that works), so there's no
+chicken-and-egg with the broken `cluster-apps` path; once the addon lands,
+`cluster-apps` self-heals.
+
+**Security.** A cluster-admin binding to an impersonatable SA looks scary but
+adds no escalation: only `system:masters` (the admin-cert connection ArgoCD
+already holds) can impersonate it. It's the same privilege the platform already
+has on the guest, named so ArgoCD can target it.

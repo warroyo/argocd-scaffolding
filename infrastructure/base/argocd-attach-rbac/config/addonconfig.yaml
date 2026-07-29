@@ -1,0 +1,41 @@
+# Required config — drives the generic Stakater `application` chart to emit ONLY
+# one ClusterRoleBinding: grants the existing `cluster-admin` ClusterRole to
+# subject default:argo-attach-sa. No SA object and no bespoke role — ArgoCD's
+# bare `argo-attach-sa` impersonation (cluster-apps destination = default)
+# resolves against this binding (RBAC is string-based; the SA needn't exist).
+# Name is injector-prefixed to <cluster>-argocd-attach-rbac. See docs/DECISIONS.md #18.
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonConfig
+metadata:
+  name: cluster-argocd-attach-rbac
+  labels:
+    app.kubernetes.io/name: argocd-attach-rbac
+    config.k8s.io/inject-cluster-name-prefix: "true"
+spec:
+  values:
+    helmOptions:
+      # Where the helm release metadata lands; the binding is cluster-scoped and
+      # its subject namespace (default) is fixed below, independent of this.
+      targetNamespace: kube-system
+    helmValues:
+      deployment:
+        enabled: false
+      service:
+        enabled: false
+      rbac:
+        enabled: false
+      extraObjects:
+      - apiVersion: rbac.authorization.k8s.io/v1
+        kind: ClusterRoleBinding
+        metadata:
+          name: argocd-attach-cluster-admin
+        roleRef:
+          apiGroup: rbac.authorization.k8s.io
+          kind: ClusterRole
+          name: cluster-admin
+        subjects:
+        # bare `argo-attach-sa` resolves here (cluster-apps sync destination);
+        # the SA object itself need not exist — impersonation is string-based.
+        - kind: ServiceAccount
+          name: argo-attach-sa
+          namespace: default
