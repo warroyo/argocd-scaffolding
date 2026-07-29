@@ -364,9 +364,21 @@ config, your values never reach helm, and the chart dies on its own defaults
 (`Undefined image for application container`). Fix is one field on the
 `AddonInstall`:
 ```yaml
-addonConfigNameTemplate: "{{.cluster.name}}-argocd-attach-rbac"
+addonConfigNameTemplate: "{{.cluster.name}}-argocd-attach-rbac-{{.addon.name}}"
 ```
 Rule: if the directory name differs from `addonRef.name`, set the template.
+Two constraints the CRD description gets wrong — both verified live:
+- **`{{.addon.name}}` is mandatory.** The webhook rejects any template without
+  it (`should be unique per addon`); `{{.cluster.uid}}` does not substitute.
+  So the chart name always appears in the config name, and the `AddonConfig`
+  is `cluster-{addon}-{chart}` (here `cluster-argocd-attach-rbac-application`,
+  injector-prefixed to `<cluster>-argocd-attach-rbac-application`). The CRD's
+  own Example 1 (`"{{.cluster.name}}-antrea"`) would be rejected — don't copy it.
+- **The field is immutable.** It can only be set at creation, so adding it to
+  a live `AddonInstall` means deleting the object and letting ArgoCD recreate
+  it. Worse, ArgoCD's server-side diff dry-run hits the same rejection and
+  reports a stale **`Synced`** instead of `OutOfSync` — a hard refresh turns
+  it into a visible `ComparisonError`. See `docs/DECISIONS.md` #18.
 
 Override chain is base → env → cluster, same as every other value here:
 `base/{addon}/config` holds defaults, `components/envs/{env}` may patch per

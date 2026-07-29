@@ -383,9 +383,12 @@ ones — so authored configs (`base/{addon}/config`, injector-prefixed to
 `<cluster>-{addon}`) carry values only. Note the lookup keys on the **addon**
 name, so an add-on whose directory differs from its `addonRef` (a generic chart
 used for one purpose, like `argocd-attach-rbac` on Stakater `application`) must
-set `addonConfigNameTemplate` explicitly or its values are silently dropped —
-see CLAUDE.md "Add-on config" → generic charts. Which leaves one question per
-add-on: does it need config at all?
+set `addonConfigNameTemplate` explicitly or its values are silently dropped. That
+template must contain `{{.addon.name}}` (webhook-enforced) and is immutable, so
+such a config is named `cluster-{addon}-{chart}` and changing the template means
+recreating the `AddonInstall` — see CLAUDE.md "Add-on config" → generic charts
+and `docs/DECISIONS.md` #18. Which leaves one question per add-on: does it need
+config at all?
 
 - **Required** — the add-on is *wrong* on defaults. Listed in
   `components/addon-defaults`, which `profiles/common` pulls, so every cluster

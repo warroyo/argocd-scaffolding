@@ -684,6 +684,30 @@ is silent and misleading — the controller auto-generates an empty config, the
 `helmValues` above never reach helm, and the chart fails on its own defaults
 (`Undefined image for application container`) as though the chart were at fault.
 
+**The template's two undocumented constraints.** Both were found by trying it
+against the live webhook, and both contradict the CRD's own description:
+
+*`{{.addon.name}}` is mandatory.* The webhook rejects any template lacking it
+(`addonConfigNameTemplate is invalid ... should be unique per addon`), and
+`{{.cluster.uid}}` does not substitute — the CRD text presents the token as one
+way to achieve uniqueness, but it is enforced as a requirement, and the CRD's
+Example 1 (`"{{.cluster.name}}-antrea"`) would itself be rejected. The
+consequence is that the chart name is always part of the config name: the
+template here is `{{.cluster.name}}-argocd-attach-rbac-{{.addon.name}}` and the
+`AddonConfig` is `cluster-argocd-attach-rbac-application`. It stays stable
+across version bumps because `{{.addon.name}}` renders `addonRef.name` (the
+chart), not the release.
+
+*The field is immutable*, so it only takes effect on an object created with it.
+Adding it to a live `AddonInstall` requires deleting the object and letting
+`namespace-resources` recreate it — safe here, since `stopMatchingBehavior:
+Delete` only uninstalls an addon that is already failing. The trap is how this
+surfaces in ArgoCD: server-side diff runs a dry-run apply, which the same
+webhook rejects, so the Application keeps reporting a stale **`Synced`** rather
+than `OutOfSync`. A hard refresh converts it into a visible `ComparisonError`.
+Treat "Synced but the live object plainly doesn't match git" as a signal to
+hard-refresh before believing the status.
+
 **Mandatory, not bundled.** Every cluster's `cluster-apps` is broken without
 this, so the `AddonInstall` selects *every* cluster
 (`cluster.x-k8s.io/cluster-name Exists`) — not the `standard` bundle — and has
