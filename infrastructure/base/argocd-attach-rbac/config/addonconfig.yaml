@@ -3,13 +3,14 @@
 # subject default:argo-attach-sa. No SA object and no bespoke role — ArgoCD's
 # bare `argo-attach-sa` impersonation (cluster-apps destination = default)
 # resolves against this binding (RBAC is string-based; the SA needn't exist).
-# Name is injector-prefixed to <cluster>-argocd-attach-rbac; the AddonInstall's
-# addonConfigNameTemplate must point here (addonRef is the generic `application`
-# chart, so the default lookup would miss). See docs/DECISIONS.md #18.
+# Name is injector-prefixed to <cluster>-argocd-attach-rbac-application, matching
+# the AddonInstall's addonConfigNameTemplate — addonRef is the generic
+# `application` chart, and the webhook requires {{.addon.name}} in the template,
+# so the chart name is the trailing segment. See docs/DECISIONS.md #18.
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonConfig
 metadata:
-  name: cluster-argocd-attach-rbac
+  name: cluster-argocd-attach-rbac-application
   labels:
     app.kubernetes.io/name: argocd-attach-rbac
     config.k8s.io/inject-cluster-name-prefix: "true"

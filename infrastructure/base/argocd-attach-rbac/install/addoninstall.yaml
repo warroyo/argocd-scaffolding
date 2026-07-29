@@ -13,9 +13,10 @@ spec:
   addonRef:
     name: application
   # Required: the addon name is the generic chart (`application`), so the default
-  # config name would be <cluster>-application, not our config. See CLAUDE.md
-  # "Add-on config" → generic charts.
-  addonConfigNameTemplate: "{{.cluster.name}}-argocd-attach-rbac"
+  # config name would collide with any other install of it. The webhook requires
+  # {{.addon.name}} in the template. Immutable — changing it means recreating the
+  # AddonInstall. See CLAUDE.md "Add-on config" → generic charts.
+  addonConfigNameTemplate: "{{.cluster.name}}-argocd-attach-rbac-{{.addon.name}}"
   # Helm-based addon: ref.name is "<chart>.<version>", no AddonRelease CR.
   releaseFilter:
     ref:
