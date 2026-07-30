@@ -121,12 +121,14 @@ registered when Part 3's first cluster comes up, that reference resolves
 against nothing and the add-on install fails. Registering it now costs one
 `kubectl apply`.
 
-One prerequisite: your clusters need a **3.7+ cluster class**
-(`builtin-generic-v3.7.0`, pinned in `infrastructure/components/envs/{env}`).
-That is what makes the platform install helm-controller, which supplies the
-`HelmRepository` CRD and `vmware-system-helm` namespace a helm-based add-on
-renders into. On a 3.6 class the add-on stalls at `dependency
-"helm-controller" not installed`.
+One prerequisite for the **helm-based** registration below (`external-secrets`):
+your clusters need a **3.7+ cluster class** (`builtin-generic-v3.7.0`, pinned
+in `infrastructure/components/envs/{env}`). That is what makes the platform
+install helm-controller, which supplies the `HelmRepository` CRD and
+`vmware-system-helm` namespace a helm-based add-on renders into. On a 3.6
+class the add-on stalls at `dependency "helm-controller" not installed`. The
+`dayzero` registration further down is an imgpkg/Carvel package repo, not a
+helm chart, so it needs neither helm-controller nor the 3.7+ class.
 
 That registration (`AddonRepository` + `AddonRepositoryInstall`,
 `addons.kubernetes.vmware.com`) can **only** be created in
@@ -146,21 +148,29 @@ VCF install; ask whoever administers the vSphere/VCF fleet.
 
 ```sh
 kubectl apply -f supervisor-addons/external-secrets.yaml
-kubectl apply -f supervisor-addons/stakater-application.yaml
+kubectl apply -f supervisor-addons/dayzero.yaml
 ```
 
-The second registers the Stakater `application` chart used by the **mandatory**
-`argocd-attach-rbac` addon — it renders the `default:argo-attach-sa`
-cluster-admin identity on each workload cluster that ArgoCD's `cluster-apps`
-sync impersonates. **Without it the standard app stack cannot sync to any
-workload cluster** (the sync fails resolving `default:argo-attach-sa`). Full
-rationale: `docs/DECISIONS.md` #18.
+The second registers [dayzero-addon-service](https://github.com/warroyo/dayzero-addon-service)
+(an imgpkg/Carvel package repo, not a helm chart — no 3.7+/helm-controller
+prerequisite for this one), used by the **mandatory** `argocd-attach-rbac`
+addon — it seeds the `default:argo-attach-sa` cluster-admin identity on each
+workload cluster that ArgoCD's `cluster-apps` sync impersonates. **Without it
+the standard app stack cannot sync to any workload cluster** (the sync fails
+resolving `default:argo-attach-sa`). Full rationale: `docs/DECISIONS.md` #18.
 
 *You should see* the objects created:
 
 ```sh
 kubectl get addonrepository,addonrepositoryinstall -n vmware-system-vks-public \
-  | grep -E 'external-secrets|stakater'
+  | grep -E 'external-secrets|dayzero'
+```
+
+Then confirm the manager materialised the `AddonRelease` and grab its exact
+name for the env pin (`infrastructure/components/envs/{env}/argocd-attach-rbac`):
+
+```sh
+kubectl -n vmware-system-vks-public get addonrelease | grep dayzero
 ```
 
 One-time per addon — re-run the same `kubectl apply` (it's idempotent) only

@@ -382,13 +382,15 @@ that ship none, and fills `addonConfigDefinitionRef` + `clusterName` on authored
 ones — so authored configs (`base/{addon}/config`, injector-prefixed to
 `<cluster>-{addon}`) carry values only. Note the lookup keys on the **addon**
 name, so an add-on whose directory differs from its `addonRef` (a generic chart
-used for one purpose, like `argocd-attach-rbac` on Stakater `application`) must
-set `addonConfigNameTemplate` explicitly or its values are silently dropped. That
+used for one purpose under a project-specific directory name) must set
+`addonConfigNameTemplate` explicitly or its values are silently dropped. That
 template must contain `{{.addon.name}}` (webhook-enforced) and is immutable, so
-such a config is named `cluster-{addon}-{chart}` and changing the template means
-recreating the `AddonInstall` — see CLAUDE.md "Add-on config" → generic charts
-and `docs/DECISIONS.md` #18. Which leaves one question per add-on: does it need
-config at all?
+such a config is named `cluster-{directory}-{chart}` and changing the template
+means recreating the `AddonInstall` — see CLAUDE.md "Add-on config" → generic
+charts and `docs/DECISIONS.md` #18. `argocd-attach-rbac` no longer needs this:
+its addon (`dayzero-addon-service`) has `addonRef.name` = `dayzero`, which
+already matches the required config name. Which leaves one question per
+add-on: does it need config at all?
 
 - **Required** — the add-on is *wrong* on defaults. Listed in
   `components/addon-defaults`, which `profiles/common` pulls, so every cluster
@@ -593,8 +595,9 @@ what to keep, what to swap for your environment.
 - The workload-cluster platform identity: with sync impersonation on globally,
   `cluster-apps` (infra project) needs `default:argo-attach-sa` cluster-admin on
   each guest to sync the standard stack. The mandatory `argocd-attach-rbac`
-  addon renders one ClusterRoleBinding to the existing `cluster-admin` for it
-  (Stakater `application` chart via `extraObjects`); tenant syncs still scope to
+  addon seeds one ClusterRoleBinding to the existing `cluster-admin` for it
+  (the [dayzero-addon-service](https://github.com/warroyo/dayzero-addon-service)
+  day-zero addon via `values.resources`); tenant syncs still scope to
   `tenant-sync-<project>`. Full reasoning: `docs/DECISIONS.md` #18.
 - The stateless-helper approach to short-lived vcfa credentials
 

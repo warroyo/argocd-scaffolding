@@ -1,0 +1,37 @@
+# Hand-applied only (Supervisor-admin kubectl) — never Terraform/GitOps.
+# Registers the dayzero-addon-service Carvel package repo
+# (github.com/warroyo/dayzero-addon-service), used by the argocd-attach-rbac
+# addon to seed the workload-cluster platform identity (ClusterRoleBinding)
+# that ArgoCD's cluster-apps impersonates. See docs/DECISIONS.md #14/#18,
+# docs/GETTING-STARTED.md Part 1.2.
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonRepository
+metadata:
+  name: dayzero-addon-repo
+  namespace: vmware-system-vks-public
+  annotations:
+    # Required by the validating webhook; must mirror spec.version and the
+    # package name/versions below. Undocumented in the CRD — see docs/DECISIONS.md #14.
+    addons.kubernetes.vmware.com/package-offerings: |
+      {
+        "repositoryVersion": "1.0.1",
+        "packages": {
+          "dayzero.kubernetes.vmware.com": { "versions": ["1.0.1"] }
+        }
+      }
+spec:
+  targetRepositoryName: dayzero-addon-repo
+  version: "1.0.1" # catalog-entry version; matches the published bundle tag
+  fetch:
+    imgpkgBundle:
+      imageURL: ghcr.io/warroyo/dayzero-addon-repo:1.0.1
+---
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonRepositoryInstall
+metadata:
+  name: dayzero-addon-repo-install
+  namespace: vmware-system-vks-public
+spec:
+  addonRepositoryRef:
+    name: dayzero-addon-repo
+    namespace: vmware-system-vks-public

@@ -61,7 +61,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | Per-environment profile: references `profiles/common` and adds only the `envs/{env}` overlay, so a new environment is one small file. |
 | `infrastructure/components/addon-bundles/{bundle}/` | Which add-ons a bundle turns on, as one cluster label (`addons.kubernetes.vmware.com/profile`). Labels only — config lives in `addon-defaults`. See "VKS add-ons" → add-on bundles. |
 | `infrastructure/components/addon-defaults/` | The `AddonConfig`s shipped to every cluster (values an add-on is wrong without). One line per add-on; patch per env or per cluster on top. See "VKS add-ons" → add-on config. |
-| `infrastructure/base/argocd-attach-rbac/` + `supervisor-addons/stakater-application.yaml` | **Mandatory baseline addon.** Renders (via the Stakater `application` chart, driven by `helmValues.extraObjects`) **one** `ClusterRoleBinding` granting the existing `cluster-admin` to `default:argo-attach-sa` on every workload cluster — the identity ArgoCD's `cluster-apps` sync impersonates under the `infra` project (no SA object; RBAC/impersonation are string-based). Without it the standard app stack can't sync to any workload cluster. Selects **every** cluster (`cluster.x-k8s.io/cluster-name Exists`), no opt-out; config in `addon-defaults`, install in every `namespace-resources`. Register the chart repo once (Supervisor-admin, `docs/GETTING-STARTED.md` Part 1.2). Rationale: `docs/DECISIONS.md` #18. |
+| `infrastructure/base/argocd-attach-rbac/` + `supervisor-addons/dayzero.yaml` | **Mandatory baseline addon.** Seeds (via the [dayzero-addon-service](https://github.com/warroyo/dayzero-addon-service) day-zero addon, driven by `values.resources`) **one** `ClusterRoleBinding` granting the existing `cluster-admin` to `default:argo-attach-sa` on every workload cluster — the identity ArgoCD's `cluster-apps` sync impersonates under the `infra` project (no SA object; RBAC/impersonation are string-based). Without it the standard app stack can't sync to any workload cluster. Selects **every** cluster (`cluster.x-k8s.io/cluster-name Exists`), no opt-out; config in `addon-defaults`, install in every `namespace-resources`. Register the addon repo once (Supervisor-admin, `docs/GETTING-STARTED.md` Part 1.2). Rationale: `docs/DECISIONS.md` #18. |
 | `apps/base/secret-store/` | Workload-cluster wiring that consumes external-secrets against the VCF Secret Store Service (OpenBao): the `secret-store-access` SA + `system:auth-delegator` CRB and the `vcf-cluster-store` `ClusterSecretStore`. Ships default-on via the standard app stack; opt out with `apps/components/disable-secret-store`. Mount/role are injected from `ns-vars` + `cluster_name`; the endpoint IP is an infra env value (`components/envs/{env}` patch on the external-secrets `AddonConfig` `hostAliases`), the CA bundle an apps env value (`apps/components/envs/{env}` patch). See "Wiring the secret store" and `docs/ARCHITECTURE.md`. |
 | `infrastructure/components/envs/{env}/`, `apps/components/envs/{env}/` | Real per-environment values AND version pins (bases hold only `replace-me` placeholders). Always-on versions (cluster class, k8s, AKO; package bundle/baseline) apply via the profiles; shared add-on versions live in feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp` — `releaseFilter.ref.name`, an `AddonRelease` name) included by the namespace's `namespace-resources` kustomization. Per-cluster canary: `patches:` in the cluster kustomization. |
 | `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
@@ -200,6 +200,14 @@ helm chart repo be registered as an installable addon directly with a plain
 CR, no Carvel packaging pipeline needed. Full rationale in `docs/DECISIONS.md`
 #14. This section is the recipe; once registered, consumption is the exact
 same Variant A pattern as any other add-on (CLAUDE.md "VKS add-ons").
+
+The same `AddonRepository`/`AddonRepositoryInstall` shape also registers an
+**imgpkg**-based (Carvel package) addon repo — swap `spec.fetch.helmRepository`
+for `spec.fetch.imgpkgBundle.imageURL` and drop `addonFilters` (see
+`supervisor-addons/dayzero.yaml`, used by `argocd-attach-rbac`); no
+helm-controller/3.7+ prerequisite either, since there's no `HelmRepository` CR
+to render. `releaseFilter.ref.name` for one of these is the Carvel package's
+`refName.version`, not the helm `chart.version` convention below.
 
 **Prerequisite: a 3.7+ cluster class** (`builtin-generic-v3.7.0`, pinned in
 `components/envs/{env}`). Helm-based add-ons render a `HelmRepository` CR,
@@ -356,29 +364,33 @@ merely unopinionated?* Wrong → `addon-defaults`. Unopinionated → opt-in comp
 config by `<cluster>-<spec.addonRef.name>` — the **addon** name, not the
 directory or `app.kubernetes.io/name` label. Those coincide for most add-ons
 (`external-secrets`), so `cluster-{addon}` just works. They do **not** coincide
-when the add-on is one purpose-specific use of a generic chart:
-`argocd-attach-rbac` installs the Stakater `application` chart, so the default
-lookup is `<cluster>-application`. Get this wrong and it fails silently in a
-way that looks like a chart bug — the controller auto-generates an empty
-config, your values never reach helm, and the chart dies on its own defaults
-(`Undefined image for application container`). Fix is one field on the
-`AddonInstall`:
+when the add-on is one purpose-specific use of a shared generic chart whose
+`addonRef.name` isn't the directory name — e.g. installing the Stakater
+`application` chart under a project-specific directory name would default to
+`<cluster>-application`, not `<cluster>-{directory}`. Get this wrong and it
+fails silently in a way that looks like a chart bug — the controller
+auto-generates an empty config, your values never reach helm, and the chart
+dies on its own defaults. Fix is one field on the `AddonInstall`:
 ```yaml
-addonConfigNameTemplate: "{{.cluster.name}}-argocd-attach-rbac-{{.addon.name}}"
+addonConfigNameTemplate: "{{.cluster.name}}-{directory}-{{.addon.name}}"
 ```
 Rule: if the directory name differs from `addonRef.name`, set the template.
 Two constraints the CRD description gets wrong — both verified live:
 - **`{{.addon.name}}` is mandatory.** The webhook rejects any template without
   it (`should be unique per addon`); `{{.cluster.uid}}` does not substitute.
   So the chart name always appears in the config name, and the `AddonConfig`
-  is `cluster-{addon}-{chart}` (here `cluster-argocd-attach-rbac-application`,
-  injector-prefixed to `<cluster>-argocd-attach-rbac-application`). The CRD's
-  own Example 1 (`"{{.cluster.name}}-antrea"`) would be rejected — don't copy it.
+  is `cluster-{directory}-{chart}`. The CRD's own Example 1
+  (`"{{.cluster.name}}-antrea"`) would be rejected — don't copy it.
 - **The field is immutable.** It can only be set at creation, so adding it to
   a live `AddonInstall` means deleting the object and letting ArgoCD recreate
   it. Worse, ArgoCD's server-side diff dry-run hits the same rejection and
   reports a stale **`Synced`** instead of `OutOfSync` — a hard refresh turns
   it into a visible `ComparisonError`. See `docs/DECISIONS.md` #18.
+
+This repo has no current add-on that needs it — `argocd-attach-rbac` moved off
+the generic Stakater chart onto the purpose-built dayzero-addon-service, whose
+`addonRef.name` ("dayzero") already matches the required config name. Keep
+this recipe for the next add-on that reuses a shared generic chart.
 
 Override chain is base → env → cluster, same as every other value here:
 `base/{addon}/config` holds defaults, `components/envs/{env}` may patch per

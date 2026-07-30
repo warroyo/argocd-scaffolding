@@ -1,6 +1,8 @@
-# Dev argocd-attach-rbac version pin (Stakater application chart name.version,
-# not an AddonRelease), included by a namespace's namespace-resources after
-# base/argocd-attach-rbac/install. See CLAUDE.md "Rolling a version".
+# Dev argocd-attach-rbac version pin — the dayzero AddonRelease name (the
+# Carvel package refName.version, verify with `kubectl -n
+# vmware-system-vks-public get addonrelease | grep dayzero` after registering
+# supervisor-addons/dayzero.yaml), included by a namespace's namespace-resources
+# after base/argocd-attach-rbac/install. See CLAUDE.md "Rolling a version".
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
@@ -13,4 +15,4 @@ patches:
   patch: |-
     - op: replace
       path: /spec/releaseFilter/ref/name
-      value: "application.9.0.0" # Dev Stakater application chart version
+      value: "dayzero.kubernetes.vmware.com.1.0.1" # dayzero-addon-service release

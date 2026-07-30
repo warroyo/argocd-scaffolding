@@ -666,47 +666,46 @@ exist. This is the same `cluster-admin` role VKS auth-sync binds for the
 supervisor-ns SA, just under a uniform `default:…` subject so one bare name
 works for every cluster.
 
-**Why the Stakater `application` chart, not a bespoke one.** The addon needs a
-helm chart (VKS helm addons render one). Rather than build and host a chart for
-one binding, register the public Stakater `application` chart
-(`supervisor-addons/stakater-application.yaml`) and drive it via `helmValues`
-(`deployment/service/rbac` all off, the binding in `extraObjects`) to emit
-exactly that one `ClusterRoleBinding` — verified it renders nothing else. Same
-custom-helm-addon path as external-secrets (#14): one-time Supervisor-admin
-`AddonRepository` registration, then ordinary GitOps `AddonInstall`.
+**Why the dayzero-addon-service, not a bespoke chart.** The first version of
+this addon reused the public Stakater `application` helm chart, driven via
+`helmValues` (`deployment/service/rbac` all off, the binding in `extraObjects`)
+to emit exactly one `ClusterRoleBinding`. It worked, but borrowing a generic
+chart for one binding meant fighting the controller's config-name lookup (see
+"the addonConfigNameTemplate trap" below) and carrying a chart whose actual
+job (running a Deployment) had nothing to do with this addon's job (rendering
+RBAC). [dayzero-addon-service](https://github.com/warroyo/dayzero-addon-service)
+replaces it: a purpose-built VKS addon whose only job is applying
+operator-supplied Kubernetes YAML into a workload cluster at provisioning time
+— namespaces, service accounts, RBAC, quotas — as data in `AddonConfig.spec.values`,
+no chart, no image, no per-payload artifact. Same custom-addon path as
+external-secrets (#14): one-time Supervisor-admin `AddonRepository`
+registration (`supervisor-addons/dayzero.yaml`, an **imgpkg** bundle rather
+than a helm repo — no 3.7+/helm-controller prerequisite), then an ordinary
+GitOps `AddonInstall` + `AddonConfig` (`infrastructure/base/argocd-attach-rbac/`).
+The payload is the same single `ClusterRoleBinding`, now authored as structured
+YAML in `spec.values.resources` instead of chart `extraObjects`.
 
-One consequence of reusing a generic chart: the controller resolves an add-on's
-`AddonConfig` by `<cluster>-<addonRef.name>`, which here is
-`<cluster>-application`, not `<cluster>-argocd-attach-rbac`. Every other add-on
-in this repo is named after its own chart so the default just works; this one
-must set `addonConfigNameTemplate` on the `AddonInstall`. Without it the failure
-is silent and misleading — the controller auto-generates an empty config, the
-`helmValues` above never reach helm, and the chart fails on its own defaults
-(`Undefined image for application container`) as though the chart were at fault.
-
-**The template's two undocumented constraints.** Both were found by trying it
-against the live webhook, and both contradict the CRD's own description:
-
-*`{{.addon.name}}` is mandatory.* The webhook rejects any template lacking it
-(`addonConfigNameTemplate is invalid ... should be unique per addon`), and
-`{{.cluster.uid}}` does not substitute — the CRD text presents the token as one
-way to achieve uniqueness, but it is enforced as a requirement, and the CRD's
-Example 1 (`"{{.cluster.name}}-antrea"`) would itself be rejected. The
-consequence is that the chart name is always part of the config name: the
-template here is `{{.cluster.name}}-argocd-attach-rbac-{{.addon.name}}` and the
-`AddonConfig` is `cluster-argocd-attach-rbac-application`. It stays stable
-across version bumps because `{{.addon.name}}` renders `addonRef.name` (the
-chart), not the release.
-
-*The field is immutable*, so it only takes effect on an object created with it.
-Adding it to a live `AddonInstall` requires deleting the object and letting
-`namespace-resources` recreate it — safe here, since `stopMatchingBehavior:
-Delete` only uninstalls an addon that is already failing. The trap is how this
-surfaces in ArgoCD: server-side diff runs a dry-run apply, which the same
-webhook rejects, so the Application keeps reporting a stale **`Synced`** rather
-than `OutOfSync`. A hard refresh converts it into a visible `ComparisonError`.
-Treat "Synced but the live object plainly doesn't match git" as a signal to
-hard-refresh before believing the status.
+**The addonConfigNameTemplate trap this sidesteps.** The controller resolves an
+add-on's `AddonConfig` by `<cluster>-<addonRef.name>`. Reusing a chart whose own
+name doesn't match the consuming directory (the Stakater chart is `application`,
+this directory is `argocd-attach-rbac`) means the default lookup is
+`<cluster>-application`, not `<cluster>-argocd-attach-rbac` — get it wrong and
+the failure is silent and misleading: the controller auto-generates an empty
+config, the values never reach the chart, and it fails on its own defaults as
+though the chart were at fault. Avoiding it needs `addonConfigNameTemplate` set
+on the `AddonInstall`, which the CRD documents loosely but the live webhook
+enforces strictly: `{{.addon.name}}` is mandatory in the template
+(`{{.cluster.uid}}` does not substitute, contrary to the CRD's own Example 1),
+so the chart name is always part of the resulting config name, and the field is
+**immutable** — changing it means deleting and recreating the `AddonInstall`,
+which ArgoCD's server-side diff dry-run reports as a stale `Synced` rather than
+`OutOfSync` until a hard refresh. None of this applies to dayzero:
+`addonRef.name` is `dayzero`, and dayzero's own controller *requires* the
+`AddonConfig` to be named `<cluster>-dayzero` regardless — the two conventions
+coincide, so the default lookup just works and no template is needed. This trap
+is kept as a documented recipe (CLAUDE.md "Add-on config" → generic charts) for
+the next add-on that reuses a shared generic chart, since it is a real VKS
+constraint, not one specific to Stakater.
 
 **Mandatory, not bundled.** Every cluster's `cluster-apps` is broken without
 this, so the `AddonInstall` selects *every* cluster
