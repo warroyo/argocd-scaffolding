@@ -55,7 +55,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 |------|---------|
 | `terraform/infra/tenants.yaml` | Tenants, namespaces (incl. `environment`), ArgoCD bootstrap, cluster labels, optional `source_repos` (tenant AppProject scoping), `vpc_private_cidr`, and `policies` (per-tenant custom cluster policy catalog — see "Adding a policy") |
 | `terraform/infra/policies.tf`, `terraform/infra/rego/*.rego` | The custom cluster policy catalog (`local.policy_catalog`) — one entry per policy kind, referenced by name from a tenant's `policies:` block in `tenants.yaml`. See "Adding a policy". |
-| `supervisor-addons/{addon}.yaml` | Registers a third-party helm chart repo as an installable VKS addon (`AddonRepository`/`AddonRepositoryInstall` in `vmware-system-vks-public`). **Not Terraform, not GitOps** — `vmware-system-vks-public` is genuine Supervisor-scope, unreachable by this repo's org-admin (`kubernetes.vcfa-org`) or per-tenant-namespace credentials. Hand-authored, applied manually out-of-band with `kubectl` by a human holding Supervisor-admin access; commands in `docs/GETTING-STARTED.md` Part 1.2. See "Adding a custom helm addon". |
+| `supervisor-addons/{addon}.yaml` | Registers a third-party helm chart repo as an installable VKS addon (`AddonRepository`/`AddonRepositoryInstall` in `vmware-system-vks-public`). **Not Terraform, not GitOps** — `vmware-system-vks-public` is genuine Supervisor-scope, unreachable by this repo's org-admin (`kubernetes.vcfa-org`) or per-tenant-namespace credentials. Hand-authored, applied manually out-of-band with `kubectl` by a human holding Supervisor-admin access; commands in `docs/GETTING-STARTED.md` Part 1.2. A registered repo is **frozen** — never edit one in place. Where upstream publishes a rolling tag (dayzero) the file never changes at all; otherwise a new version is an appended repo+install pair. See "Adding a custom helm addon" and "Rolling an addon repo version". |
 | `terraform/modules/cluster-policy/`, `terraform/modules/cluster-policy-template/` | Vendored from [warroyo/vcfa-terraform-examples](https://github.com/warroyo/vcfa-terraform-examples/tree/main/cluster-policy-custom) (split into two modules — see "Adding a policy" for why). Not tenant-specific; do not edit for a new policy, only to change the underlying `ClusterPolicy`/`ClusterPolicyTemplate` mechanics. |
 | `infrastructure/profiles/common/`, `apps/profiles/common/` | The env-agnostic half of every profile — bases + always-on components + the add-on bundle + `addon-defaults`. Edit to change every cluster in EVERY environment. |
 | `infrastructure/profiles/{env}/`, `apps/profiles/{env}/` | Per-environment profile: references `profiles/common` and adds only the `envs/{env}` overlay, so a new environment is one small file. |
@@ -234,7 +234,10 @@ add-on fails with `dependency "helm-controller" not installed`.
    `kubectl apply -f supervisor-addons/{addon}.yaml` using your own
    Supervisor-admin session — see `docs/GETTING-STARTED.md` Part 1.2. Re-apply
    only when the file changes (new chart version, etc.) — never via `make
-   apply` or CI.
+   apply` or CI. **A registered repo is frozen** (see "Rolling an addon repo
+   version" below): never edit one in place. Prefer registering a **rolling
+   tag** whose catalog carries every version, as `dayzero` does — then the file
+   is written once and versions are chosen entirely by the env pin.
 2. `infrastructure/base/{addon}/` — the `AddonInstall`, same shape as any
    other add-on, with one difference: `releaseFilter.ref.name` is
    `"<chart_name>.<version>"` instead of the vendor's longer `AddonRelease`
@@ -472,3 +475,50 @@ applied via namespace-resources), or `apps/components/envs/{env}`
 single cluster with a `patches:` override in its kustomization before bumping the
 env pin (for shared add-ons, canary per namespace: a `patches:` override in one
 namespace-resources kustomization).
+
+### Rolling an addon repo version (`supervisor-addons/{addon}.yaml`)
+Only for add-ons this repo registers itself (external-secrets, dayzero) — the
+vendor's pre-registered add-ons have no such file. **Never edit a registered
+repo in place.** Once its `AddonRepositoryInstall` exists the webhook freezes
+the `AddonRepository` — only `spec.addonFilters` may change, and that's a
+helm-repo field, so an imgpkg repo is frozen outright. Even a lone
+`spec.fetch` edit is rejected (`AddonRepository is in use by an
+AddonRepositoryInstall`). Rationale: `docs/DECISIONS.md` #19.
+
+Which recipe applies depends on whether the upstream repo publishes a **rolling
+tag**:
+
+**A. Rolling-tag catalog (dayzero) — nothing to do here.** The registration
+points at a moving tag (`ghcr.io/warroyo/dayzero-addon-repo:stable`) whose
+catalog carries every published version at once, so a new addon version
+materialises as another `AddonRelease` by itself (the repo re-resolves the tag
+roughly every 10 min). `supervisor-addons/dayzero.yaml` is frozen deliberately
+— `spec.version` (`1.0.0`) is the *registration* version, not the addon's, and
+the `package-offerings` annotation carries `versions: []` so it never needs an
+edit either. Rolling a version is only the env pin bump:
+1. Confirm the release landed —
+   `kubectl -n vmware-system-vks-public get addonrelease | grep {addon}`.
+2. Bump `releaseFilter.ref.name` in `components/envs/{env}/{addon}` and commit.
+   Pin first and the filter matches nothing. Rollback is reverting that line —
+   the older `AddonRelease` never went away.
+
+**B. No rolling tag (external-secrets) — append a pair.**
+1. **Append** a second `AddonRepository` + `AddonRepositoryInstall` pair to the
+   same file for the new version. Both need names distinct from the old pair's,
+   and so does `spec.targetRepositoryName` — it names the backing Carvel
+   `PackageRepository`, so reusing it collides. Convention:
+   `{addon}-addon-repo-{v-with-dashes}`.
+2. Hand-apply (Supervisor-admin): `kubectl apply -f supervisor-addons/{addon}.yaml`.
+   The untouched old pair applies as `unchanged`; only the new pair is created.
+   Two repos serving the same package `refName` coexist fine — Carvel writes
+   the `Package` objects with `kapp.k14s.io/create-strategy:
+   fallback-on-update-or-noop`, so the newcomer no-ops on versions the older
+   repo already materialised instead of fighting it (verified live).
+3. Confirm the new `AddonRelease` exists, then commit the env pin bump.
+4. Retire the old pair once clusters are off it — **and not before**. The
+   webhook refuses to delete an `AddonRepositoryInstall` while any live
+   `ClusterAddon` still references a package version it serves (`Package
+   "<name>" (version "<v>") is still referenced by ClusterAddon "<x>"`), and
+   refuses to delete the `AddonRepository` while its install exists. So the
+   order is: move every cluster's pin → let ArgoCD sync → delete the install →
+   delete the repo → drop the pair from the file.

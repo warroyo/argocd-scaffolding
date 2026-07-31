@@ -173,9 +173,26 @@ name for the env pin (`infrastructure/components/envs/{env}/argocd-attach-rbac`)
 kubectl -n vmware-system-vks-public get addonrelease | grep dayzero
 ```
 
-One-time per addon — re-run the same `kubectl apply` (it's idempotent) only
-when you add a `versions` entry or bump `spec.version` in the file. To
-register another custom addon, add a new `supervisor-addons/{addon}.yaml`
+One-time per addon, and for `dayzero` genuinely once: its registration follows
+the rolling `ghcr.io/warroyo/dayzero-addon-repo:stable` tag, whose catalog
+carries every published package version at once, so later addon versions show
+up as additional `AddonRelease`s on their own (the repo re-resolves the tag
+roughly every 10 minutes) and the env pin picks between them. Nothing in
+`supervisor-addons/dayzero.yaml` changes to roll a version — do not bump
+`spec.version`, the `package-offerings` annotation, or the image tag.
+
+That is not politeness, it is the only workable shape: **a registered repo
+cannot be edited in place.** Once its `AddonRepositoryInstall` exists the
+webhook freezes every field but `spec.addonFilters` (a helm-repo field — so an
+imgpkg repo like `dayzero` is frozen outright), and any bump fails with
+`AddonRepository is in use by an AddonRepositoryInstall`. Full reasoning:
+`docs/DECISIONS.md` #19.
+
+`external-secrets` has no such rolling tag — it registers a plain helm chart
+repo, so a new chart version there is an appended repo+install pair. CLAUDE.md
+"Rolling an addon repo version" has that recipe.
+
+To register another custom addon, add a new `supervisor-addons/{addon}.yaml`
 following the same shape and repeat this step; CLAUDE.md's "Adding a custom
 helm addon" has the rest of the recipe (the ordinary GitOps `AddonInstall`
 wiring).

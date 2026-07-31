@@ -2,36 +2,43 @@
 # Registers the dayzero-addon-service Carvel package repo
 # (github.com/warroyo/dayzero-addon-service), used by the argocd-attach-rbac
 # addon to seed the workload-cluster platform identity (ClusterRoleBinding)
-# that ArgoCD's cluster-apps impersonates. See docs/DECISIONS.md #14/#18,
+# that ArgoCD's cluster-apps impersonates. See docs/DECISIONS.md #14/#18/#19,
 # docs/GETTING-STARTED.md Part 1.2.
+#
+# Registered ONCE and never edited. The bundle tag is rolling (`:stable`) and
+# the catalog behind it carries every published package version at once, so a
+# new addon version needs no change here — it materialises as another
+# AddonRelease on its own and the env pin
+# (components/envs/{env}/argocd-attach-rbac) chooses between them. This is what
+# makes the repo's immutability-once-in-use a non-issue. docs/DECISIONS.md #19.
+#
+# Verbatim from the upstream release asset `dayzero-addonrepository.yml`
+# (github.com/warroyo/dayzero-addon-service/releases) — do not hand-tune the
+# names, targetRepositoryName, or the empty `versions` list; they are what keep
+# the object stable across releases.
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonRepository
 metadata:
-  name: dayzero-addon-repo
+  name: dayzero-addon-repo-stable
   namespace: vmware-system-vks-public
   annotations:
-    # Required by the validating webhook; must mirror spec.version and the
-    # package name/versions below. Undocumented in the CRD — see docs/DECISIONS.md #14.
-    addons.kubernetes.vmware.com/package-offerings: |
-      {
-        "repositoryVersion": "1.0.1",
-        "packages": {
-          "dayzero.kubernetes.vmware.com": { "versions": ["1.0.1"] }
-        }
-      }
+    # Required by the validating webhook, undocumented in the CRD (docs/DECISIONS.md #14).
+    # `versions: []` is deliberate — the catalog, not this annotation, decides
+    # what is offered, so the object never needs an edit to gain a version.
+    addons.kubernetes.vmware.com/package-offerings: '{"packages":{"dayzero.kubernetes.vmware.com":{"versions":[]}},"repositoryVersion":"1.0.0"}'
 spec:
-  targetRepositoryName: dayzero-addon-repo
-  version: "1.0.1" # catalog-entry version; matches the published bundle tag
+  targetRepositoryName: dayzero-addon-repo-stable
+  version: 1.0.0 # registration version, not the addon version — never bumped
   fetch:
     imgpkgBundle:
-      imageURL: ghcr.io/warroyo/dayzero-addon-repo:1.0.1
+      imageURL: ghcr.io/warroyo/dayzero-addon-repo:stable
 ---
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonRepositoryInstall
 metadata:
-  name: dayzero-addon-repo-install
+  name: dayzero-addon-repo-stable-install
   namespace: vmware-system-vks-public
 spec:
   addonRepositoryRef:
-    name: dayzero-addon-repo
+    name: dayzero-addon-repo-stable
     namespace: vmware-system-vks-public

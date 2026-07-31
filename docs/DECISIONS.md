@@ -720,3 +720,63 @@ chicken-and-egg with the broken `cluster-apps` path; once the addon lands,
 adds no escalation: only `system:masters` (the admin-cert connection ArgoCD
 already holds) can impersonate it. It's the same privilege the platform already
 has on the guest, named so ArgoCD can target it.
+
+## 19. How does an addon repo roll a version, given it can never be edited?
+
+**The constraint.** Once an `AddonRepositoryInstall` references an
+`AddonRepository`, the validating webhook freezes the repo: *only*
+`spec.addonFilters` may change. Bumping dayzero 1.0.1 → 1.0.2 in place was
+rejected on `spec.version` and on the `package-offerings` annotation
+(`AddonRepository is in use by an AddonRepositoryInstall`), and a follow-up
+server dry-run changing *nothing but* `spec.fetch.imgpkgBundle.imageURL` was
+rejected the same way. So the exemption is narrower than it first reads, and
+it doesn't help an **imgpkg** repo at all: `addonFilters` is a helm-repo
+field, so a Carvel package repo has no mutable surface whatsoever.
+
+Deleting the pair to recreate it is worse, and also not freely available. The
+webhook refuses to delete an `AddonRepositoryInstall` while any live
+`ClusterAddon` still references a package version it serves (verified live:
+`Package "dayzero.kubernetes.vmware.com" (version "1.0.1") is still referenced
+by ClusterAddon "dev1-cluster-dayzero"`), and refuses to delete the
+`AddonRepository` while its install exists. Even when permitted it takes the
+addon's whole object graph with it — `AddonRepositoryInstall` → Carvel
+`PackageRepository` → `Package`/`PackageMetadata` →
+`Addon`/`AddonRelease`/`AddonConfigDefinition`, the addon CRs being
+`ownerReferences`-owned by the Carvel objects. For `argocd-attach-rbac` that
+window is not cosmetic: it is the addon seeding the `default:argo-attach-sa`
+binding every workload cluster's `cluster-apps` sync impersonates (#18).
+
+**The resolution — move the mutability upstream.** The registration is written
+once and never touched again, because it points at a **rolling tag**
+(`ghcr.io/warroyo/dayzero-addon-repo:stable`) backing a catalog that carries
+every published package version at once. New addon versions arrive as
+additional `AddonRelease`s on their own (the repo re-resolves the tag roughly
+every 10 minutes); the env pin
+(`components/envs/{env}/argocd-attach-rbac` → `releaseFilter.ref.name`) picks
+between them. The frozen fields are then all *registration* facts rather than
+version facts: `spec.version: 1.0.0` names the registration, and
+`package-offerings` carries `versions: []` precisely so gaining a version is
+not an edit. A version roll becomes an ordinary one-line GitOps change and the
+rollback a revert — no Supervisor-admin session in the loop at all.
+
+**Why not a repo pair per version.** That was the first design here (dayzero
+1.0.1 and 1.0.2 as two pairs) and it works — two repos serving the same
+package `refName` coexist cleanly, because Carvel writes `Package` objects
+with `kapp.k14s.io/create-strategy: fallback-on-update-or-noop`, so the second
+repo no-ops on versions the first already materialised (verified live during
+this migration: registering the stable repo alongside the live 1.0.1 pair
+reconciled `ReconcileSucceeded` and added only 1.0.2). It is still the recipe
+for a repo with no rolling tag, like `external-secrets`. But it makes every
+version bump a hand-applied Supervisor-admin step, accumulates a pair per live
+version in the file, and — because of the delete gating above — the prune can
+only happen after every cluster's pin has moved. The rolling tag costs none of
+that.
+
+**The trade-off.** The registered content is no longer pinned by digest: what
+`:stable` resolves to changes without any change in this repo, so the
+Supervisor's catalog is trusted to the upstream publisher. Accepted, and the
+blast radius is small — the tag only adds package versions to a catalog;
+nothing reaches a cluster until an env pin names a specific `AddonRelease`, and
+that pin is still an explicit, reviewed, revertable commit here. Immutable
+per-version tags (`:1.0.2`) remain published upstream if a future policy needs
+a pinned registration instead.
