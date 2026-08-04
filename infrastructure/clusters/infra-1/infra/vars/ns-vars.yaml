@@ -14,6 +14,6 @@ metadata:
     config.kubernetes.io/local-config: "true"
 data:
   # vcfa-suffixed name (e.g. dev-1-abcde). Deploy target + secret-store role.
-  supervisor_namespace: "infra-nn9nk"
+  supervisor_namespace: "infra-33vwb"
   # Secret Store k8s-auth mount path is always kubernetes-<supervisor_ns>.
-  secret_store_auth_mount: "kubernetes-infra-nn9nk"
+  secret_store_auth_mount: "kubernetes-infra-33vwb"

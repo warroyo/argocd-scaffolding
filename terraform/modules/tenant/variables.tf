@@ -45,5 +45,5 @@ variable "vpc_connectivity_profile_name" {
 variable "vpc_private_cidr" {
   type        = string
   description = "Private CIDR for the tenant VPC. Every tenant gets the same default — override per tenant in tenants.yaml (vpc_private_cidr) if your VPCs are routed."
-  default     = null
+  default     = "172.30.0.0/16"
 }

@@ -58,7 +58,7 @@ module "tenant" {
   seg_name                      = var.seg_name
   project_name                  = each.value.name
   vpc_connectivity_profile_name = lookup(each.value, "vpc_connectivity_profile_name", null)
-  vpc_private_cidr              = lookup(each.value, "vpc_private_cidr", null)
+  vpc_private_cidr              = lookup(each.value, "vpc_private_cidr", "172.30.0.0/16")
   providers = {
     kubernetes = kubernetes.vcfa-org
   }
