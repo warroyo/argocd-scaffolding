@@ -646,3 +646,109 @@ One warning before you experiment freely:
 Where to go next: [ARCHITECTURE.md](ARCHITECTURE.md) for how it all fits
 together (including what to swap for your environment — *Pattern vs lab*),
 [DECISIONS.md](DECISIONS.md) for why it's built this way.
+
+## Tearing it down
+
+### Full teardown
+
+```sh
+make destroy
+```
+
+Runs, in order (each is its own `make` target if you need to stop partway or
+re-run one):
+
+1. **`destroy-apps`** — quiesces `root-bootstrap`'s auto-sync, deletes the
+   ApplicationSets (orphan, so their generated Applications survive), then
+   deletes those Applications and waits (up to 25m). This is what actually
+   cascade-deletes the VKS workload clusters, and it has to happen **while
+   ArgoCD is still up** — skip it and `destroy-bootstrap` orphans the
+   clusters instead of deleting them.
+2. **`destroy-bootstrap`** — `terraform destroy` on `terraform/bootstrap`
+   (the ArgoCD helm releases).
+3. **`destroy-infra`** — `terraform destroy` on `terraform/infra` (the
+   supervisor namespaces, VPCs, AppProjects, and every file it rendered).
+
+Same confirmation gate as `apply-bootstrap` (`AUTO_APPROVE=1` to skip, e.g.
+CI). Prompts you once per destroy plan.
+
+**What `make destroy` does not touch** (Part 1's out-of-band, hand-applied
+objects — different credentials, different lifecycle):
+
+- the custom addon repo registrations in `vmware-system-vks-public`
+  (`supervisor-addons/*.yaml`) — see Part 1.2's "To undo a registration"
+- the Secret Store Supervisor Service itself, or its endpoint/CA you pasted
+  into the env layers (Part 1.3) — nothing to undo, they aren't yours to
+  delete
+- the Terraform-state supervisor namespace (Part 1.1)
+
+Tear those down only if you're decommissioning the whole lab, not just
+resetting the GitOps state.
+
+### Removing one cluster
+
+Delete its directory and push — same mechanism as the Part 3 warning about
+renaming:
+
+```sh
+git rm -r infrastructure/clusters/tenant-1/dev-1/dev1-cluster
+git commit -m "remove dev1-cluster" && git push
+```
+
+The `cluster-provisioning` Application disappears from git, ArgoCD prunes it,
+and its finalizer deletes the VKS `Cluster`. No Terraform involved.
+
+### Removing one tenant or namespace
+
+1. **Delete its cluster directories first** (previous section) — the
+   namespace destroy in step 3 doesn't know to drain clusters living inside
+   it the way `destroy-apps` does for a full teardown, so removing the
+   namespace out from under a live cluster orphans it.
+2. Remove the tenant (or just the one namespace) from
+   `terraform/infra/tenants.yaml`.
+3. `make apply-infra` — this **destroys** that tenant/namespace's resources
+   (the Terraform module instance disappears from `for_each`) and prunes the
+   files it had rendered (`argocd/projects/*.yaml`, `tenant-vars.yaml`,
+   `ns-vars.yaml`, …) since those are `local_file` resources keyed the same
+   way.
+4. Commit the now-deleted rendered files, same as any other `apply-infra`
+   run: `git add -A argocd/projects infrastructure/clusters/*/vars && git
+   commit -m "remove tenant-1/dev-1" && git push`.
+5. If the namespace ran `deploy_argo: true` (an infra tenant's ArgoCD),
+   `apply-infra` alone doesn't remove its helm release — run
+   `make apply-bootstrap` (which also reconciles the now-shorter
+   `namespace_config`) or, if you're decommissioning that ArgoCD entirely,
+   the manual `destroy-apps`-style drain from the full teardown above before
+   removing it from `tenants.yaml`.
+
+### Cleaning up local state
+
+Gitignored, safe to delete once you're done: `.env`, `.kube-backend.config`,
+`.kube-backend.env`. `terraform/state-backend/namespace.auto.tfvars` is
+committed and points at the Part 1.1 state namespace — leave it unless that
+namespace is gone too (next section).
+
+### Decommissioning Part 1's one-time setup
+
+Only if nothing in this repo will run against this VCF install again.
+
+**State namespace** (Part 1.1) — deleting it destroys all Terraform state for
+every root, so only do this after `make destroy` has already torn down
+everything the state describes:
+
+```sh
+vcf context use <your-vcfa-context>
+kubectl delete -f terraform/state-namespace/state-namespace.yaml   # or: kubectl delete supervisornamespace <the generated name>
+kubectl delete -f terraform/state-namespace/project.yaml
+```
+
+`terraform/state-backend/namespace.auto.tfvars` then points at a namespace
+that no longer exists — leave the file (a future setup pass overwrites it) or
+revert it, but there's no `terraform destroy` for `state-backend` itself,
+it's a stateless credential-rendering helper.
+
+**Addon repo registrations** (Part 1.2) — Part 1.2's "To undo a registration"
+has the ordering (remove from git and let ArgoCD prune first, only then
+delete `AddonRepositoryInstall`/`AddonRepository`); `make destroy` has
+already handled the "remove from git" half if you ran the full teardown
+first.
