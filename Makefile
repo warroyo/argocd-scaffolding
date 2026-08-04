@@ -102,7 +102,7 @@ check-generated-clean:
 	  exit 1; \
 	fi
 
-plan-bootstrap: init-bootstrap
+plan-bootstrap: init-infra init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@TF_VAR_namespace_config='$(NS_CONFIG)' \
 	  terraform -chdir=$(BOOTSTRAP_DIR) plan
@@ -113,7 +113,7 @@ plan-bootstrap: init-bootstrap
 ## plan+apply and the still-set TF_VAR_namespace_config trips the "can't set a variable
 ## when applying a saved plan" guard. Baking the var into the plan file avoids it. The
 ## confirmation gate is preserved manually (set AUTO_APPROVE=1 to skip it, e.g. in CI).
-apply-bootstrap: check-generated-clean init-bootstrap
+apply-bootstrap: check-generated-clean init-infra init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@tfp=$$(mktemp); \
 	  TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) plan -out="$$tfp" || { rm -f "$$tfp"; exit 1; }; \
@@ -138,7 +138,7 @@ apply: apply-infra apply-bootstrap
 ## plan+apply and the still-set TF_VAR_namespace_config trips the "can't set a variable
 ## when applying a saved plan" guard. The confirmation gate is preserved manually (set
 ## AUTO_APPROVE=1 to skip it, e.g. in CI).
-destroy-bootstrap: init-bootstrap
+destroy-bootstrap: init-infra init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config 2>/dev/null))
 	@if [ -z '$(NS_CONFIG)' ]; then \
 	  echo "error: infra output 'namespace_config' is empty or absent." >&2; \
@@ -178,15 +178,19 @@ destroy-infra: init-infra
 ## plan+apply and the still-set TF_VAR_namespace_config trips Terraform's "can't set a
 ## variable when applying a saved plan" guard. Baking the var into the plan file avoids it.
 ## Requires kubectl + jq. Only deploy_argo namespaces.
-destroy-apps: init-bootstrap
+destroy-apps: init-infra init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config 2>/dev/null))
-	@if [ -z '$(NS_CONFIG)' ]; then echo "warn: infra namespace_config empty — nothing to clean, skipping." >&2; exit 0; fi
-	@echo "refreshing ArgoCD-namespace tokens..."
-	@tfp=$$(mktemp) && \
+	@if [ -z '$(NS_CONFIG)' ]; then \
+	  echo "warn: infra namespace_config empty — nothing to clean, skipping." >&2; \
+	  exit 0; \
+	fi; \
+	echo "refreshing ArgoCD-namespace tokens..."; \
+	tfp=$$(mktemp) && \
 	  TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) plan -refresh-only -out="$$tfp" >/dev/null && \
 	  terraform -chdir=$(BOOTSTRAP_DIR) apply -input=false "$$tfp" >/dev/null; \
-	  rc=$$?; rm -f "$$tfp"; exit $$rc
-	@umask 077; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	  rc=$$?; rm -f "$$tfp"; \
+	  if [ $$rc -ne 0 ]; then exit $$rc; fi; \
+	umask 077; tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
 	  eps=$$(TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) output -json argo_endpoints); \
 	  if [ "$$(jq 'length' <<<"$$eps")" = 0 ]; then echo "no deploy_argo namespaces — nothing to clean."; exit 0; fi; \
 	  jq -c 'to_entries[]' <<<"$$eps" | while read -r e; do \
@@ -225,6 +229,7 @@ shell: state-backend
 	@terraform -chdir=$(TF_ROOT_DIR) init -reconfigure >/dev/null
 	@cd $(TF_ROOT_DIR); \
 	  if [ '$(ROOT)' = 'bootstrap' ]; then \
+	    terraform -chdir=$(INFRA_DIR) init -reconfigure >/dev/null; \
 	    export TF_VAR_namespace_config="$$($(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config 2>/dev/null)"; \
 	    [ -z "$$TF_VAR_namespace_config" ] && echo "warn: infra namespace_config empty — state subcommands work; plan/apply/destroy won't" >&2; \
 	  fi; \

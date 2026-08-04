@@ -36,15 +36,30 @@ don't need either to finish this.
   `TF_VAR_seg_name`). Getting it wrong fails `apply-infra` at VPC creation. Ask
   your provider admin if unsure.
 
-**Separately, Supervisor access.** Everything above is tenant-facing vcfa. One
-step — Part 1.2, registering the external-secrets chart repo that the default
-add-on bundle installs from — writes to `vmware-system-vks-public`, a namespace
-on the **Supervisor cluster itself**. That's the VCF infrastructure layer, a
-different access domain from your vcfa org: no vcfa role grants it, and the
-org-level context can only read there. You need a Supervisor-admin kubeconfig,
-obtained however your VCF install does it — ask whoever administers the
-vSphere/VCF fleet, not your vcfa provider admin. Part 1.2 says what to drop if
-you can't get one.
+**Separately, Supervisor access.** Everything above is tenant-facing vcfa.
+Three Supervisor Services must already be enabled on the **Supervisor cluster
+itself** before you start — that's the VCF infrastructure layer, a different
+access domain from your vcfa org, so this isn't something `apply-infra` or
+`apply-bootstrap` can fix and no vcfa role can enable them. Ask whoever
+administers the vSphere/VCF fleet, not your vcfa provider admin:
+
+- **ArgoCD** — supplies the `argocd-service.vsphere.vmware.com` CRDs. Without
+  it, the `ArgoCD` instance Part 2.3 creates never reconciles.
+- **ArgoCD Cluster Registration** (cluster-attach) — supplies
+  `field.vmware.com/v1 ArgoCluster`, which
+  `infrastructure/base/cluster-argocd-attach` uses to register each workload
+  cluster with ArgoCD in Part 3. Without it, clusters provision but never
+  attach, and `cluster-apps` has nothing to join against.
+- **Secret Store** — the OpenBao-backed service `apps/base/secret-store`
+  talks to. See Part 1.3 for the version requirement and what to capture from
+  it before you can wire it in.
+
+Separately, one step needs Supervisor-admin **access**, not just an enabled
+service: Part 1.2, registering the external-secrets chart repo that the
+default add-on bundle installs from, writes to `vmware-system-vks-public`, a
+namespace on the Supervisor cluster only a Supervisor-admin kubeconfig can
+reach — the org-level context Terraform uses elsewhere can only read there.
+Part 1.2 says what to drop if you can't get one.
 
 **A fork of this repo.** GitOps means ArgoCD pulls from git, so you need a
 repo you can push to:
