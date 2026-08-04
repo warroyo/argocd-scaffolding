@@ -8,4 +8,4 @@ metadata:
   annotations:
     config.kubernetes.io/local-config: "true"
 data:
-  argo_namespace: "infra-33vwb"
+  argo_namespace: "infra-vsbz8"
