@@ -1,13 +1,13 @@
 # Getting started: zero to a running app
 
 This walkthrough takes you from a fresh VCF Automation org to a tenant
-application running on a GitOps-managed workload cluster. Budget an afternoon:
-about an hour of hands-on work, plus provisioning wait time.
+application running on a GitOps-managed workload cluster. Budget an
+afternoon: about an hour of hands-on work, plus provisioning wait time.
 
-It assumes nothing beyond the prerequisites below. If you want to understand
-*why* a step works the way it does, [ARCHITECTURE.md](ARCHITECTURE.md) explains
-the design and [DECISIONS.md](DECISIONS.md) explains the choices — but you
-don't need either to finish this.
+It assumes nothing beyond the prerequisites below. Curious *why* a step
+works the way it does? [ARCHITECTURE.md](ARCHITECTURE.md) has the design,
+[DECISIONS.md](DECISIONS.md) has the reasoning — neither is required to
+finish this.
 
 > **About the sample output:** blocks marked *you should see* are
 > illustrative. Generated names (the `-abcde` style suffixes), counts, and
@@ -29,67 +29,52 @@ don't need either to finish this.
 **From your VCF Automation org** (ask your provider admin if unsure):
 
 - the vcfa URL, org name, and an **API refresh token**
-- the **region name**, a **zone name** in it, and a **storage policy** name —
-  these vary per install and there are no safe defaults
-- whether that region's **load balancer is AVI/NSX-ALB or NSX_LB** — this sets
-  `TF_VAR_avi_enabled` (and, for AVI, a **Service Engine Group** name for
-  `TF_VAR_seg_name`). Getting it wrong fails `apply-infra` at VPC creation. Ask
-  your provider admin if unsure.
+- the **region name**, a **zone name** in it, and a **storage policy** name
+  — these vary per install, no safe defaults
+- whether the region's **load balancer is AVI/NSX-ALB or NSX_LB** — sets
+  `TF_VAR_avi_enabled` (AVI also needs a **Service Engine Group** name,
+  `TF_VAR_seg_name`). Guessing wrong fails `apply-infra` at VPC creation.
 
-**Separately, Supervisor access.** Everything above is tenant-facing vcfa.
-Three Supervisor Services must already be enabled on the **Supervisor cluster
-itself** before you start — that's the VCF infrastructure layer, a different
-access domain from your vcfa org, so this isn't something `apply-infra` or
-`apply-bootstrap` can fix and no vcfa role can enable them. Ask whoever
-administers the vSphere/VCF fleet, not your vcfa provider admin:
+**Separately, three Supervisor Services** must already be enabled on the
+Supervisor cluster itself — a different access domain from vcfa, so ask
+whoever administers the vSphere/VCF fleet, not your vcfa provider admin:
 
-- **ArgoCD** — supplies the `argocd-service.vsphere.vmware.com` CRDs. Without
+- **ArgoCD** — supplies `argocd-service.vsphere.vmware.com` CRDs. Without
   it, the `ArgoCD` instance Part 2.3 creates never reconciles.
-- **ArgoCD Cluster Registration** (cluster-attach) — supplies
-  `field.vmware.com/v1 ArgoCluster`, which
-  `infrastructure/base/cluster-argocd-attach` uses to register each workload
-  cluster with ArgoCD in Part 3. Without it, clusters provision but never
-  attach, and `cluster-apps` has nothing to join against.
+- **[argocd-attach-service](https://github.com/warroyo/argocd-attach-service)**
+  — supplies `field.vmware.com/v1 ArgoCluster`, used to attach each
+  workload cluster to ArgoCD in Part 3. Without it, clusters provision but
+  never attach.
 - **Secret Store** — the OpenBao-backed service `apps/base/secret-store`
-  talks to. See Part 1.3 for the version requirement and what to capture from
-  it before you can wire it in.
+  talks to. Version requirement and capture steps in Part 1.3.
 
-Separately, one step needs Supervisor-admin **access**, not just an enabled
-service: Part 1.2, registering the external-secrets chart repo that the
-default add-on bundle installs from, writes to `vmware-system-vks-public`, a
-namespace on the Supervisor cluster only a Supervisor-admin kubeconfig can
-reach — the org-level context Terraform uses elsewhere can only read there.
-Part 1.2 says what to drop if you can't get one.
+One more step needs Supervisor-admin **access**, not just an enabled
+service: Part 1.2 writes to `vmware-system-vks-public`, a namespace only a
+Supervisor-admin kubeconfig can reach.
 
-**A fork of this repo.** GitOps means ArgoCD pulls from git, so you need a
-repo you can push to:
+**A fork of this repo.** GitOps means ArgoCD pulls from git:
 
 1. Fork, clone, `cd` into it.
-2. Edit `argocd/repo-config.yaml` and set `repoURL` to your fork. This is the
-   **single** place the repo URL lives — Terraform and the ApplicationSets
-   both read it.
+2. Edit `argocd/repo-config.yaml` and set `repoURL` to your fork — the
+   single place the repo URL lives.
 
 ## Part 1 — One-time, out-of-band setup (~15 min)
 
 Two things have to exist before Terraform or ArgoCD can do anything, and
-neither can be created by this repo's automation — both are hand-applied with
-`kubectl`, once. Do them in either order, but do both **before** Part 3
-provisions a cluster.
+neither is created by this repo's automation — both are hand-applied with
+`kubectl`, once, before Part 3 provisions a cluster.
 
-They use **different credentials**: 1.1 runs against your vcfa org context
-(`vcf context use`), 1.2 against the Supervisor cluster. Getting a Supervisor
-kubeconfig is usually the longer pole — start asking for it now if you don't
-have one.
+They use different credentials: 1.1 runs against your vcfa org context
+(`vcf context use`), 1.2 against the Supervisor cluster. A Supervisor
+kubeconfig is usually the longer pole to get, so start asking for one now
+if you don't have it.
 
 ### 1.1 State backend (~10 min)
 
-Terraform state lives as Kubernetes Secrets in a small, dedicated supervisor
-namespace, so any machine (or CI) with VCF credentials can run the pipeline.
-That namespace is created once, by hand. Its `regionName` / `vpcName` / zone /
-storage policy vary per install with **no safe defaults**, so
-`state-namespace.yaml` ships as `${...}` placeholders filled from your `.env` —
-create `.env` now (you'll finish filling it in Part 2), set the region and the
-three `STATE_NS_*` values, then render the manifest with `envsubst`:
+Terraform state lives as Kubernetes Secrets in a dedicated supervisor
+namespace, created once by hand. `state-namespace.yaml` ships as `${...}`
+placeholders — fill in `.env` now (you'll finish it in Part 2), then
+render the manifest with `envsubst`:
 
 ```sh
 vcf context use <your-vcfa-context>     # points kubectl at the vcfa endpoint
@@ -115,64 +100,40 @@ namespace = "tf-state-bh7q6"
 
 Two things worth knowing:
 
-- It's `kubectl create` (not `apply`) because the namespace uses
-  `generateName` — the API assigns the real name. Re-running `create` makes a
-  *second* namespace, so this is deliberately a one-time step.
-- `envsubst` substitutes an empty string for any value left blank in `.env`;
-  the API then rejects the object (empty `regionName`/`vpcName`/zone are
-  invalid), so a missed value surfaces as a failed `create`, not a
-  misconfigured namespace.
+- It's `kubectl create`, not `apply` — the namespace uses `generateName`,
+  so re-running `create` makes a *second* namespace. One-time on purpose.
+- A value left blank in `.env` renders as an empty string, which the API
+  rejects — a missed value fails loudly at `create`, not silently.
 
-You never touch this again. Every `make` target refreshes its own short-lived
-credentials against this namespace automatically.
+You never touch this again. Every `make` target refreshes its own
+short-lived credentials against this namespace automatically.
 
 ### 1.2 Custom VKS addon repositories (~5 min, once per addon)
 
-**Required if you keep the shipped defaults** — the `standard` add-on bundle
-includes `external-secrets`, which is *not* in VMware's built-in catalog
-(istio and headlamp are, and need nothing here). Its `AddonInstall` pins
-`releaseFilter.ref.name: external-secrets.2.8.0`; if the chart repo isn't
-registered when Part 3's first cluster comes up, that reference resolves
-against nothing and the add-on install fails. Registering it now costs one
-`kubectl apply`.
+**Required if you keep the shipped defaults** — the `standard` add-on
+bundle includes `external-secrets`, which isn't in VMware's built-in
+catalog (istio and headlamp are). If the chart repo isn't registered
+before Part 3's first cluster comes up, the add-on install fails resolving
+`external-secrets.2.8.0`. One `kubectl apply` fixes that.
 
-One prerequisite for the **helm-based** registration below (`external-secrets`):
-your clusters need a **3.7+ cluster class** (`builtin-generic-v3.7.0`, pinned
-in `infrastructure/components/envs/{env}`). That is what makes the platform
-install helm-controller, which supplies the `HelmRepository` CRD and
-`vmware-system-helm` namespace a helm-based add-on renders into. On a 3.6
-class the add-on stalls at `dependency "helm-controller" not installed`. The
-`dayzero` registration further down is an imgpkg/Carvel package repo, not a
-helm chart, so it needs neither helm-controller nor the 3.7+ class.
+Prerequisites:
 
-That registration (`AddonRepository` + `AddonRepositoryInstall`,
-`addons.kubernetes.vmware.com`) can **only** be created in
-`vmware-system-vks-public`, a genuine Supervisor-scope namespace this repo's
-Terraform/GitOps automation cannot reach: the org-level context Terraform
-uses elsewhere (`vcf context use`, `kubernetes.vcfa-org`) has read-only
-visibility into it, and no per-tenant supervisor namespace credential can
-write there either. So, unlike everything else in this repo, this step is
-hand-authored YAML applied manually — never Terraform, never ArgoCD, never
-CI. Full reasoning in `docs/DECISIONS.md` #14.
-
-You need a **Supervisor-admin kubeconfig** — not a more privileged vcfa role,
-a different layer entirely: `vmware-system-vks-public` lives on the Supervisor
-cluster, which your vcfa org sits on top of. `vcf context use` won't get you
-there no matter what org role you hold. How you obtain one is specific to your
-VCF install; ask whoever administers the vSphere/VCF fleet.
+- **Cluster class 3.7+** (`builtin-generic-v3.7.0`) — `external-secrets`
+  is helm-based and needs helm-controller, which only that class installs.
+  On 3.6 it stalls at `dependency "helm-controller" not installed`.
+- **A Supervisor-admin kubeconfig** — this writes to
+  `vmware-system-vks-public`, unreachable from vcfa (`docs/DECISIONS.md`
+  #14 has why it's hand-applied here instead of Terraform/GitOps).
 
 ```sh
 kubectl apply -f supervisor-addons/external-secrets.yaml
 kubectl apply -f supervisor-addons/dayzero.yaml
 ```
 
-The second registers [dayzero-addon-service](https://github.com/warroyo/dayzero-addon-service)
-(an imgpkg/Carvel package repo, not a helm chart — no 3.7+/helm-controller
-prerequisite for this one), used by the **mandatory** `argocd-attach-rbac`
-addon — it seeds the `default:argo-attach-sa` cluster-admin identity on each
-workload cluster that ArgoCD's `cluster-apps` sync impersonates. **Without it
-the standard app stack cannot sync to any workload cluster** (the sync fails
-resolving `default:argo-attach-sa`). Full rationale: `docs/DECISIONS.md` #18.
+The second registers
+[dayzero-addon-service](https://github.com/warroyo/dayzero-addon-service),
+required by the **mandatory** `argocd-attach-rbac` add-on
+(`docs/DECISIONS.md` #18).
 
 *You should see* the objects created:
 
@@ -181,66 +142,44 @@ kubectl get addonrepository,addonrepositoryinstall -n vmware-system-vks-public \
   | grep -E 'external-secrets|dayzero'
 ```
 
-Then confirm the manager materialised the `AddonRelease` and grab its exact
+Confirm the manager materialised the `AddonRelease`, and grab its exact
 name for the env pin (`infrastructure/components/envs/{env}/argocd-attach-rbac`):
 
 ```sh
 kubectl -n vmware-system-vks-public get addonrelease | grep dayzero
 ```
 
-One-time per addon, and for `dayzero` genuinely once: its registration follows
-the rolling `ghcr.io/warroyo/dayzero-addon-repo:stable` tag, whose catalog
-carries every published package version at once, so later addon versions show
-up as additional `AddonRelease`s on their own (the repo re-resolves the tag
-roughly every 10 minutes) and the env pin picks between them. Nothing in
-`supervisor-addons/dayzero.yaml` changes to roll a version — do not bump
-`spec.version`, the `package-offerings` annotation, or the image tag.
-
-That is not politeness, it is the only workable shape: **a registered repo
-cannot be edited in place.** Once its `AddonRepositoryInstall` exists the
-webhook freezes every field but `spec.addonFilters` (a helm-repo field — so an
-imgpkg repo like `dayzero` is frozen outright), and any bump fails with
-`AddonRepository is in use by an AddonRepositoryInstall`. Full reasoning:
+This is one-time for `dayzero` — rolling a version is just an env-pin
+bump, never an edit to `supervisor-addons/dayzero.yaml`. `external-secrets`
+rolls by appending a repo+install pair instead. Why both work this way:
 `docs/DECISIONS.md` #19.
 
-`external-secrets` has no such rolling tag — it registers a plain helm chart
-repo, so a new chart version there is an appended repo+install pair. CLAUDE.md
-"Rolling an addon repo version" has that recipe.
-
 To register another custom addon, add a new `supervisor-addons/{addon}.yaml`
-following the same shape and repeat this step; CLAUDE.md's "Adding a custom
-helm addon" has the rest of the recipe (the ordinary GitOps `AddonInstall`
-wiring).
+and repeat this step — recipe: [README.md → "Adding a New VKS Add-on"](../README.md#4-adding-a-new-vks-add-on).
 
-**If you can't get a Supervisor-admin session**, drop external-secrets instead
+**No Supervisor-admin session available?** Drop external-secrets instead
 of leaving it broken: remove `base/external-secrets` and the
 `envs/{env}/external-secrets` pin from the namespace's `namespace-resources`
-kustomization. (`components/disable-external-secrets` opts a single *cluster*
-out, but the shared `AddonInstall` is still created in the namespace, so it is
-not the right tool for this.)
+kustomization (`components/disable-external-secrets` only opts out one
+*cluster*, not the right tool here).
 
-**To undo a registration:** the `AddonRepositoryInstall` cannot be deleted
-while a `ClusterAddon` still references its `AddonRelease`, so remove the
-add-on from git first and let ArgoCD prune, then delete the
-`AddonRepositoryInstall` and `AddonRepository`. The generated `helm-repo`
-`AddonInstall`/`Addon`/`AddonRelease` will remain — they are platform-owned
-and even Supervisor-admin gets `Forbidden` deleting them — but they go inert
-once no `AddonRepository` exists.
+**To undo a registration:** remove the add-on from git, let ArgoCD prune,
+then delete the `AddonRepositoryInstall` and `AddonRepository` (in that
+order — the install can't be deleted while a `ClusterAddon` still
+references its release).
 
 ### 1.3 VCF Secret Store Service — endpoint + CA (~5 min, once per Supervisor)
 
-**Required if you keep the shipped defaults** — the standard app stack ships a
-`ClusterSecretStore` (`vcf-cluster-store`) that points external-secrets at the
-**VCF Secret Store Service** (OpenBao). Two per-Supervisor facts — the service's
-external IP and its CA — aren't reachable by this repo's credentials, so capture
-them here and paste them into the env layers. Background:
-`docs/DECISIONS.md` #17, `docs/ARCHITECTURE.md` "Secret store".
+**Required if you keep the shipped defaults** — the standard app stack
+ships a `ClusterSecretStore` (`vcf-cluster-store`) pointing
+external-secrets at the **VCF Secret Store Service** (OpenBao). Its
+external IP and CA aren't reachable by this repo's credentials, so capture
+them here. Background: `docs/DECISIONS.md` #17, `docs/ARCHITECTURE.md`
+"Secret store".
 
-Prerequisite: deploy the Secret Store Supervisor Service, **version
-`9.1.0+25367485` or newer** (the KeyValueSecret API + automated k8s-auth
-features this relies on). Its namespace is `svc-secret-store-<suffix>` (find it
-with `kubectl get ns | grep secret-store`; this lab's is
-`svc-secret-store-0iid0`) — substitute yours below.
+Prerequisite: Secret Store Supervisor Service **9.1.0+25367485 or newer**
+(the KeyValueSecret API + automated k8s-auth this relies on). Its
+namespace is `svc-secret-store-<suffix>`:
 
 ```sh
 SS_NS=$(kubectl get ns -o name | grep svc-secret-store | head -1 | cut -d/ -f2)
@@ -252,34 +191,32 @@ kubectl get svc secret-store -n "$SS_NS"
 kubectl get secret server-cert -n "$SS_NS" -o jsonpath='{.data.ca\.crt}'
 ```
 
-Then set two placeholders (both marked `# SET ME` / `PLACEHOLDER` in the files):
+Set two placeholders (marked `# SET ME` / `PLACEHOLDER` in the files):
 
 - **IP** → `infrastructure/components/envs/{env}/kustomization.yaml`, the
-  external-secrets `AddonConfig` `hostAliases[0].ip` patch. This host-aliases
-  `secret-store` so the service cert (`CN=secret-store`) verifies.
+  external-secrets `hostAliases[0].ip` patch — host-aliases `secret-store`
+  so the service cert (`CN=secret-store`) verifies.
 - **CA** → `apps/components/envs/{env}/kustomization.yaml`, the
-  `ClusterSecretStore` `caBundle` patch. It's a public cert — safe to commit.
+  `ClusterSecretStore` `caBundle` patch. Public cert, safe to commit.
 
-Both are per-environment. Neither is a secret; there's no out-of-band apply —
-they ride the normal git flow. Re-capture only if the service is redeployed.
+Both per-environment, neither secret — no out-of-band apply, just the
+normal git flow. Re-capture only if the service is redeployed.
 
 ## Part 2 — Tenants and the GitOps control plane (~20 min)
 
 ### 2.1 Credentials
 
-You created `.env` in Part 1.1 (region + `STATE_NS_*`). Now finish the vcfa
-values (`TF_VAR_vcfa_url`, `TF_VAR_vcfa_org`, `TF_VAR_vcfa_refresh_token`). The
-Makefile loads `.env` into every Terraform run — no per-directory tfvars
-needed.
+Finish the vcfa values in `.env` (`TF_VAR_vcfa_url`, `TF_VAR_vcfa_org`,
+`TF_VAR_vcfa_refresh_token`) — the Makefile loads `.env` into every
+Terraform run, no per-directory tfvars needed.
 
-**Set your load-balancer mode.** `.env` defaults to `TF_VAR_avi_enabled=false`
-(NSX_LB). If your region uses **AVI/NSX-ALB**, set `TF_VAR_avi_enabled=true` and
-uncomment `TF_VAR_seg_name` with your Service Engine Group — a mismatch fails
-`apply-infra` at VPC creation. For NSX_LB, leave `TF_VAR_seg_name` commented (it
-must stay unset, not empty).
+**Load-balancer mode:** `.env` defaults to `TF_VAR_avi_enabled=false`
+(NSX_LB). On **AVI/NSX-ALB**, set it `true` and uncomment `TF_VAR_seg_name`
+with your Service Engine Group — a mismatch fails `apply-infra` at VPC
+creation. On NSX_LB, leave `TF_VAR_seg_name` commented out entirely (unset,
+not empty).
 
-For the ArgoCD admin password, the chart expects a **bcrypt hash**, not the
-plain password:
+The ArgoCD admin password needs a **bcrypt hash**, not plain text:
 
 ```sh
 htpasswd -bnBC 10 "" 'your-password' | tr -d ':\n'
@@ -319,11 +256,11 @@ tenants:
         class_name: large
 ```
 
-Anything you don't set (`class_name`, `storage_policy`, …) gets a default from
-`terraform/modules/tenant/variables.tf` — check the storage-policy default
-matches your install. A tenant can also opt into the custom cluster policy
-catalog here (`policies:` — Part 5 walks through verifying it); this
-walkthrough's minimal example omits it.
+Anything you don't set (`class_name`, `storage_policy`, …) gets a default
+from `terraform/modules/tenant/variables.tf` — check the storage-policy
+default matches your install. A tenant can also opt into the custom
+cluster policy catalog here (`policies:` — Part 5 walks through verifying
+it); this walkthrough's minimal example omits it.
 
 ### 2.3 Provision
 
@@ -341,15 +278,20 @@ $ git status --short
  M argocd/projects/kustomization.yaml
 ?? argocd/projects/tenant-1.yaml
  M infrastructure/clusters/tenant-1/vars/tenant-vars.yaml
+?? infrastructure/clusters/tenant-1/dev-1/vars/
+?? infrastructure/clusters/infra-1/infra/vars/
  M terraform/bootstrap/providers.tf
  M terraform/bootstrap/main.tf
 ```
 
 Those rendered files are the Terraform → ArgoCD handoff. **Commit and push
-them** — ArgoCD reads git, not your working tree:
+them** — ArgoCD reads git, not your working tree. Quote the `vars` pathspec
+so git (not your shell) expands the glob — it needs to reach both
+`{project}/vars` and `{project}/{namespace_ref}/vars`, and a shell glob
+only ever catches the first:
 
 ```sh
-git add argocd/projects infrastructure/clusters/*/vars terraform/bootstrap/{providers,main}.tf
+git add argocd/projects 'infrastructure/clusters/*/vars/**' terraform/bootstrap/{providers,main}.tf
 git commit -m "rendered config for tenants" && git push
 ```
 
@@ -368,9 +310,9 @@ first. An authentication error usually means an expired token in `.env`.
 
 ### 2.4 Verify ArgoCD is up
 
-The infra namespace got a vcfa-suffixed name (e.g. `infra-kyrtt`). Find it and
-look inside (service/pod names come from the vSphere ArgoCD operator, so use
-discovery rather than exact names — your environment may differ):
+The infra namespace got a vcfa-suffixed name (e.g. `infra-kyrtt`). Find it
+and look inside (service/pod names come from the vSphere ArgoCD operator,
+so use discovery rather than exact names):
 
 ```sh
 vcf context use <your-vcfa-context>
@@ -378,17 +320,17 @@ kubectl get ns | grep infra           # find the suffixed name
 kubectl get pods,svc -n infra-kyrtt   # ArgoCD pods + a UI service
 ```
 
-Open the UI via the service's external address (or port-forward it) and log
-in as `admin` with the password you hashed in 2.1.
+Open the UI via the service's external address (or port-forward it) and
+log in as `admin` with the password you hashed in 2.1.
 
 *You should see* in ArgoCD:
 
 - one Application: `root-bootstrap` (synced — it deploys the `argocd/` dir)
 - AppProjects `infra` and `tenant-1`
 - ApplicationSets `cluster-provisioning` and `cluster-apps`
-- **zero generated Applications — this is correct.** No cluster directories
-  exist in git yet, so the ApplicationSets have nothing to generate. That's
-  the next part.
+- **zero generated Applications — this is correct.** No cluster
+  directories exist in git yet, so the ApplicationSets have nothing to
+  generate. That's the next part.
 
 ## Part 3 — Your first cluster (~30 min + provisioning time)
 
@@ -399,11 +341,11 @@ cp -r docs/examples/cluster-template \
   infrastructure/clusters/tenant-1/dev-1/dev1-cluster
 ```
 
-The three path segments are the join keys: `tenant-1` (the tenant), `dev-1`
-(the namespace you declared in tenants.yaml), `dev1-cluster` (your new
-cluster's name, which need only be unique within this `(tenant, namespace)`).
-ArgoCD matches this directory to the right supervisor namespace by these names —
-nothing else links them.
+The three path segments are the join keys: `tenant-1` (the tenant),
+`dev-1` (the namespace you declared in `tenants.yaml`), `dev1-cluster`
+(your new cluster's name, unique within this `(tenant, namespace)`).
+ArgoCD matches this directory to the right supervisor namespace by these
+names alone.
 
 Edit `infrastructure/clusters/tenant-1/dev-1/dev1-cluster/cluster-details.yaml`
 so the three values match the path exactly:
@@ -415,18 +357,24 @@ data:
   namespace_ref: dev-1
 ```
 
-Then open `kustomization.yaml` in the same directory: it already inherits the
-dev profile; uncomment optional features you want. The CNI is declared
-explicitly — the template ships `cni-antrea` + `antrea-nsx`; swap both lines
-for `cni-cilium` or `cni-calico` BEFORE the first commit (the choice is
-immutable after cluster creation). Add-ons come from the dev profile's bundle
-(`addon-bundles/standard`: istio, external-secrets, observability) — drop one
-with the matching `disable-*` component. Add `components/ako-istio` only if
-this cluster runs AKO/AVI, and `components/istio-config` only if it needs istio
-values different from the defaults. The `AddonInstall` itself and its version pin
-(`components/envs/dev/istio`) live in the namespace's `namespace-resources/`
-dir — copy `docs/examples/namespace-resources-template` if this namespace
-doesn't have one yet. Same idea in `apps/kustomization.yaml` for app stacks.
+Then edit `kustomization.yaml` in the same directory — it already
+inherits the dev profile:
+
+- **CNI** — declared explicitly; the template ships `cni-antrea` +
+  `antrea-nsx`. Swap both lines for `cni-cilium` or `cni-calico` **before
+  the first commit** — the choice is immutable after cluster creation.
+- **Add-ons** — come from the dev profile's bundle
+  (`addon-bundles/standard`: istio, external-secrets, observability);
+  drop one with the matching `disable-*` component.
+- **AKO/AVI** — add `components/ako-istio` only if this cluster runs it.
+- **Istio overrides** — add `components/istio-config` only if it needs
+  values different from the defaults.
+- The `AddonInstall` itself and its version pin
+  (`components/envs/dev/istio`) live in the namespace's
+  `namespace-resources/` dir — copy
+  `docs/examples/namespace-resources-template` if this namespace doesn't
+  have one yet.
+- Same idea in `apps/kustomization.yaml` for app stacks.
 
 ### 3.2 Validate before pushing
 
@@ -466,8 +414,8 @@ git add infrastructure/clusters/tenant-1 && git commit -m "add dev1-cluster" && 
 
 Within a sync interval, *you should see* in ArgoCD a new Application named
 **`tenant-1-dev-1-dev1-cluster-provision`** (`{project}-{namespace_ref}-{cluster}-provision`).
-It creates the VKS `Cluster` in the
-supervisor namespace — watch it come up (10–20 min is normal):
+It creates the VKS `Cluster` in the supervisor namespace — watch it come
+up (10–20 min is normal):
 
 ```sh
 kubectl get cluster -n dev-1-abcde -w      # your suffixed dev namespace
@@ -477,12 +425,12 @@ dev1-cluster   Provisioned    14m
 ```
 
 Once the cluster is ready, its `ArgoCluster` registration attaches it to
-ArgoCD, and a second Application appears: **`dev1-cluster-apps`** — the app
-stack (package repo, cert-manager, anything you enabled) reconciling onto the
-new cluster.
+ArgoCD, and a second Application appears: **`dev1-cluster-apps`** — the
+app stack (package repo, cert-manager, anything you enabled) reconciling
+onto the new cluster.
 
-**If no Application ever appears** — this failure is *silent* by design of
-ApplicationSets, so check the join: the cluster registration's
+**If no Application ever appears** — this failure is *silent* by design
+of ApplicationSets, so check the join: the cluster registration's
 `gitops.platform/project` and `gitops.platform/namespace-ref` labels must
 equal the first two directory segments. Mismatch means the ApplicationSet
 found no pairing. The label model is explained in
@@ -490,11 +438,13 @@ found no pairing. The label model is explained in
 
 ## Part 4 — A tenant deploys their app
 
-Everything so far was the platform team. Now the payoff: tenants deploy from
-**their own repos** — the platform repo never carries tenant manifests.
+Everything so far was the platform team. Now the payoff: tenants deploy
+from **their own repos** — the platform repo never carries tenant
+manifests.
 
-`docs/examples/sample-tenant-repo/` shows the shape of a tenant's repo: plain
-kustomize app manifests plus one ArgoCD `Application` pointing at them:
+`docs/examples/sample-tenant-repo/` shows the shape of a tenant's repo:
+plain kustomize app manifests plus one ArgoCD `Application` pointing at
+them:
 
 ```yaml
 # the tenant's app.yaml (see docs/examples/sample-tenant-repo/tenant-1/app.yaml)
@@ -523,14 +473,12 @@ ArgoCD UI/CLI — per-tenant SSO/RBAC is tracked in [BACKLOG.md](BACKLOG.md)):
 kubectl apply -f app.yaml -n infra-kyrtt    # the suffixed infra namespace
 ```
 
-The `tenant-1` AppProject is the enforcement boundary: it denies the
-supervisor-namespace and in-cluster destinations and allows no cluster-scoped
-resources except `Namespace` — a tenant Application can deploy workloads to
-workload clusters, and nothing else. It also carries
-`destinationServiceAccounts`, so this sync runs impersonated as
-`platform-gitops:tenant-sync-tenant-1` on `dev1-cluster` — **not** the
-cluster's cluster-admin registration identity — which is what lets the custom
-cluster policies in Part 5 tell this tenant's own gitops flow apart from
+The `tenant-1` AppProject is the enforcement boundary: workloads only, on
+workload clusters, no cluster-scoped resources except `Namespace`. It also
+carries `destinationServiceAccounts`, so this sync runs impersonated as
+`platform-gitops:tenant-sync-tenant-1` — **not** the cluster's
+cluster-admin registration identity — which is what Part 5's custom
+cluster policies key on to tell this tenant's own gitops flow apart from
 everyone else's.
 
 *You should see* the app sync, and on the workload cluster:
@@ -553,8 +501,9 @@ kubectl get clustersecretstore vcf-cluster-store -o jsonpath='{.status.condition
 #    the supervisor namespace's real suffixed name in ns-vars.yaml)
 ```
 
-Then create a **cluster-scoped** secret (name prefixed with the cluster) in the
-**supervisor namespace**, and consume it from the workload cluster:
+Then create a **cluster-scoped** secret (name prefixed with the cluster)
+in the **supervisor namespace**, and consume it from the workload
+cluster:
 
 ```sh
 # supervisor namespace context — writes straight to OpenBao, never etcd
@@ -565,26 +514,26 @@ kubectl apply -f docs/examples/externalsecret.yaml     # edit the KV path first
 kubectl get secret db-cred -n default -o jsonpath='{.data.username}' | base64 -d; echo
 ```
 
-`remoteRef.key` is `<supervisor_ns>/<cluster>-<name>` — the suffixed namespace is
-the same value in this cluster's `ns-vars.yaml`. A tenant would ship the
-`ExternalSecret` in their own repo (Part 4); the `KeyValueSecret` is applied by
-hand or by whatever owns the secret's lifecycle.
+`remoteRef.key` is `<supervisor_ns>/<cluster>-<name>` — the suffixed
+namespace is the same value in this cluster's `ns-vars.yaml`. A tenant
+would ship the `ExternalSecret` in their own repo (Part 4); the
+`KeyValueSecret` is applied by hand or by whatever owns the secret's
+lifecycle.
 
 ## Part 5 — Cluster policy & namespace self-service (~15 min, optional)
 
-This part confirms the layer that lets tenants manage namespaces through git
-without being cluster-admin — the design is in
+Confirms the layer that lets tenants manage namespaces through git without
+being cluster-admin — design in
 [ARCHITECTURE.md](ARCHITECTURE.md#cluster-policy--namespace-self-service).
-Two things here are marked **verify-live** rather than assumed, because they
-depend on how the argocd-service operator and ArgoCD itself behave on your
-install, not just on what's in git.
+Two checks here are **verify-live**, not assumed, since they depend on how
+the argocd-service operator and ArgoCD itself behave on your install.
 
 ### 5.1 Confirm the operator co-manages `argocd-cm` safely
 
 `argocd/config/argocd-cm-patch.yaml` sets one key
-(`application.sync.impersonation.enabled`) via Server-Side Apply, intending to
-coexist with the argocd-service operator's own management of the rest of the
-ConfigMap. This only works if the operator grants **per-key** field
+(`application.sync.impersonation.enabled`) via Server-Side Apply, meant to
+coexist with the argocd-service operator's own management of the rest of
+the ConfigMap. This only works if the operator grants **per-key** field
 ownership, not one whole-object entry:
 
 ```sh
@@ -593,29 +542,29 @@ kubectl get cm argocd-cm -n infra-kyrtt -o yaml   # your suffixed infra namespac
 
 *You should see* in `metadata.managedFields`: two managers, one owning
 `f:data.application\.sync\.impersonation\.enabled` and the operator's own
-manager owning the rest, each key separately. **If instead one manager owns a
-single whole-map `f:data` entry**, the operator's next reconcile will
-silently revert this key — the patch isn't safe on this install, and
-impersonation needs a different mechanism before you rely on the rest of this
-part.
+manager owning the rest, each key separately. **If instead one manager
+owns a single whole-map `f:data` entry**, the operator's next reconcile
+will silently revert this key — the patch isn't safe on this install, and
+impersonation needs a different mechanism before you rely on the rest of
+this part.
 
 Confirm the flag stuck: `kubectl get cm argocd-cm -n infra-kyrtt -o jsonpath='{.data.application\.sync\.impersonation\.enabled}'` → `true`.
 
 ### 5.2 Confirm tenant syncs are actually impersonated
 
-Re-sync the `music-store-app` from Part 4, then check who applied it on the
-workload cluster:
+Re-sync the `music-store-app` from Part 4, then check who applied it on
+the workload cluster:
 
 ```sh
 kubectl get deploy -n music-store -o jsonpath='{.items[0].metadata.managedFields[0].manager}'
 ```
 
-*You should see* the impersonated identity
-(`tenant-sync-tenant-1`), not `argo-attach-sa`. If a sync from a **brand-new**
-cluster ever appears to succeed as `argo-attach-sa` instead of failing outright,
-that means this ArgoCD version falls back to the un-impersonated identity when
-the target service account is momentarily missing rather than hard-failing —
-worth knowing before you trust the bootstrap-window argument in
+*You should see* the impersonated identity (`tenant-sync-tenant-1`), not
+`argo-attach-sa`. If a sync from a **brand-new** cluster ever appears to
+succeed as `argo-attach-sa` instead of failing outright, that means this
+ArgoCD version falls back to the un-impersonated identity when the target
+service account is momentarily missing rather than hard-failing — worth
+knowing before you trust the bootstrap-window argument in
 [ARCHITECTURE.md](ARCHITECTURE.md#known-limitations).
 
 ### 5.3 Confirm the policies rendered and are catching real cases
@@ -628,7 +577,8 @@ kubectl get clusterpolicy -n tenant-1
 
 *You should see* four templates and four `ClusterPolicy` objects, all
 `enforcementAction: dryrun` (`tenants.yaml` ships them that way — see
-CLAUDE.md's rollout order before flipping any to `deny`). Then, on the
+[README.md → "Adding a Cluster Policy"](../README.md#5-adding-a-cluster-policy)
+for the rollout order before flipping any to `deny`). Then, on the
 workload cluster:
 
 ```sh
@@ -637,20 +587,21 @@ kubectl get constrainttemplate      # the four propagated into dev1-cluster
 
 Try a violation: remove `gitops.platform/project`/`environment` from the
 `music-store` Namespace in your tenant repo, push, let it sync — the
-violation shows up recorded against the constraint (dryrun never blocks the
-sync), not as a sync failure. Restore the labels before continuing.
+violation shows up recorded against the constraint (dryrun never blocks
+the sync), not as a sync failure. Restore the labels before continuing.
 
 ## You're done — and what you have now
 
-- **Add a namespace or tenant:** edit `tenants.yaml`, `make apply`, commit the
-  rendered files (or push to `main` and let the Apply workflow do all of it).
+- **Add a namespace or tenant:** edit `tenants.yaml`, `make apply`, commit
+  the rendered files (or push to `main` and let the Apply workflow do all
+  of it).
 - **Add a cluster:** copy the template, edit three values, push (Part 3).
 - **Roll a version:** bump one pin in `components/envs/dev`, let it soak,
   mirror to prod — see the README's *Version management* section.
 - **Change every dev cluster at once:** edit `infrastructure/profiles/dev`.
-- **Add a cluster policy:** see CLAUDE.md's "Adding a policy" workflow.
-- **Add a custom helm addon:** see Part 1.2 above, then CLAUDE.md's "Adding a
-  custom helm addon" workflow.
+- **Add a cluster policy:** see [README.md → "Adding a Cluster Policy"](../README.md#5-adding-a-cluster-policy).
+- **Add a custom helm addon:** see Part 1.2 above, then
+  [README.md → "Adding a New VKS Add-on"](../README.md#4-adding-a-new-vks-add-on).
 
 One warning before you experiment freely:
 
@@ -670,31 +621,31 @@ together (including what to swap for your environment — *Pattern vs lab*),
 make destroy
 ```
 
-Runs, in order (each is its own `make` target if you need to stop partway or
-re-run one):
+Runs, in order (each is its own `make` target if you need to stop partway
+or re-run one):
 
 1. **`destroy-apps`** — quiesces `root-bootstrap`'s auto-sync, deletes the
    ApplicationSets (orphan, so their generated Applications survive), then
    deletes those Applications and waits (up to 25m). This is what actually
-   cascade-deletes the VKS workload clusters, and it has to happen **while
-   ArgoCD is still up** — skip it and `destroy-bootstrap` orphans the
-   clusters instead of deleting them.
+   cascade-deletes the VKS workload clusters, and it has to happen
+   **while ArgoCD is still up** — skip it and `destroy-bootstrap` orphans
+   the clusters instead of deleting them.
 2. **`destroy-bootstrap`** — `terraform destroy` on `terraform/bootstrap`
    (the ArgoCD helm releases).
 3. **`destroy-infra`** — `terraform destroy` on `terraform/infra` (the
    supervisor namespaces, VPCs, AppProjects, and every file it rendered).
 
-Same confirmation gate as `apply-bootstrap` (`AUTO_APPROVE=1` to skip, e.g.
-CI). Prompts you once per destroy plan.
+Same confirmation gate as `apply-bootstrap` (`AUTO_APPROVE=1` to skip,
+e.g. CI). Prompts you once per destroy plan.
 
 **What `make destroy` does not touch** (Part 1's out-of-band, hand-applied
 objects — different credentials, different lifecycle):
 
 - the custom addon repo registrations in `vmware-system-vks-public`
   (`supervisor-addons/*.yaml`) — see Part 1.2's "To undo a registration"
-- the Secret Store Supervisor Service itself, or its endpoint/CA you pasted
-  into the env layers (Part 1.3) — nothing to undo, they aren't yours to
-  delete
+- the Secret Store Supervisor Service itself, or its endpoint/CA you
+  pasted into the env layers (Part 1.3) — nothing to undo, they aren't
+  yours to delete
 - the Terraform-state supervisor namespace (Part 1.1)
 
 Tear those down only if you're decommissioning the whole lab, not just
@@ -702,54 +653,54 @@ resetting the GitOps state.
 
 ### Removing one cluster
 
-Delete its directory and push — same mechanism as the Part 3 warning about
-renaming:
+Delete its directory and push — same mechanism as the Part 3 warning
+about renaming:
 
 ```sh
 git rm -r infrastructure/clusters/tenant-1/dev-1/dev1-cluster
 git commit -m "remove dev1-cluster" && git push
 ```
 
-The `cluster-provisioning` Application disappears from git, ArgoCD prunes it,
-and its finalizer deletes the VKS `Cluster`. No Terraform involved.
+The `cluster-provisioning` Application disappears from git, ArgoCD prunes
+it, and its finalizer deletes the VKS `Cluster`. No Terraform involved.
 
 ### Removing one tenant or namespace
 
 1. **Delete its cluster directories first** (previous section) — the
-   namespace destroy in step 3 doesn't know to drain clusters living inside
-   it the way `destroy-apps` does for a full teardown, so removing the
+   namespace destroy in step 3 doesn't drain clusters living inside it
+   the way `destroy-apps` does for a full teardown, so removing the
    namespace out from under a live cluster orphans it.
 2. Remove the tenant (or just the one namespace) from
    `terraform/infra/tenants.yaml`.
-3. `make apply-infra` — this **destroys** that tenant/namespace's resources
-   (the Terraform module instance disappears from `for_each`) and prunes the
-   files it had rendered (`argocd/projects/*.yaml`, `tenant-vars.yaml`,
-   `ns-vars.yaml`, …) since those are `local_file` resources keyed the same
-   way.
-4. Commit the now-deleted rendered files, same as any other `apply-infra`
-   run: `git add -A argocd/projects infrastructure/clusters/*/vars && git
-   commit -m "remove tenant-1/dev-1" && git push`.
+3. `make apply-infra` — this **destroys** that tenant/namespace's
+   resources (the Terraform module instance disappears from `for_each`)
+   and prunes the files it had rendered (`argocd/projects/*.yaml`,
+   `tenant-vars.yaml`, `ns-vars.yaml`, …), since those are `local_file`
+   resources keyed the same way.
+4. Commit the now-deleted rendered files, same as any other
+   `apply-infra` run:
+   `git add -A argocd/projects 'infrastructure/clusters/*/vars/**' && git commit -m "remove tenant-1/dev-1" && git push`.
 5. If the namespace ran `deploy_argo: true` (an infra tenant's ArgoCD),
    `apply-infra` alone doesn't remove its helm release — run
    `make apply-bootstrap` (which also reconciles the now-shorter
-   `namespace_config`) or, if you're decommissioning that ArgoCD entirely,
-   the manual `destroy-apps`-style drain from the full teardown above before
-   removing it from `tenants.yaml`.
+   `namespace_config`), or, if you're decommissioning that ArgoCD
+   entirely, run the manual `destroy-apps`-style drain from the full
+   teardown above before removing it from `tenants.yaml`.
 
 ### Cleaning up local state
 
 Gitignored, safe to delete once you're done: `.env`, `.kube-backend.config`,
 `.kube-backend.env`. `terraform/state-backend/namespace.auto.tfvars` is
-committed and points at the Part 1.1 state namespace — leave it unless that
-namespace is gone too (next section).
+committed and points at the Part 1.1 state namespace — leave it unless
+that namespace is gone too (next section).
 
 ### Decommissioning Part 1's one-time setup
 
 Only if nothing in this repo will run against this VCF install again.
 
-**State namespace** (Part 1.1) — deleting it destroys all Terraform state for
-every root, so only do this after `make destroy` has already torn down
-everything the state describes:
+**State namespace** (Part 1.1) — deleting it destroys all Terraform state
+for every root, so only do this after `make destroy` has already torn
+down everything the state describes:
 
 ```sh
 vcf context use <your-vcfa-context>
@@ -757,13 +708,13 @@ kubectl delete -f terraform/state-namespace/state-namespace.yaml   # or: kubectl
 kubectl delete -f terraform/state-namespace/project.yaml
 ```
 
-`terraform/state-backend/namespace.auto.tfvars` then points at a namespace
-that no longer exists — leave the file (a future setup pass overwrites it) or
-revert it, but there's no `terraform destroy` for `state-backend` itself,
-it's a stateless credential-rendering helper.
+`terraform/state-backend/namespace.auto.tfvars` then points at a
+namespace that no longer exists — leave the file (a future setup pass
+overwrites it) or revert it. There's no `terraform destroy` for
+`state-backend` itself; it's a stateless credential-rendering helper.
 
-**Addon repo registrations** (Part 1.2) — Part 1.2's "To undo a registration"
-has the ordering (remove from git and let ArgoCD prune first, only then
-delete `AddonRepositoryInstall`/`AddonRepository`); `make destroy` has
-already handled the "remove from git" half if you ran the full teardown
-first.
+**Addon repo registrations** (Part 1.2) — Part 1.2's "To undo a
+registration" has the ordering (remove from git and let ArgoCD prune
+first, only then delete `AddonRepositoryInstall`/`AddonRepository`);
+`make destroy` has already handled the "remove from git" half if you ran
+the full teardown first.

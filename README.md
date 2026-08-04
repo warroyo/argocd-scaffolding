@@ -174,7 +174,7 @@ makes ArgoCD prune the corresponding AppProjects. If you deleted them by
 accident, restore before syncing:
 
 ```sh
-git checkout -- argocd/projects infrastructure/clusters/*/vars \
+git checkout -- argocd/projects 'infrastructure/clusters/*/vars/**' \
   terraform/bootstrap/main.tf terraform/bootstrap/providers.tf
 ```
 

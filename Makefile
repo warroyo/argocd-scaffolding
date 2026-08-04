@@ -31,7 +31,12 @@ SRC_BACKEND := set -a; [ -f $(BACKEND_ENV) ] && . $(BACKEND_ENV); set +a;
 # Paths rendered by apply-infra that ArgoCD consumes from git. apply-bootstrap
 # refuses to run while these are dirty — otherwise the helm bootstrap succeeds
 # but ArgoCD syncs a main that lacks the new AppProjects / tenant-vars.
-GENERATED_PATHS := argocd/projects 'infrastructure/clusters/*/vars' \
+# NOTE: 'infrastructure/clusters/*/vars/**' — trailing /** is required. A git pathspec
+# containing a wildcard must fnmatch the FULL path (no implicit directory-prefix match),
+# and '*' already crosses '/', so this one pattern catches both project-level vars
+# (tenant-vars.yaml) and namespace-level vars (ns-vars.yaml) in one shot. Without /**
+# the pattern matches nothing at all, since every real file has a filename after 'vars'.
+GENERATED_PATHS := argocd/projects 'infrastructure/clusters/*/vars/**' \
                    terraform/bootstrap/providers.tf terraform/bootstrap/main.tf
 
 .PHONY: validate state-backend check-generated-clean \
