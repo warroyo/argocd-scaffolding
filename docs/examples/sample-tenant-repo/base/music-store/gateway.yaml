@@ -18,7 +18,7 @@ spec:
   parentRefs:
     - name: metal-store
   hostnames:
-    - "metalstore.will-org-apps.vcf.lab"
+    - "metalstore.will-org-apps.gpu.set.lab"
   rules:
     - filters:
       - type: ExtensionRef
@@ -49,7 +49,7 @@ metadata:
 spec:
   wafPolicy:
     kind: AviRef
-    name: System-WAF-Policy 
+    name: System-WAF-Policy
   analyticsPolicy:
     fullClientLogs:
       enabled: true
