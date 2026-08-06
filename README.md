@@ -220,14 +220,14 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `repo-config.yaml`: Single source of truth for the GitOps repo URL.
 - `infrastructure/`
   - `base/`: Reusable base Kustomize configs. Add-ons are laid out as `base/{addon}/install/` (the `AddonInstall`, pulled by `namespace-resources`) and `base/{addon}/config/` (the `AddonConfig`, pulled into the cluster tree) — separate kustomizations because the two objects have different sync scopes. Non-add-on bases (`vks-cluster`, `cluster-argocd-attach`) are flat. Bases carry `replace-me` placeholders for environment values.
-  - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp`) pin shared add-on versions and are included by the namespace's `namespace-resources` kustomization alongside the add-on base. `addon-bundles/{bundle}` adds the bundle label (`addons.kubernetes.vmware.com/profile: standard` — istio + external-secrets + observability) that a whole set of `AddonInstall`s selects on; per-add-on components override it in either direction (`istio` / `disable-istio`, `disable-external-secrets`, `disable-observability`, `disable-headlamp`); `addon-defaults` lists the `AddonConfig`s shipped to every cluster (values an add-on is wrong without, e.g. external-secrets' `helmOptions.targetNamespace` — helm add-ons install to `default` otherwise), while `istio-config` is the opt-in form for values a cluster merely *might* want to change.
+  - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp`) pin shared add-on versions and are included by the namespace's `namespace-resources` kustomization alongside the add-on base. `addon-bundles/{bundle}` adds the bundle label (`addons.kubernetes.vmware.com/profile: standard` — istio + external-secrets + cert-manager + observability) that a whole set of `AddonInstall`s selects on; per-add-on components override it in either direction (`istio` / `disable-istio`, `disable-external-secrets`, `disable-cert-manager`, `disable-observability`, `disable-headlamp`); `addon-defaults` lists the `AddonConfig`s shipped to every cluster (values an add-on is wrong without, e.g. external-secrets' `helmOptions.targetNamespace` — helm add-ons install to `default` otherwise), while `istio-config` is the opt-in form for values a cluster merely *might* want to change.
   - `profiles/common/`: The env-agnostic half of every profile — bases + always-on components + the add-on bundle + `addon-defaults`. Edit to change every cluster in every environment.
   - `profiles/{env}/`: References `profiles/common` and adds only the `envs/{env}` overlay, so adding an environment is a two-line file. Clusters reference a profile instead of enumerating everything.
-  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`; `clusters/{project}/{namespace_ref}/vars/` holds the Terraform-rendered `ns-vars.yaml` (the suffixed supervisor namespace name, feeding the secret-store mount/role). `clusters/{project}/{namespace_ref}/namespace-resources/` (optional) holds namespace-scoped shared resources synced once per supervisor namespace by the `namespace-resources` ApplicationSet — the shared, label-gated `AddonInstall`s (`base/{addon}/install` for headlamp, istio, external-secrets) and their env version pins.
+  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`; `clusters/{project}/{namespace_ref}/vars/` holds the Terraform-rendered `ns-vars.yaml` (the suffixed supervisor namespace name, feeding the secret-store mount/role). `clusters/{project}/{namespace_ref}/namespace-resources/` (optional) holds namespace-scoped shared resources synced once per supervisor namespace by the `namespace-resources` ApplicationSet — the shared, label-gated `AddonInstall`s (`base/{addon}/install` for headlamp, istio, external-secrets, cert-manager) and their env version pins.
 - `apps/`
   - `base/`: Base application manifests, incl. `tenant-sync` — the per-tenant ArgoCD sync-impersonation `ServiceAccount`/RBAC (see [Cluster Policy & Namespace Self-Service](#cluster-policy--namespace-self-service)), named per-cluster by the apps-side `cluster-var-injector` — and `secret-store` — the external-secrets `ClusterSecretStore` (+ SA/CRB) wiring the VCF Secret Store Service into every cluster (mount/role injected from `ns-vars`; opt out with `components/disable-secret-store`).
   - `components/stacks/`: Application stacks (e.g., `standard`, which includes `tenant-sync` and `secret-store` — shipped to every cluster).
-  - `components/envs/{env}/`: Per-environment app values and version pins — the baseline (package-repo bundle, cert-manager version) is applied via the profile. (Observability is no longer an app stack; VKS 9.1+ delivers it via the `automated-monitoring` addon label, set by the standard add-on bundle — opt out per-cluster with `infrastructure/components/disable-observability`.)
+  - `components/envs/{env}/`: Per-environment app values (e.g. the secret store's CA bundle), applied via the profile. Neither observability nor cert-manager is an app stack any more — both are add-ons on the infra side, delivered by the `standard` bundle (opt out with `infrastructure/components/disable-observability` / `disable-cert-manager`); see [DECISIONS](docs/DECISIONS.md) #20.
   - `profiles/common/`, `profiles/{env}/`: Same split as the infra tree — `common` holds the stack, `{env}` adds its overlay.
 - `docs/examples/`
   - `cluster-template/`: Copy-me template for onboarding a new cluster.
@@ -323,11 +323,13 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
    exactly one `cni-*` component (`cni-antrea` | `cni-cilium` | `cni-calico`;
    the template defaults to `cni-antrea` + `antrea-nsx`), day-0 only.
    Add-ons come from the profile's add-on
-   bundle (`addon-bundles/standard` → istio, external-secrets, observability);
+   bundle (`addon-bundles/standard` → istio, external-secrets, cert-manager,
+   observability);
    the shared `AddonInstall`s and their version pins live in
    `namespace-resources/`, not the cluster dir. Opt a cluster out with the
    matching `disable-*` component (`disable-istio`, `disable-external-secrets`,
-   `disable-observability`), or in without a profile with `components/istio`.
+   `disable-cert-manager`, `disable-observability`), or in without a profile
+   with `components/istio`.
    Add `ako-istio` when the cluster runs AKO/AVI, and `istio-config` for
    per-cluster istio value overrides. (headlamp is dev-only, on via
    `envs/dev`; opt out with `disable-headlamp`.) Keep `cluster-var-injector` **last**
@@ -423,7 +425,7 @@ A cluster does not enumerate its whole stack. It references an environment
   `cni-cilium`, `cni-calico`, plus `antrea-nsx` for antrea on NSX) and optional
   feature components (`istio`, `ako-istio`, `istio-config`,
   `cluster-autoscaling`, `disable-observability`, `enable-observability`,
-  `disable-headlamp`, `disable-external-secrets`, `disable-ako`, …) and app stacks that aren't part of the
+  `disable-headlamp`, `disable-external-secrets`, `disable-cert-manager`, `disable-ako`, …) and app stacks that aren't part of the
   baseline. The `cni-*` components are day-0 only — the CNI choice
   (`bootstrapAddons.cniRef` in the Cluster spec) is immutable after creation.
 - **Overrides**: anything inherited can be overridden per-cluster with a
@@ -441,8 +443,8 @@ fails at PR time instead of deploying a placeholder. Versions live in three laye
 
 | Layer | What it pins | Where |
 |-------|--------------|-------|
-| Env (always-on) | cluster class, Kubernetes version, AKO addon; baseline package versions (cert-manager) | `infrastructure/components/envs/{env}`, `apps/components/envs/{env}` (applied via the profiles) |
-| Env (shared add-on) | istio + headlamp + external-secrets `AddonInstall` versions (`releaseFilter.ref` = an `AddonRelease` name, or `chart.version` for the custom-helm-repo external-secrets addon) | `infrastructure/components/envs/{env}/{addon}` — the namespace's `namespace-resources` kustomization includes it alongside `base/{addon}`. Enablement is a cluster label: istio and external-secrets come from the `standard` add-on bundle, opt-out `disable-istio`/`disable-external-secrets`; headlamp is dev-only via `envs/dev`, opt-out `disable-headlamp`. (Observability carries no version — also in the `standard` bundle, opt-out `disable-observability`) |
+| Env (always-on) | cluster class, Kubernetes version, AKO addon | `infrastructure/components/envs/{env}` (applied via the profiles) |
+| Env (shared add-on) | istio + headlamp + external-secrets + cert-manager `AddonInstall` versions (`releaseFilter.ref` = an `AddonRelease` name, or `chart.version` for the custom-helm-repo external-secrets addon) | `infrastructure/components/envs/{env}/{addon}` — the namespace's `namespace-resources` kustomization includes it alongside `base/{addon}`. Enablement is a cluster label: istio, external-secrets and cert-manager come from the `standard` add-on bundle, opt-out `disable-istio`/`disable-external-secrets`/`disable-cert-manager`; headlamp is dev-only via `envs/dev`, opt-out `disable-headlamp`. (Observability carries no version — also in the `standard` bundle, opt-out `disable-observability`) |
 | Per-cluster override | anything, e.g. a canary Kubernetes version | `patches:` block in the cluster `kustomization.yaml` (applies after all components) |
 
 To roll a version: bump it in `envs/dev`, let dev soak, then mirror the change in

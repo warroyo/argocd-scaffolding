@@ -362,6 +362,12 @@ above doesn't apply there.
 
 ## 13. Why does `cert-manager`'s `PackageInstall` not ship its own `PackageRepository`?
 
+> **Superseded by [#20](#20-why-is-cert-manager-a-vks-add-on-rather-than-a-carvel-packageinstall).**
+> cert-manager is no longer a `PackageInstall` at all — it is a VKS add-on, and
+> the standard app stack ships no `PackageInstall`s. Kept because the finding
+> below (the platform already exposes its packages cluster-wide) still governs
+> any `PackageInstall` added here in future.
+
 **The problem.** The standard app stack used to render its own Carvel
 `PackageRepository` (`apps/base/standard-repo`, image pinned per-env) so its
 `PackageInstall`s (cert-manager) had a `Package` to resolve against.
@@ -636,7 +642,7 @@ sync — which runs under the `infra` project against **workload** clusters — 
 impersonate `argo-attach-sa`. The `infra` project names it **bare**, which
 ArgoCD resolves in the sync's destination namespace (`default`), i.e.
 `default:argo-attach-sa`. That identity doesn't exist on workload clusters, so
-the entire standard app stack (cert-manager, tenant-sync, secret-store) fails to
+the entire standard app stack (tenant-sync, secret-store) fails to
 sync there. (Supervisor-namespace syncs are fine: their destination namespace
 *is* the supervisor namespace, where `argo-attach-sa` lives — the bare-name
 trick only works when destination == where the SA is.)
@@ -780,3 +786,71 @@ nothing reaches a cluster until an env pin names a specific `AddonRelease`, and
 that pin is still an explicit, reviewed, revertable commit here. Immutable
 per-version tags (`:1.0.2`) remain published upstream if a future policy needs
 a pinned registration instead.
+
+---
+
+## 20. Why is `cert-manager` a VKS add-on rather than a Carvel `PackageInstall`?
+
+**The problem.** headlamp never installed. Its `ClusterAddon` sat `Ready:
+False` with a one-line kapp error:
+
+```
+kapp: Error: Expected to find kind 'cert-manager.io/v1/Issuer', but did not
+```
+
+headlamp defaults to cert-manager-issued TLS for itself
+(`tls.certManager.enabled: true`, `issuer.create: true`), so its package
+renders an `Issuer` — but cert-manager's CRDs weren't on the cluster yet.
+cert-manager was delivered by the **apps** side (a Carvel `PackageInstall` in
+`infra-packages`, synced by the `cluster-apps` Application), headlamp by the
+**infra** side (the add-on framework). Two delivery paths with no ordering
+between them: on the dev cluster headlamp's add-on reconciled at 22:00 and the
+cert-manager `PackageInstall` only deployed at 23:11. Worse, the kapp failure
+is one-shot — nothing re-triggered the headlamp `ClusterAddon` once
+cert-manager finally landed, so it stayed broken indefinitely.
+
+**What the vendor metadata says.** headlamp's `AddonConfigDefinition` declares
+cert-manager as a *template input resource*, and expects it as an add-on:
+
+```yaml
+templateInputResources:
+- apiVersion: addons.kubernetes.vmware.com/v1alpha1
+  kind: ClusterAddon
+  name: '{{.Cluster.name}}-cert-manager'
+  inputName: certManagerAddon
+  constraints: [{operator: optional}]
+```
+
+Its output template then sets `installedAddons: [cert-manager]` when that
+input resolves (which is what enables headlamp's cert-manager UI plugin).
+Under the Carvel path no `<cluster>-cert-manager` `ClusterAddon` ever exists,
+so cert-manager is invisible to the platform's dependency graph — headlamp
+renders `installedAddons: []` and has no way to learn cert-manager arrived.
+
+**The choice.** Move cert-manager to the standard Variant A add-on
+(`infrastructure/base/cert-manager/install`, pinned in
+`components/envs/{env}/cert-manager`, member of the `standard` bundle, opt out
+with `components/disable-cert-manager`). cert-manager is already in the vendor
+catalog — the `AddonRelease` matching the pin we were carrying
+(`1.19.2+vmware.1-vks.1`) exists as
+`cert-manager.kubernetes.vmware.com.1.19.2-vmware.1-vks.1`, so this is a
+delivery-mechanism change, not a version change. Both add-ons now flow through
+one controller and one dependency graph instead of two unrelated ones.
+
+Deleting the `PackageInstall` also retired `apps/base/package-installer` — it
+existed solely to give that one install an identity, and that identity was a
+`carvel-sa` ServiceAccount bound to a `'*'/'*'/'*'` ClusterRole on every
+workload cluster. Nothing else used it (`istio-ako-patch`'s `PackageInstall`
+lives in the vendor's `vmware-system-tkg` and carries no
+`serviceAccountName`), so the standard app stack is now just `tenant-sync` +
+`secret-store`, with no cluster-admin identity of its own.
+
+**The trade-off.** The version pin moves from an apps-side Carvel *version
+constraint* applied per environment profile to an infra-side `AddonRelease`
+name applied per `namespace-resources/` directory — consistent with every
+other shared add-on, but it is one more place to bump when a namespace is
+added. Cutover on a live cluster is also ordered and not automatic: the
+`PackageInstall` has to go away before the `AddonInstall` takes over, or two
+owners contend for the same `cert-manager` namespace. And this binds
+cert-manager's version to what the add-on catalog ships, same as any other
+add-on.

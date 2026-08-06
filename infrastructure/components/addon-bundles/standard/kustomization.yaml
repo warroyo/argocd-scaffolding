@@ -1,5 +1,6 @@
-# Standard add-on bundle: istio + external-secrets + observability. One label,
-# many AddonInstalls. See CLAUDE.md "VKS add-ons" → add-on bundles.
+# Standard add-on bundle: istio + external-secrets + cert-manager +
+# observability. One label, many AddonInstalls.
+# See CLAUDE.md "VKS add-ons" → add-on bundles.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 patches:

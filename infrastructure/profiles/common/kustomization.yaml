@@ -12,8 +12,8 @@ components:
 # CNI is NOT here — each cluster picks exactly one cni-* (day-0, immutable).
 - ../../components/argocd-tenant-cluster
 - ../../components/ako
-# Add-on bundle: istio + external-secrets + observability. Opt out per cluster
-# with the matching disable-* component.
+# Add-on bundle: istio + external-secrets + cert-manager + observability. Opt
+# out per cluster with the matching disable-* component.
 - ../../components/addon-bundles/standard
 # Default AddonConfigs for the add-ons above.
 - ../../components/addon-defaults

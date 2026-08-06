@@ -1,0 +1,15 @@
+# Dev cert-manager version pin (AddonRelease name), included by a namespace's
+# namespace-resources after base/cert-manager. See CLAUDE.md "Rolling a version".
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+- target:
+    group: addons.kubernetes.vmware.com
+    version: v1alpha1
+    kind: AddonInstall
+    labelSelector: "app.kubernetes.io/name=cert-manager"
+  patch: |-
+    - op: replace
+      path: /spec/releaseFilter/ref/name
+      value: "cert-manager.kubernetes.vmware.com.1.19.2-vmware.1-vks.1" # Dev cert-manager AddonRelease

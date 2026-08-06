@@ -1,0 +1,33 @@
+# Shared label-gated cert-manager AddonInstall (one per supervisor namespace).
+# Pattern: CLAUDE.md "VKS add-ons" Variant A.
+apiVersion: addons.kubernetes.vmware.com/v1alpha1
+kind: AddonInstall
+metadata:
+  name: cert-manager-addoninstall
+  labels:
+    app.kubernetes.io/name: cert-manager
+spec:
+  addonRef:
+    name: cert-manager
+  # Version (AddonRelease name) pinned per-env by components/envs/{env}/cert-manager.
+  releaseFilter:
+    ref:
+      name: replace-me
+      namespace: vmware-system-vks-public
+  # Selectors OR; expressions within one AND. Profile grants unless explicitly
+  # disabled; the per-addon label also works standalone. CLAUDE.md "VKS add-ons".
+  clusters:
+  - selector:
+      matchExpressions:
+      - key: addons.kubernetes.vmware.com/profile
+        operator: In
+        values: ["standard"]
+      - key: addons.kubernetes.vmware.com/cert-manager
+        operator: NotIn
+        values: ["disabled"]
+  - selector:
+      matchExpressions:
+      - key: addons.kubernetes.vmware.com/cert-manager
+        operator: In
+        values: ["enabled"]
+  stopMatchingBehavior: Delete

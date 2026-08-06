@@ -1,0 +1,14 @@
+# Opt out of cert-manager (on by default via the standard add-on bundle).
+# Note: headlamp defaults to cert-manager-issued TLS — disabling both together,
+# or setting headlamp's tls.certManager.enabled=false, avoids a failed install.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+- target:
+    group: cluster.x-k8s.io
+    version: v1beta1
+    kind: Cluster
+  patch: |-
+    - op: add
+      path: /metadata/labels/addons.kubernetes.vmware.com~1cert-manager
+      value: disabled

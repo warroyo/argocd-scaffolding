@@ -63,7 +63,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `infrastructure/components/addon-defaults/` | The `AddonConfig`s shipped to every cluster (values an add-on is wrong without). One line per add-on; patch per env or per cluster on top. See "VKS add-ons" → add-on config. |
 | `infrastructure/base/argocd-attach-rbac/` + `supervisor-addons/dayzero.yaml` | **Mandatory baseline addon.** Seeds (via the [dayzero-addon-service](https://github.com/warroyo/dayzero-addon-service) day-zero addon, driven by `values.resources`) **one** `ClusterRoleBinding` granting the existing `cluster-admin` to `default:argo-attach-sa` on every workload cluster — the identity ArgoCD's `cluster-apps` sync impersonates under the `infra` project (no SA object; RBAC/impersonation are string-based). Without it the standard app stack can't sync to any workload cluster. Selects **every** cluster (`cluster.x-k8s.io/cluster-name Exists`), no opt-out; config in `addon-defaults`, install in every `namespace-resources`. Register the addon repo once (Supervisor-admin, `docs/GETTING-STARTED.md` Part 1.2). Rationale: `docs/DECISIONS.md` #18. |
 | `apps/base/secret-store/` | Workload-cluster wiring that consumes external-secrets against the VCF Secret Store Service (OpenBao): the `secret-store-access` SA + `system:auth-delegator` CRB and the `vcf-cluster-store` `ClusterSecretStore`. Ships default-on via the standard app stack; opt out with `apps/components/disable-secret-store`. Mount/role are injected from `ns-vars` + `cluster_name`; the endpoint IP is an infra env value (`components/envs/{env}` patch on the external-secrets `AddonConfig` `hostAliases`), the CA bundle an apps env value (`apps/components/envs/{env}` patch). See "Wiring the secret store" and `docs/ARCHITECTURE.md`. |
-| `infrastructure/components/envs/{env}/`, `apps/components/envs/{env}/` | Real per-environment values AND version pins (bases hold only `replace-me` placeholders). Always-on versions (cluster class, k8s, AKO; package bundle/baseline) apply via the profiles; shared add-on versions live in feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp` — `releaseFilter.ref.name`, an `AddonRelease` name) included by the namespace's `namespace-resources` kustomization. Per-cluster canary: `patches:` in the cluster kustomization. |
+| `infrastructure/components/envs/{env}/`, `apps/components/envs/{env}/` | Real per-environment values AND version pins (bases hold only `replace-me` placeholders). Always-on versions (cluster class, k8s, AKO; package bundle/baseline) apply via the profiles; shared add-on versions live in feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp`, `envs/{env}/cert-manager` — `releaseFilter.ref.name`, an `AddonRelease` name) included by the namespace's `namespace-resources` kustomization. Per-cluster canary: `patches:` in the cluster kustomization. |
 | `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
 | `terraform/bootstrap/locals.tf` | Merges secrets (argo_password) into the per-namespace config from the infra run's `namespace_config` output; repo_url defaults from `argocd/repo-config.yaml`. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. Per-namespace helm tokens are minted fresh by `terraform/bootstrap/vcfa.tf` (no kubeconfigs shuttle). |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
@@ -120,9 +120,9 @@ validate` in `validate.yml`. Requires `kustomize`.
    stacks and any override patches. CNI first: exactly ONE `cni-*` component
    (template defaults to `cni-antrea` + `antrea-nsx`; day-0 only, immutable
    after creation). Add-ons come from the profile's bundle
-   (`addon-bundles/standard` — istio, external-secrets, observability); opt out
-   per cluster with `disable-istio` / `disable-external-secrets` /
-   `disable-observability`. Add `ako-istio` only when the cluster runs AKO/AVI,
+   (`addon-bundles/standard` — istio, external-secrets, cert-manager,
+   observability); opt out per cluster with `disable-istio` /
+   `disable-external-secrets` / `disable-cert-manager` / `disable-observability`. Add `ako-istio` only when the cluster runs AKO/AVI,
    and `components/istio-config` only for per-cluster istio value overrides.
    The shared `AddonInstall` and its version pin live in the
    namespace's `namespace-resources/` dir — if the namespace doesn't have one,
@@ -414,7 +414,8 @@ injector renames the object before cluster-level patches run.
 `components/addon-bundles/{bundle}` and inherited via `profiles/{env}` — that
 every add-on in the bundle selects on. Membership lives in the add-on's own
 `AddonInstall`, not in the env layer. Current bundle `standard` = istio +
-external-secrets + observability. The **label key stays `.../profile`** even
+external-secrets + cert-manager + observability. The **label key stays
+`.../profile`** even
 though the directory is `addon-bundles/` — it's the vendor-namespaced,
 cluster-facing selector already written into every `AddonInstall`; the
 directory name is what keeps "bundle" distinct from `profiles/{env}` (the env
@@ -469,9 +470,10 @@ AddonConfig; `antrea-nsx` is a settings-only patch included after it.
 ### Rolling a version
 Versions are never pinned in bases. Bump the pin in the env layer —
 `infrastructure/components/envs/{env}` (cluster class, k8s, AKO),
-`envs/{env}/istio`, `envs/{env}/headlamp` (shared add-on `AddonRelease` pins,
+`envs/{env}/istio`, `envs/{env}/headlamp`, `envs/{env}/cert-manager` (shared
+add-on `AddonRelease` pins,
 applied via namespace-resources), or `apps/components/envs/{env}`
-(package bundle, cert-manager) — dev first, then prod. Canary a
+(secret-store CA and other env values) — dev first, then prod. Canary a
 single cluster with a `patches:` override in its kustomization before bumping the
 env pin (for shared add-ons, canary per namespace: a `patches:` override in one
 namespace-resources kustomization).

@@ -9,10 +9,12 @@ resources:
 - ../../../../base/headlamp/install            # dev-only (envs/dev label)
 - ../../../../base/istio/install               # standard add-on bundle
 - ../../../../base/external-secrets/install    # standard add-on bundle
+- ../../../../base/cert-manager/install        # standard add-on bundle
 - ../../../../base/argocd-attach-rbac/install  # mandatory baseline (every cluster)
 components:
 # Version pins — swap `dev` to the namespace's environment.
 - ../../../../components/envs/dev/headlamp
 - ../../../../components/envs/dev/istio
 - ../../../../components/envs/dev/external-secrets
+- ../../../../components/envs/dev/cert-manager
 - ../../../../components/envs/dev/argocd-attach-rbac

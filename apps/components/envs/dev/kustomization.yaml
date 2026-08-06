@@ -8,15 +8,6 @@ kind: Component
 
 patches:
 - target:
-    group: packaging.carvel.dev
-    version: v1alpha1
-    kind: PackageInstall
-    name: cert-manager
-  patch: |-
-    - op: replace
-      path: /spec/packageRef/versionSelection/constraints
-      value: "1.19.2+vmware.1-vks.1" # Dev cert-manager version
-- target:
     group: external-secrets.io
     version: v1
     kind: ClusterSecretStore

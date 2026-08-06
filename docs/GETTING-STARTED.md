@@ -426,7 +426,7 @@ dev1-cluster   Provisioned    14m
 
 Once the cluster is ready, its `ArgoCluster` registration attaches it to
 ArgoCD, and a second Application appears: **`dev1-cluster-apps`** — the
-app stack (package repo, cert-manager, anything you enabled) reconciling
+app stack (tenant-sync, secret-store, anything you enabled) reconciling
 onto the new cluster.
 
 **If no Application ever appears** — this failure is *silent* by design
