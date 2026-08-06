@@ -44,22 +44,9 @@ spec:
             enabled: true
             minReplicas: 1
             maxReplicas: 5
+        # North-south ingress is AKO/AVI via Gateway API — no istio ingress gateway.
         ingress:
-          enabled: true
-          namespace: "istio-ingress"
-          priorityClassName: ""
-          replicas: 1
-          resources:
-            limits:
-              cpu: 2000m
-              memory: 1024Mi
-            requests:
-              cpu: 100m
-              memory: 128Mi
-          autoscaling:
-            enabled: true
-            minReplicas: 1
-            maxReplicas: 5
+          enabled: false
       pilot:
         priorityClassName: ""
         replicas: 1

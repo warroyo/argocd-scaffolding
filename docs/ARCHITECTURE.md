@@ -423,6 +423,51 @@ before cluster-level patches run.
 | CNI (antrea \| cilium \| calico) | auto-installed (cluster's CNI) | — (Cluster spec: `bootstrapAddons.cniRef`, set day-0 by exactly one `cni-*` component per cluster) | — (bundled with cluster class) |
 | observability | auto-installed (prometheus/telegraf) | `addons.kubernetes.vmware.com/automated-monitoring` — set by `addon-bundles/standard` (built-in AddonInstall, so its native label, not the bundle one); `disable-`/`enable-observability` | — (managed by VKS) |
 
+### North-south ingress: Gateway API, with or without AKO
+
+Exposure in this platform is **Gateway API**, and the `service-exposure` policy
+below steers tenants to it deliberately. What changes between clusters is only
+which `GatewayClass` realizes the `Gateway` — not the tenant's manifest shape.
+
+The istio add-on's `gateways.ingress` block is **not** the Gateway API path. It
+installs the legacy static `istio-ingressgateway` Deployment + LoadBalancer
+Service, which serves `Ingress` and `networking.istio.io/v1 Gateway` objects.
+Gateway API is served by istiod acting as the GatewayClass controller: it
+auto-provisions a gateway Deployment and its LoadBalancer Service **per
+`Gateway` resource, in the resource's own namespace**. So a cluster using
+Gateway API needs no static ingress gateway, and `base/istio/config` ships
+`gateways.ingress.enabled: false` (also the `AddonConfigDefinition` schema
+default, so clusters that skip the opt-in `components/istio-config` are already
+off).
+
+Both classes register themselves — verified live on a `standard`-bundle cluster
+running istio and AKO:
+
+```
+NAME           CONTROLLER                    ACCEPTED
+avi-lb         ako.vmware.com/avi-lb         True
+istio          istio.io/gateway-controller   True
+istio-remote   istio.io/unmanaged-gateway    True
+```
+
+| | With AKO/AVI | Without AKO |
+|---|---|---|
+| `gatewayClassName` | `avi-lb` | `istio` |
+| Data path | Avi Service Engines | istiod-provisioned gateway pods |
+| Cluster components | `components/ako-istio` + `apps/base/istio-ako-patch` (sidecar/cert wiring for the AKO pod) | `components/disable-ako`; neither pairing component |
+| VIP comes from | Avi via AKO | `guest-cluster-cloud-provider` (vSphere paravirtual CPI) |
+
+The last row is the part worth stating plainly: **`LoadBalancer` Services do not
+depend on AKO.** The paravirtual CPI running on every VKS cluster fulfils them
+against the Supervisor's own load balancer, so dropping AKO costs the `avi-lb`
+class and the Avi-native data path, not the VIP. That is what makes `istio` a
+complete substitute rather than a degraded one.
+
+Re-enabling the static gateway is only for a workload that still speaks
+`Ingress` or `networking.istio.io` — a `patches:` override on the `AddonConfig`,
+which means the cluster must also include `components/istio-config` (the opt-in
+component that carries istio's value block at all).
+
 ## Cluster policy + namespace self-service
 
 Tenants create and manage namespaces **through git only** — their Applications
@@ -508,8 +553,10 @@ platform's own `default` and `infra` AppProjects (restoring their existing
 webhook backing VKSM auto-exempts only `gatekeeper-system` / `kube-system` /
 `vmware-system-vksm` — no `vmware-system-*` wildcard — so every other platform
 namespace is genuinely in scope for `gitops-namespace-containment` and needs
-no separate exclusion; the platform's own load-balanced Services live in
-`istio-ingress` and `headlamp` (not `istio-system`); VKSM ships its own
+no separate exclusion; the platform's own load-balanced Services live outside
+`istio-system` (`headlamp` — north-south ingress is AKO/AVI via Gateway API,
+so the istio ingress gateway is off and there is no `istio-ingress`); VKSM
+ships its own
 pod-security policies already, so this catalog doesn't duplicate them.
 
 ## Secret store
