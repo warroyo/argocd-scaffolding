@@ -16,6 +16,12 @@ components:
 - ../../../../components/ako-istio
 - ../../../../components/istio-config
 - ../../../../components/cluster-autoscaling
+# Headlamp SSO: apiserver trusts the VCFA bearer (env-shared audience via
+# envs/dev/oidc-auth), and the UI is exposed via Gateway. Enabling oidc-auth
+# rolls the control plane once. See docs/ARCHITECTURE.md "VCFA identity".
+- ../../../../components/oidc-auth
+- ../../../../components/envs/dev/oidc-auth
+- ../../../../components/headlamp-config
 # cluster-var-injector MUST be last — rewrites all resources above.
 - ../../../../components/cluster-var-injector
 

@@ -1,0 +1,23 @@
+# Opt-in: Gateway API exposure for this cluster's headlamp UI. Needs
+# `headlamp_hostname` in cluster-details.yaml. Auth is not wired here — users
+# paste their VCFA bearer (the apiserver accepts it via components/oidc-auth).
+# See docs/ARCHITECTURE.md "VCFA identity".
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+- ../../base/headlamp/config
+
+replacements:
+# Per-cluster hostname — injected here, not in cluster-var-injector, since
+# clusters without this component have no AddonConfig to target.
+- source:
+    kind: ConfigMap
+    name: vars
+    fieldPath: data.headlamp_hostname
+  targets:
+  - select:
+      kind: AddonConfig
+      labelSelector: "app.kubernetes.io/name=headlamp"
+    fieldPaths:
+    - spec.values.hostname

@@ -1,0 +1,48 @@
+# Opt-in: accept VCFA tokens at this cluster's apiserver (structured
+# AuthenticationConfiguration) so a user can paste the bearer their vcf CLI
+# already mints into Headlamp. Issuer + CA + audience are env-shared values (one
+# VCFA client for every cluster) — pair this with components/envs/{env}/oidc-auth.
+# Design: docs/ARCHITECTURE.md "VCFA identity".
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+patches:
+- target:
+    group: cluster.x-k8s.io
+    version: v1beta1
+    kind: Cluster
+  patch: |-
+    # Label marks the cluster for the envs/{env}/oidc-auth issuer + CA patch.
+    - op: add
+      path: /metadata/labels/gitops.platform~1oidc-auth
+      value: enabled
+    # variables/1 is the `kubernetes` entry in base/vks-cluster/cluster.yaml.
+    # Changing this rolls the control plane — see docs/DECISIONS.md.
+    - op: add
+      path: /spec/topology/variables/1/value/apiServerConfiguration
+      value:
+        extraAuthentication:
+          jwt:
+          - issuer:
+              url: replace-me
+              # Env-shared VCFA client audience (set in envs/{env}/oidc-auth) —
+              # the aud carried by the token the vcf CLI mints. Same on every cluster.
+              audiences:
+              - replace-me
+              # PEM bundle, not base64. Carries every root that may sign the
+              # issuer so a CA roll never edits the apiserver: jwt[].issuer.url
+              # must be unique, so a duplicate-issuer successor entry is rejected.
+              certificateAuthority: replace-me
+            claimMappings:
+              # No prefix: with `expression` Kubernetes uses the result verbatim,
+              # so this matches what Concierge emits on the vcf CLI path — one
+              # identity, one set of RBAC subjects. MUST stay byte-identical to
+              # the JWTAuthenticator in base/argocd-attach-rbac/config.
+              username:
+                expression: 'claims.preferred_username'
+              groups:
+                expression: 'claims.?groups.orValue([]) + claims.?roles.orValue([])'
+            # Restores the guard the username prefix would otherwise have given.
+            userValidationRules:
+            - expression: '!user.username.startsWith("system:")'
+              message: "username must not use the system: prefix"

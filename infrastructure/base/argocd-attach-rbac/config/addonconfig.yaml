@@ -32,3 +32,25 @@ spec:
       - kind: ServiceAccount
         name: argo-attach-sa
         namespace: default
+    # Pinniped Concierge authenticator for VCFA identity — the vcf CLI path.
+    # Replaces `vcf ... register-vcfa-jwt-authenticator`: kapp-controller
+    # reconciles it continuously, so it self-heals if the CLI is re-run. Issuer
+    # + CA are env values. Never touch tkg-jwt-authenticator (kapp-managed by
+    # the platform). See docs/ARCHITECTURE.md "VCFA identity".
+    - apiVersion: authentication.concierge.pinniped.dev/v1alpha1
+      kind: JWTAuthenticator
+      metadata:
+        name: tm-vks-jwt-authenticator
+      spec:
+        issuer: replace-me
+        # Audience is <CAPI cluster name>-<CAPI cluster UID>; dayzero 1.0.3+
+        # substitutes both at apply time.
+        audience: ${CLUSTER_NAME}-${CLUSTER_UID}
+        claims:
+          # MUST stay byte-identical to the claimMappings in
+          # components/oidc-auth — that identity match is the whole
+          # no-duplicate-subjects property. Change both sides or neither.
+          usernameExpression: 'claims.preferred_username'
+          groupsExpression: 'claims.?groups.orValue([]) + claims.?roles.orValue([])'
+        tls:
+          certificateAuthorityData: replace-me
