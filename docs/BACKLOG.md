@@ -133,24 +133,6 @@ improvement · **P3** = nice-to-have / hygiene.
   changes), or per-tenant destination labels.
 - **Size:** M.
 
-### P2 — Headlamp needs istio-sidecar injection on `ako-istio` clusters
-- **What:** on clusters running AKO in istio mode (`components/ako-istio`,
-  `istioEnabled: true`) with a STRICT mesh `PeerAuthentication`, AKO programs the
-  AVI Gateway's pool to reach backends over mesh mTLS. The headlamp addon pod is
-  **not** in the mesh by default — its namespace carries no `istio-injection`
-  label and the addon exposes no pod-label/annotation knob — so the pool has no
-  healthy members and the UI won't serve. Labeling the `headlamp` namespace
-  `istio-injection=enabled` + restarting the deployment injects the native
-  sidecar and fixes it, but **kapp (the addon) strips the namespace label on
-  reconcile**, so the manual label is not durable.
-- **Action:** make headlamp injection GitOps-permanent on istio clusters —
-  options: enforce the `istio-injection` label via an ArgoCD-managed resource
-  (accepting some kapp thrash), deploy headlamp into a namespace this repo owns
-  and labels (set the addon's `namespace` value), or exempt the headlamp
-  Gateway's pool from AKO mTLS. Pair whatever is chosen with `headlamp-config`
-  so it ships wherever headlamp is enabled on an `ako-istio` cluster.
-- **Size:** M.
-
 ### P3 — Revisit `ns_ref` vs. Terraform-owned suffixed directories
 - **What:** the directory/join spine uses a logical `namespace_ref` (`dev-1`);
   the vcfa-suffixed name (`dev-1-abcde`) is carried as a sync-time label and,
@@ -221,6 +203,20 @@ improvement · **P3** = nice-to-have / hygiene.
 
 ## Done
 <!-- Move completed items here with the PR/commit that closed them. -->
+- **Headlamp istio-sidecar injection on `ako-istio` clusters** — shipped
+  `apps/base/headlamp-istio-patch` (commit `1d2d704`). Injects a ytt overlay into
+  the addon's own guest `PackageInstall`
+  (`ext.packaging.carvel.dev/ytt-paths-from-secret-name`, same mechanism as
+  `apps/base/istio-ako-patch`), so kapp keeps the change instead of stripping it.
+  Two load-bearing stanzas: label `Namespace/headlamp` `istio-injection=enabled`
+  (makes the injection webhook eligible) **and** add `sidecar.istio.io/inject:
+  "true"` to the headlamp Deployment pod template (forces the one rollout that
+  realizes it — a namespace label alone never rolls an existing pod). Verified
+  the addon framework offers no overlay/label passthrough at any CRD level
+  (AddonInstall/AddonConfig/AddonRelease/ClusterAddon + the ACD schema), and the
+  `createNamespace: false` alternative was rejected for the ArgoCD/kapp ns
+  ordering race. Wired to `dev1-cluster`; opt-in line in the cluster-template
+  example. Verified live: pod rolled with `istio-proxy` native sidecar, in mesh.
 - **Cluster policy APIs under gitops (via Terraform)** — modelled in
   `terraform/infra/policies.tf` as `local.policy_catalog` (one entry per policy
   kind) over `terraform/infra/rego/*.rego`, enabled per tenant from a `policies:`
