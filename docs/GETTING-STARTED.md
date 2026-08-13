@@ -548,6 +548,16 @@ client.
 3. **Log in.** Browse `https://<headlamp_hostname>`, choose token login, paste
    it. The same token works on any cluster whose apiserver trusts VCFA — it is
    not cluster-scoped.
+4. **Bind RBAC.** `oidc-auth` only makes the apiserver *authenticate* the token
+   (`auth whoami` resolves your identity); it grants **no** authorization. Until
+   you bind your VCFA identity, Headlamp logs you in but shows nothing. Bind the
+   group or user your token carries — e.g. cluster-wide read:
+   ```
+   kubectl create clusterrolebinding headlamp-viewers \
+     --clusterrole=view --group="<your VCFA role/group>"
+   ```
+   Scope it to a role/namespace as appropriate; this is ordinary Kubernetes RBAC,
+   independent of the SSO wiring.
 
 Design: `docs/ARCHITECTURE.md` "VCFA identity". Rationale (why not a relying
 party / Concierge): `docs/DECISIONS.md` #21.

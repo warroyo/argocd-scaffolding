@@ -650,6 +650,11 @@ CLI (cert CN/O) and the dashboard (bearer) resolve the **same** RBAC subjects.
 `validate.sh` enforces this parity between `components/oidc-auth` and the
 Concierge `JWTAuthenticator`.
 
+`oidc-auth` grants **authentication only** — the apiserver resolves the token to
+an identity, but authorization is ordinary Kubernetes RBAC. A logged-in user sees
+nothing until their VCFA group/user is bound to a role on the cluster
+(`docs/GETTING-STARTED.md` "Headlamp SSO", step 4).
+
 **Why no OIDC relying party for Headlamp.** A relying-party (auth-code) design
 would need a client registered per cluster (or per tenant) plus its redirect
 URIs reconciled as clusters come and go — out-of-band work that breaks the
