@@ -7,6 +7,9 @@ resources:
 # This cluster runs istio + AKO, so it ships the AKO-sidecar integration patch
 # (cluster-var-injector below rewrites its PackageInstall name).
 - ../../../../../../apps/base/istio-ako-patch
+# headlamp runs on an ako-istio cluster, so its addon pod needs the istio
+# sidecar too — injects the mesh label via the addon's own PackageInstall.
+- ../../../../../../apps/base/headlamp-istio-patch
 # Per-namespace vars (ns-vars: suffixed supervisor namespace) — feeds the
 # secret-store ClusterSecretStore mount/role via the injector. TF-generated.
 - ../../vars

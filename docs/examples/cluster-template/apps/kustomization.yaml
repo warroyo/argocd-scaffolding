@@ -3,7 +3,8 @@ kind: Kustomization
 
 resources:
 - ../../../../../../apps/profiles/dev        # app baseline for this env
-# - ../../../../../../apps/base/istio-ako-patch   # only if this cluster runs istio + AKO
+# - ../../../../../../apps/base/istio-ako-patch      # only if this cluster runs istio + AKO
+# - ../../../../../../apps/base/headlamp-istio-patch # only if this cluster runs headlamp on an ako-istio mesh
 - ../../vars                                 # ns-vars (suffixed supervisor ns) — feeds secret-store; TF-generated
 
 components:

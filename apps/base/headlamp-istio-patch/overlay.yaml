@@ -1,0 +1,48 @@
+# Puts the headlamp addon pod into the istio mesh on ako-istio clusters. The
+# addon renders Namespace/headlamp with no istio-injection label and exposes no
+# pod/ns label knob, so a manual label is stripped by kapp on reconcile. This
+# ytt overlay is injected into the addon's OWN guest PackageInstall render (via
+# the ext.packaging.carvel.dev/ytt-paths-from-secret-name annotation below), so
+# kapp keeps the label instead of stripping it. See docs/BACKLOG.md (headlamp
+# istio-sidecar injection) and apps/base/istio-ako-patch (same mechanism).
+apiVersion: v1
+kind: Secret
+metadata:
+  name: headlamp-istio-overlay
+  namespace: vmware-system-tkg
+stringData:
+  headlamp-istio-overlay.yaml: |
+    #@ load("@ytt:overlay", "overlay")
+
+    #@overlay/match by=overlay.subset({"kind": "Namespace", "metadata": {"name": "headlamp"}})
+    ---
+    metadata:
+      #@overlay/match missing_ok=True
+      labels:
+        #@overlay/match missing_ok=True
+        istio-injection: enabled
+
+    ---
+
+    #@overlay/match by=overlay.subset({"kind": "Deployment", "metadata": {"name": "headlamp"}})
+    ---
+    spec:
+      template:
+        metadata:
+          #@overlay/match missing_ok=True
+          annotations:
+            #@overlay/merge
+            sidecar.istio.io/inject: "true"
+---
+apiVersion: packaging.carvel.dev/v1alpha1
+kind: PackageInstall
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: '3'
+    ext.packaging.carvel.dev/ytt-paths-from-secret-name.0: headlamp-istio-overlay
+  # Placeholder prefix — the apps-side cluster-var-injector rewrites this to
+  # <cluster_name>-headlamp (the addon-created PackageInstall it adopts).
+  name: cluster-headlamp
+  namespace: vmware-system-tkg
+  labels:
+    config.k8s.io/inject-cluster-name-prefix: "true"
