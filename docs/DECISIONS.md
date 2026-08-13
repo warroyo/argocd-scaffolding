@@ -854,3 +854,58 @@ added. Cutover on a live cluster is also ordered and not automatic: the
 owners contend for the same `cert-manager` namespace. And this binds
 cert-manager's version to what the add-on catalog ships, same as any other
 add-on.
+
+## 21. How does Headlamp get the user's identity? (pasted VCFA bearer, not an OIDC relying party)
+
+**The problem.** Headlamp is a browser dashboard that needs to act as the
+logged-in user against a workload cluster. The obvious design — Headlamp as an
+OIDC **relying party** doing the auth-code flow against VCFA — forces a client
+to be created per cluster (its callback URL is the cluster's Headlamp host), out
+of band, and its redirect URIs reconciled every time a cluster is added or
+removed. That is exactly the kind of per-cluster out-of-band action the repo's
+GitOps model is built to avoid.
+
+**Why not the pieces that already exist.**
+- *Pinniped Concierge `JWTAuthenticator`* (the day-zero `tm-vks-jwt-authenticator`)
+  backs Concierge's `TokenCredentialRequest` — an id_token→**client-cert**
+  exchange — and is **not** in the kube-apiserver's bearer path. A pasted bearer
+  goes to the main apiserver, which never consults Concierge. Using it would need
+  the Concierge **impersonation proxy** (not enabled on these guests — they're in
+  signing mode, returning certs) plus a token with the per-cluster aud
+  `<cluster>-<uid>` that there's no way to print for pasting.
+- *Auth-code SSO into Headlamp* still needs a relying party, and VCFA's token
+  endpoint advertises only confidential auth methods (`client_secret_*`,
+  `private_key_jwt`; no `none`/PKCE), so it also needs a client secret delivered
+  per cluster — strictly more than bearer reuse.
+
+**The choice.** Trust the token the **vcf CLI already mints**. The guest
+apiserver is configured with structured `AuthenticationConfiguration`
+(`components/oidc-auth`) to accept VCFA tokens directly: `issuer=<vcfa>/oidc`, a
+fixed `audiences` value, and the same claim mappings as the Concierge path. The
+user pastes the plain VCFA bearer (`scripts/headlamp-token.sh`, which just reads
+it from their kubeconfig) into Headlamp's token field. That token is **not
+cluster-scoped**, so the audience is an **env-shared constant** — one VCFA client
+for every cluster — and there is no per-cluster or per-tenant registration,
+redirect URI, or secret. This deleted the earlier relying-party scaffold
+(`apps/base/headlamp-oidc` + secret-store wiring, per-cluster `oidc_audience`
+injection, Headlamp's `oidc:` block).
+
+**Verified live.** A stock kube-apiserver with this exact config (kind cluster,
+then `dev1-cluster`) accepts the vcf CLI's VCFA bearer and resolves it to the
+VCFA identity (`Username admin`, `Groups [Organization Administrator]`), via the
+JWT bearer path (JTI credential-id, not a cert). The guest reaches VCFA's JWKS
+because the day-zero Concierge already validates VCFA tokens on every guest.
+
+**The trade-offs.**
+- *Audience width.* The audience pinned in dev (`922f4a12…`) is VCFA's
+  **portal/API** client — the same token that grants VCFA API access is accepted
+  as a cluster bearer. This is authentication only; RBAC still gates authz. Fine
+  for a lab; a production deployment would mint a **dedicated** k8s audience,
+  which reintroduces a registered client + a login helper (kubelogin) to obtain
+  that aud.
+- *UX.* The user runs a command and pastes a token that expires (~1h; the vcf
+  refresh token re-mints it silently) — not an in-browser SSO button. Acceptable
+  for a platform/admin audience.
+- *Control-plane roll.* Enabling `oidc-auth` writes the apiserver's structured
+  authn, which rolls the control plane once (`validate.sh` warns on single-replica
+  CPs). The Concierge cert path stays as break-glass.

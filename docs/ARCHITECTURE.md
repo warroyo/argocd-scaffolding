@@ -625,6 +625,59 @@ ClusterRole (namespaced kinds only). The tenant AppProject's Namespace-only
 cluster-scoped `ClusterSecretStore` even though the RBAC group grant would allow
 the API — defense in depth, same as the gateway-api grant.
 
+## VCFA identity (cluster access + Headlamp SSO)
+
+Every workload cluster trusts the same VCFA identity plane, reached two ways
+depending on the client:
+
+- **CLI access (client certificate).** The vcf CLI logs a user into VCFA (a
+  Pinniped Supervisor federates to VCFA via `OIDCIdentityProvider/oidc-idp`),
+  then **Pinniped Concierge** on the guest exchanges that VCFA id_token for a
+  short-lived client certificate (`TokenCredentialRequest`, validated by the
+  day-zero `tm-vks-jwt-authenticator` — audience `<cluster>-<uid>`, seeded by the
+  mandatory `argocd-attach-rbac` dayzero payload). This is `kubectl`.
+- **Headlamp (pasted bearer).** Headlamp is a browser UI that authenticates with
+  a pasted bearer token; it cannot perform the Concierge cert exchange. So the
+  guest **apiserver** is instead told to trust VCFA tokens directly, via
+  structured `AuthenticationConfiguration` — the opt-in `components/oidc-auth`
+  cluster component. A user pastes the plain VCFA bearer their vcf CLI already
+  holds (`scripts/headlamp-token.sh`) into Headlamp's token field; the apiserver
+  validates it against VCFA's JWKS and maps its claims to a k8s identity.
+
+Both paths key on **byte-identical** claim mappings — `username =
+claims.preferred_username`, `groups = claims.?groups + claims.?roles` — so the
+CLI (cert CN/O) and the dashboard (bearer) resolve the **same** RBAC subjects.
+`validate.sh` enforces this parity between `components/oidc-auth` and the
+Concierge `JWTAuthenticator`.
+
+**Why no OIDC relying party for Headlamp.** A relying-party (auth-code) design
+would need a client registered per cluster (or per tenant) plus its redirect
+URIs reconciled as clusters come and go — out-of-band work that breaks the
+"clusters are pure GitOps" model. It is unnecessary: the token the vcf CLI
+already mints (`iss=<vcfa>/oidc`, `aud=<one VCFA client>`) is a normal VCFA
+bearer, **not cluster-scoped**, so one token works on every cluster whose
+apiserver trusts VCFA. The audience is an **env-shared constant**
+(`components/envs/{env}/oidc-auth`) — the same VCFA client for every cluster —
+so there is no per-cluster/per-tenant client, no redirect URIs, and nothing to
+register when a cluster is added. Rationale and the rejected alternatives
+(relying party, Concierge/impersonation-proxy, auth-code): `docs/DECISIONS.md`
+#21.
+
+Enabling `oidc-auth` writes the apiserver's structured authn, which **rolls the
+control plane once** (`validate.sh` warns on single-replica CPs). The Concierge
+cert path stays available as break-glass throughout.
+
+```mermaid
+flowchart LR
+  user([User]) -->|vcf CLI login| vcfa[(VCFA OIDC<br/>+ Pinniped Supervisor)]
+  vcfa -->|VCFA bearer<br/>aud=env-shared client| tok[/id/access token/]
+  tok -->|kubectl: TokenCredentialRequest| concierge[Concierge on guest<br/>tm-vks-jwt-authenticator] -->|client cert| api1[Guest apiserver]
+  tok -->|paste into Headlamp| hl[Headlamp UI] -->|bearer| api2[Guest apiserver<br/>structured authn = oidc-auth]
+  api2 -.validates against.-> jwks[(VCFA JWKS)]
+  classDef same fill:#eef,stroke:#88a;
+  class api1,api2 same;
+```
+
 ## Pattern vs lab: the seams
 
 Not everything in this repo is the reference. The table below marks the seams —

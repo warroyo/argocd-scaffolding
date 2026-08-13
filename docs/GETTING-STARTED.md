@@ -520,6 +520,38 @@ would ship the `ExternalSecret` in their own repo (Part 4); the
 `KeyValueSecret` is applied by hand or by whatever owns the secret's
 lifecycle.
 
+### Headlamp SSO — log in with your VCFA identity
+
+Headlamp authenticates with a **pasted bearer**, not an OIDC flow — and the
+bearer is the one your vcf CLI already holds. No relying party, no per-cluster
+client.
+
+1. **Opt the cluster in.** In the cluster's `kustomization.yaml` add
+   `components/oidc-auth`, `components/envs/{env}/oidc-auth`, and
+   `components/headlamp-config` (before `cluster-var-injector`), and set
+   `headlamp_hostname` in `cluster-details.yaml`. This makes the apiserver trust
+   VCFA tokens (env-shared audience) and exposes the UI via Gateway.
+   **Enabling `oidc-auth` rolls the control plane once** (a single-replica CP is
+   a brief API outage — `validate.sh` warns; the vcf CLI cert path stays as
+   break-glass).
+2. **Get your token** — reads the VCFA bearer from your vcf CLI kubeconfig
+   (`vcf context refresh` renews it):
+   ```
+   ./scripts/headlamp-token.sh
+   ```
+   Verify a cluster accepts it (token-only, no cluster login):
+   ```
+   kubectl --server=https://<guest-api>:6443 --certificate-authority=<guest-ca> \
+     --token="$(./scripts/headlamp-token.sh)" auth whoami
+   # -> Username <you>, Groups [<your VCFA roles/groups> system:authenticated]
+   ```
+3. **Log in.** Browse `https://<headlamp_hostname>`, choose token login, paste
+   it. The same token works on any cluster whose apiserver trusts VCFA — it is
+   not cluster-scoped.
+
+Design: `docs/ARCHITECTURE.md` "VCFA identity". Rationale (why not a relying
+party / Concierge): `docs/DECISIONS.md` #21.
+
 ## Part 5 — Cluster policy & namespace self-service (~15 min, optional)
 
 Confirms the layer that lets tenants manage namespaces through git without
