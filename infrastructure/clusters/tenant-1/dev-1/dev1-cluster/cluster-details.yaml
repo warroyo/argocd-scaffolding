@@ -10,4 +10,4 @@ data:
   namespace_ref: dev-1         # must equal the {namespace_ref} directory & cluster label
   # Headlamp UI host (Gateway/AVI programs the DNS record). Adjust to the lab's
   # AVI DNS domain — hostname-ownership policy allows the .will-org-apps.vcf.lab suffix.
-  headlamp_hostname: headlamp-dev1-cluster.will-org-apps.vcf.lab
+  headlamp_hostname: headlamp-dev1-cluster.acme.gpu.set.lab
