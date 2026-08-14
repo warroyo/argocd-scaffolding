@@ -124,6 +124,29 @@ improvement · **P3** = nice-to-have / hygiene.
   already kept: nothing is env-keyed today.
 - **Size:** L (rides the multi-org repo partition).
 
+### P2 — Finish rolebinding-subject-containment policy (parked on a branch)
+- **What:** `tenant-sync-<tenant>` (the real per-tenant ArgoCD sync-impersonation
+  SA in `platform-gitops`) holds cluster-wide `admin`, and `admin` can create
+  RoleBindings — so a tenant commit could bind an arbitrary **human** or a
+  **foreign ServiceAccount**, laundering self-granted access through a machine
+  identity. A cluster policy (`RoleBindingSubjectContainment`) that restricts the
+  sync SA to binding only **same-namespace ServiceAccounts** is written but
+  **incomplete**.
+- **Where:** committed on branch
+  `wip/rolebinding-subject-containment-policy` (not on `main`) — the rego
+  (`terraform/infra/rego/rolebinding-subject-containment.rego`), the
+  `local.policy_catalog` entry (`selector_mode = "in"`, tenant's own namespaces),
+  and the `tenants.yaml` enablement (`dryrun`).
+- **Blockers before it can merge/enforce:**
+  1. `apps/base/tenant-users` does not exist — the policy (and its comments)
+     assume that human access arrives through it instead of tenant-authored
+     RoleBindings; that replacement path must ship first, or tenants lose human
+     access entirely.
+  2. No `docs/DECISIONS.md` entry — the rego/tenants.yaml comments reference one.
+  3. Still `enforcement: dryrun` — promote to enforce only after 1–2 and a
+     dryrun-violation review.
+- **Size:** M (mostly the `tenant-users` dependency).
+
 ### P2 — Git boundary for tenants (CODEOWNERS / branch protection)
 - **What:** tenants PR into `infrastructure/clusters/{their-project}/`, but
   nothing stops a tenant PR from editing profiles, appsets, terraform, or
