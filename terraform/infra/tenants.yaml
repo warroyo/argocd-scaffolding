@@ -12,6 +12,10 @@ tenants:
         enforcement: dryrun
       gitops-namespace-containment:
         enforcement: dryrun
+      # Only fences if human access ships alongside it (apps/base/tenant-users) —
+      # otherwise tenants bind their own SAs and hand out tokens instead.
+      rolebinding-subject-containment:
+        enforcement: dryrun
       hostname-ownership:
         enforcement: dryrun
         parameters:

@@ -50,6 +50,25 @@ locals {
       selector_mode = "not_in"
     }
 
+    "rolebinding-subject-containment" = {
+      template_name   = "rolebindingsubjectcontainment"
+      constraint_kind = "RoleBindingSubjectContainment"
+      rego            = file("${path.module}/rego/rolebinding-subject-containment.rego")
+      parameters_schema = {
+        project = { type = "string" }
+        syncServiceAccounts = {
+          type  = "array"
+          items = { type = "string" }
+        }
+      }
+      target_resources = [
+        { apiGroups = ["rbac.authorization.k8s.io"], kinds = ["RoleBinding"] },
+      ]
+      # Only the tenant's own namespaces — RoleBindings elsewhere are already
+      # blocked by gitops-namespace-containment.
+      selector_mode = "in"
+    }
+
     "hostname-ownership" = {
       template_name   = "hostnameownership"
       constraint_kind = "HostnameOwnership"
