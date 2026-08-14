@@ -18,8 +18,12 @@ spec:
     gatewayApi:
       enabled: true
       gateway:
-        # AVI/AKO handles north-south ingress here, not istio (the schema
-        # default). AKO registers the DNS record when the Gateway programs.
+        # Default GatewayClass = AVI/AKO (default-on every cluster); AKO
+        # registers the DNS record when the Gateway programs. Gateway API has no
+        # is-default-class, so this is an explicit default value. A NON-AKO
+        # cluster running headlamp overrides className per-cluster (patches:,
+        # target by app.kubernetes.io/name=headlamp) to its own gateway class
+        # (e.g. istio). See docs/GETTING-STARTED.md "Headlamp SSO".
         className: avi-lb
         create: true
         name: headlamp-gateway

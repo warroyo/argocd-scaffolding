@@ -8,3 +8,6 @@ data:
   cluster_name: my-cluster   # must equal this directory name
   project: my-tenant         # must equal the {project} directory & cluster label
   namespace_ref: my-ns       # must equal the {namespace_ref} directory & cluster label
+  # Only for clusters opting into headlamp-config (Headlamp SSO) — the UI host
+  # the Gateway/AVI programs. Uncomment when you add the headlamp SSO components.
+  # headlamp_hostname: headlamp-my-cluster.<your-avi-dns-domain>

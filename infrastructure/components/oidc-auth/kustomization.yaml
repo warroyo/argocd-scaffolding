@@ -1,8 +1,10 @@
 # Opt-in: accept VCFA tokens at this cluster's apiserver (structured
 # AuthenticationConfiguration) so a user can paste the bearer their vcf CLI
-# already mints into Headlamp. Issuer + CA + audience are env-shared values (one
-# VCFA client for every cluster) — pair this with components/envs/{env}/oidc-auth.
-# Design: docs/ARCHITECTURE.md "VCFA identity".
+# already mints into Headlamp. Issuer + CA + audience are ORG-global — one VCFA
+# org's identity plane, shared by every cluster it hosts — so they live directly
+# here, NOT per-env (env never selects the identity plane; the org/VCFA does).
+# Multi-org (a separate TF run per org) re-keys these per org — see docs/BACKLOG.md.
+# Design: docs/ARCHITECTURE.md "VCFA identity"; rationale: docs/DECISIONS.md #21.
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 
@@ -12,32 +14,57 @@ patches:
     version: v1beta1
     kind: Cluster
   patch: |-
-    # Label marks the cluster for the envs/{env}/oidc-auth issuer + CA patch.
-    - op: add
-      path: /metadata/labels/gitops.platform~1oidc-auth
-      value: enabled
     # variables/1 is the `kubernetes` entry in base/vks-cluster/cluster.yaml.
-    # Changing this rolls the control plane — see docs/DECISIONS.md.
+    # Adding this rolls the control plane once — see docs/DECISIONS.md #21.
     - op: add
       path: /spec/topology/variables/1/value/apiServerConfiguration
       value:
         extraAuthentication:
           jwt:
           - issuer:
-              url: replace-me
-              # Env-shared VCFA client audience (set in envs/{env}/oidc-auth) —
-              # the aud carried by the token the vcf CLI mints. Same on every cluster.
+              # VCFA OIDC issuer — must match the token's `iss` byte-for-byte.
+              url: https://auto.gpu.set.lab/oidc
+              # VCFA portal/API client the vcf CLI's token carries (org-global).
+              # Prod would mint a dedicated k8s aud — see docs/DECISIONS.md #21.
               audiences:
-              - replace-me
-              # PEM bundle, not base64. Carries every root that may sign the
-              # issuer so a CA roll never edits the apiserver: jwt[].issuer.url
-              # must be unique, so a duplicate-issuer successor entry is rejected.
-              certificateAuthority: replace-me
+              - 922f4a12-82c9-4440-8466-f1b1faca0675
+              # PEM (not base64), every root that may sign the issuer. A CA roll
+              # APPENDS the successor here — never edit in place (rolls the CP).
+              certificateAuthority: |
+                -----BEGIN CERTIFICATE-----
+                MIIE8DCCA1igAwIBAgIJAMUu+dubXUg9MA0GCSqGSIb3DQEBCwUAMIGTMQswCQYD
+                VQQDDAJDQTETMBEGCgmSJomT8ixkARkWA2dwdTEVMBMGCgmSJomT8ixkARkWBWxv
+                Y2FsMQswCQYDVQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEZMBcGA1UECgwQ
+                dmMwMS5ncHUuc2V0LmxhYjEbMBkGA1UECwwSVk13YXJlIEVuZ2luZWVyaW5nMB4X
+                DTI2MDYwODEwMDMzN1oXDTM2MDYwNTEwMDMzN1owgZMxCzAJBgNVBAMMAkNBMRMw
+                EQYKCZImiZPyLGQBGRYDZ3B1MRUwEwYKCZImiZPyLGQBGRYFbG9jYWwxCzAJBgNV
+                BAYTAlVTMRMwEQYDVQQIDApDYWxpZm9ybmlhMRkwFwYDVQQKDBB2YzAxLmdwdS5z
+                ZXQubGFiMRswGQYDVQQLDBJWTXdhcmUgRW5naW5lZXJpbmcwggGiMA0GCSqGSIb3
+                DQEBAQUAA4IBjwAwggGKAoIBgQDnPNQXlxWvIz+57fbE+1nxynRLCbPGQXd33KaN
+                h9eCC593BuHHVaywfbgO5aTP3jG4zYRM1Z8aTe0qabDxq4sodpOBf68rOK/7JYbr
+                LH6y4zvN13GZzN5Ldc4VbOHPZ9lNTPb/Ux3/yhWB3cwq1eddbUufOelxEF8O7zzb
+                amVEbeVTk5hnzkkpdb1SJzRNYpQSLDla7uQRLo0NpliaafP0p/9d8sQpSJuU4SXR
+                scuAJl4DIO37UqKbTAhvG/rJjj6tgZm+E/MAmUUJCaNK4sS1IT+xBv+lBWii5glv
+                rTlmy50YXuJZaEMeZGSLzC43d5YD2EFqfhQlqpI5yCCmfltQdmAgNyLwOSRKNlyQ
+                tsuuNOSeokANh5bwC8WsyC3+hYaS62fTfGFltaWggUIk0+L7Qgb9YzixbPq+3Jmp
+                S0gtY2eAyLyDkxSeEbjMs3g1mr8pmYqi3d4Mwn2pDLP+X7b5WHX3vGOKoSmKwLe/
+                /5qqmADiJN7V+sgJtZ0kEWNMtMcCAwEAAaNFMEMwHQYDVR0OBBYEFCcADjS/zU3o
+                smELMo3bkzPQyq8nMA4GA1UdDwEB/wQEAwIBBjASBgNVHRMBAf8ECDAGAQH/AgEA
+                MA0GCSqGSIb3DQEBCwUAA4IBgQC0YmQUPxWT44qEQHwWua+eXxHgubxXqmJhivh+
+                AORGS6D8PDD7tPGJtNUKiQJQ0gDumy/IJGNSQhnoGlKHKyrtZebqCKebZdTMl4ch
+                Hhfim5RQmwIBREFVqrUe957EveSsEiCxQCLYQOUfIsJoIOAXsgvj3EXg5WWz/sI1
+                +U3W9qRpIr58AdsGuccbTBR0yERytBH93C2yf2Q2Ik0mLGsIkN5bk/EStiklxcO7
+                abdI8L5iJtdS0BjnWXG4tGclA/UcvopYw4rIjQXkNdtgvfiz+8tG32PmqlHUZtcv
+                xpOh8VP0gcAvSgKs/j7rDx44gRuBMCMKFksixgtOmB75Lm1Nwd0GkQTnlZxO+9+j
+                aDXyDkrKlCSKATpx2uV2Py2pC8SdmOj5chb74eUMD3B5jdFpi0o6oGymfTcvcTs9
+                pcwcQGbfmZbqbjecmg8vy2Z0NC+0V+OWws3vZx4K0557Wpqm6sNdew+NXldtGNjv
+                nL2SCkDTif3ckIxjDF6OHZrDOP0=
+                -----END CERTIFICATE-----
             claimMappings:
-              # No prefix: with `expression` Kubernetes uses the result verbatim,
-              # so this matches what Concierge emits on the vcf CLI path — one
-              # identity, one set of RBAC subjects. MUST stay byte-identical to
-              # the JWTAuthenticator in base/argocd-attach-rbac/config.
+              # No prefix: Kubernetes uses the expression result verbatim, so
+              # this matches Concierge's vcf CLI path — one identity, one set of
+              # RBAC subjects. MUST stay byte-identical to the JWTAuthenticator
+              # in base/argocd-attach-rbac/config (validate.sh parity check).
               username:
                 expression: 'claims.preferred_username'
               groups:

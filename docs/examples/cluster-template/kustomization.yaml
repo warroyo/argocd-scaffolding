@@ -23,6 +23,13 @@ components:
 # - ../../../../components/disable-istio
 # - ../../../../components/disable-external-secrets
 # - ../../../../components/disable-observability
+# Headlamp SSO (VCFA identity) — opt in as a set. Enabling oidc-auth rolls the
+# control plane once. Needs headlamp_hostname in cluster-details.yaml. Non-AKO
+# cluster: also override the headlamp Gateway className via a patches: block
+# (see docs/GETTING-STARTED.md "Headlamp SSO"). oidc-auth carries the org-global
+# issuer/audience/CA directly — nothing per-cluster to fill in.
+# - ../../../../components/oidc-auth               # apiserver trusts VCFA tokens (org-global)
+# - ../../../../components/headlamp-config         # expose UI via Gateway
 # cluster-var-injector MUST be last — rewrites all resources above.
 - ../../../../components/cluster-var-injector
 
