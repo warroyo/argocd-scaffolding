@@ -583,11 +583,16 @@ cluster UID from the `Cluster` object, the VCFA endpoint and CA from the
 context itself, the org from the token's `org_name` claim. Two things worth
 knowing:
 
-- **The guest cluster CA is the one value VCFA does not expose to a tenant.**
-  It is not on any object the tenant can read and the API server serves only its
-  leaf certificate, so the script falls back to a local kubeconfig entry for the
-  same server, then to `--ca-file`. A tenant starting clean needs the platform to
-  hand over that CA once — it is a public certificate, safe to share.
+- **The guest cluster CA comes off the cluster endpoint itself** — the
+  anonymously-readable `kube-public/cluster-info` ConfigMap kubeadm publishes,
+  the same source `kubeadm join` discovers from. Nothing has to be handed over
+  out of band. It is fetched over unverified TLS and then checked against the
+  certificate the endpoint presents, so a wrong or stale CA is caught; pin it
+  out of band if you need protection from an active MITM. Fallbacks, in order:
+  the Pinniped `CredentialIssuer`, a local kubeconfig entry for the same server,
+  `--ca-file`. Note this path needs **anonymous auth**, which the parked
+  `oidc-auth` component switches off — one more thing that breaks if it returns
+  unchanged.
 - **The credential cache is keyed by cluster UUID only**, so two identities using
   the default cache evict each other. The script scopes it per user
   (`credentials-<username>.json`) so an admin and a tenant context can be live at

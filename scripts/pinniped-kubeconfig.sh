@@ -10,8 +10,8 @@
 #   VCFA endpoint                scheme+host of the context's server URL
 #   VCFA CA                      the context's certificate-authority-data
 #   tenant name                  `org_name` claim of the context's token
-# The guest cluster CA is the one value VCFA does not expose to a tenant — see
-# --ca-file / --insecure below.
+#   guest cluster CA             kube-public/cluster-info on the cluster endpoint
+#                                (anonymous, as `kubeadm join` does it)
 #
 # Usage: scripts/pinniped-kubeconfig.sh CLUSTER [options]
 set -euo pipefail
@@ -26,15 +26,16 @@ Usage: $(basename "$0") CLUSTER [-n NAMESPACE] [--context CCI_CONTEXT]
   -n, --namespace    supervisor namespace (default: the context's namespace)
       --context      CCI context to read from (default: current context)
   -o, --output       write kubeconfig here (default: stdout)
-      --ca-file      PEM file holding the guest cluster CA. Only needed when the
-                     CA cannot be discovered — see below.
+      --ca-file      PEM file holding the guest cluster CA. Only needed when
+                     discovery fails — see below.
       --insecure     emit insecure-skip-tls-verify instead of a CA. Last resort.
       --name         name for the generated cluster/user/context
 
-The guest CA is looked for in this order: the Pinniped CredentialIssuer (needs
-RBAC a tenant usually lacks), then any local kubeconfig entry already pointing at
-the same server, then --ca-file. A tenant with none of those needs the platform
-to hand over the CA once — it is a public certificate, safe to share.
+The guest CA is discovered from kube-public/cluster-info on the cluster endpoint
+(anonymously readable, the same source `kubeadm join` uses), falling back to the
+Pinniped CredentialIssuer, then a local kubeconfig entry for the same server,
+then --ca-file. Whatever is found is checked against the certificate the endpoint
+actually presents.
 EOF
   exit 2
 }
@@ -101,22 +102,46 @@ port="$(jq -r '.spec.controlPlaneEndpoint.port' <<<"$cluster_json")"
 server="https://${host}:${port}"
 ns="$(jq -r '.metadata.namespace' <<<"$cluster_json")"
 
-# ── Guest cluster CA: the one value VCFA does not hand a tenant ───────────────
-guest_ca=""
+# ── Guest cluster CA ──────────────────────────────────────────────────────────
+# kubeadm publishes it in the anonymously-readable kube-public/cluster-info
+# ConfigMap — the same discovery `kubeadm join` uses. Needs anonymous auth, which
+# the parked oidc-auth component would switch off (docs/BACKLOG.md).
+cluster_info_ca() {
+  command -v curl >/dev/null || return 1
+  curl -sk --max-time 15 "${server}/api/v1/namespaces/kube-public/configmaps/cluster-info" 2>/dev/null \
+    | jq -r '.data.kubeconfig // empty' \
+    | sed -n 's/^ *certificate-authority-data: *//p' | head -1
+}
+
+guest_ca=""; ca_source=""
 if [ -n "$CA_FILE" ]; then
-  guest_ca="$(base64 -w0 < "$CA_FILE")"
+  guest_ca="$(base64 -w0 < "$CA_FILE")"; ca_source="--ca-file"
+elif ca="$(cluster_info_ca)" && [ -n "$ca" ]; then
+  guest_ca="$ca"; ca_source="kube-public/cluster-info"
 elif ca="$("${KUBECTL[@]}" get credentialissuers.config.concierge.pinniped.dev -o json 2>/dev/null \
             | jq -r '[.items[].status.strategies[]?|select(.status=="Success")
                       |.frontend.tokenCredentialRequestInfo.certificateAuthorityData//empty][0]//empty')" \
      && [ -n "$ca" ]; then
-  guest_ca="$ca"   # Pinniped publishes it here for anyone with RBAC to read it
+  guest_ca="$ca"; ca_source="Pinniped CredentialIssuer"
 elif ca="$(jq -r --arg s "$server" '[.clusters[]|select(.cluster.server==$s)
              |.cluster."certificate-authority-data"//empty][0]//empty' <<<"$CFG")" && [ -n "$ca" ]; then
-  guest_ca="$ca"   # already trusted locally for this exact server
+  guest_ca="$ca"; ca_source="local kubeconfig"
 elif [ "$INSECURE" -eq 0 ]; then
   echo "error: could not discover the CA for $server." >&2
   echo "  Pass --ca-file with the guest cluster CA (a public cert), or --insecure." >&2
   exit 1
+fi
+
+# Discovery runs over unverified TLS, so check the CA actually signs what the
+# endpoint presents. Catches a wrong or stale CA; pin out-of-band if you need
+# protection from an active MITM (same caveat as `kubeadm join` discovery).
+if [ -n "$guest_ca" ] && command -v openssl >/dev/null; then
+  ca_pem="$(mktemp)"; trap 'rm -f "$ca_pem"' EXIT
+  base64 -d <<<"$guest_ca" > "$ca_pem" 2>/dev/null || true
+  if ! openssl s_client -connect "${host}:${port}" -CAfile "$ca_pem" </dev/null 2>/dev/null \
+       | grep -q 'Verify return code: 0'; then
+    echo "warning: CA from ${ca_source} does not verify the certificate ${server} presents" >&2
+  fi
 fi
 
 # ── Emit ──────────────────────────────────────────────────────────────────────
@@ -169,7 +194,7 @@ EOF
 
 if [ -n "$OUT" ]; then
   render > "$OUT"
-  echo "wrote $OUT (context '${name}', identity ${whoami_claim})" >&2
+  echo "wrote $OUT (context '${name}', identity ${whoami_claim}, CA via ${ca_source:-insecure})" >&2
   echo "  KUBECONFIG=$OUT kubectl auth whoami" >&2
 else
   render
