@@ -108,10 +108,39 @@ improvement · **P3** = nice-to-have / hygiene.
   columns everyone actually looks at.
 - **Size:** M.
 
+### P1 — Headlamp bearer login parked (extraAuthentication kills anonymous auth → Concierge)
+- **What:** the guest apiserver's structured `AuthenticationConfiguration`
+  (`apiServerConfiguration.extraAuthentication`, shipped as
+  `components/oidc-auth`) makes the cluster accept VCFA bearers — and as VKS
+  applies it, it also **removes anonymous authentication**. Pinniped Concierge
+  needs anonymous auth, so enabling the dashboard path **breaks the vcf CLI
+  path** every cluster depends on. Not a trade: it's a regression.
+- **Where:** branch `wip/headlamp-oidc-auth` (cut from `main` at `cc6fa73`), and
+  the removal commit on `main` is its inverse. Parked pieces:
+  `infrastructure/components/oidc-auth/`, `terraform/infra/oidc.tf` +
+  `templates/oidc-auth.yaml.tftpl` + the `local_file.oidc_auth` block in
+  `generate.tf`, `var.vcfa_oidc_audience`, the `hashicorp/tls` provider, the
+  `validate.sh` claim-parity check and single-replica-CP warning, and the
+  per-cluster opt-in lines.
+- **Blocker:** a **VKS release** that keeps anonymous auth (or otherwise keeps
+  Concierge working) when `extraAuthentication` is set. Nothing to do in this
+  repo until then.
+- **Still on `main`:** `components/headlamp-config` (UI via Gateway),
+  `scripts/headlamp-token.sh` (prints the VCFA bearer — `auth whoami` only), and
+  the Concierge `JWTAuthenticator` claim expressions in
+  `infrastructure/base/argocd-attach-rbac/config`, which are the identity
+  contract the parked config must match byte-for-byte on re-land.
+- **Re-land checklist:** confirm anonymous auth survives on the new VKS build →
+  merge the branch → restore the parity check → re-verify `auth whoami` on both
+  paths (CLI cert AND pasted bearer) → then, and only then, bind bearer-carried
+  subjects (`claims.groups + claims.roles`) in RBAC.
+- **Size:** S to re-land, once unblocked.
+
 ### P3 — Per-org OIDC bundle when multi-org lands
-- **What:** `components/oidc-auth` is now TF-generated and **org-global** (one
-  flat bundle for the single org this infra run targets — see Done). Multi-org
-  re-keys it **per org**.
+- **What:** `components/oidc-auth` is TF-generated and **org-global** (one flat
+  bundle for the single org this infra run targets). Multi-org re-keys it **per
+  org**. **Depends on the parked bearer path above** — nothing to do while the
+  bundle lives on `wip/headlamp-oidc-auth`.
 - **Multi-org is a separate TF run per org.** The vcfa provider is **one org
   per state**, so a second org is a second infra run (its own state) rendering
   its own slice into this shared repo. At that point the OIDC bundle becomes
@@ -253,7 +282,9 @@ improvement · **P3** = nice-to-have / hygiene.
   bundle was collapsed from a per-env component (`envs/{env}/oidc-auth`) to one
   org-global component, then generated. `claimMappings` stay static in the
   template and byte-identical to the Concierge `JWTAuthenticator` (validate.sh
-  parity). Remaining: per-org re-key (see Open, rides multi-org).
+  parity). **Backed out of `main` 2026-08-25** — the apiserver config it renders
+  breaks Concierge (see the P1 park item in Open); the work is intact on
+  `wip/headlamp-oidc-auth`. Remaining: per-org re-key (see Open, rides multi-org).
 - **Headlamp istio-sidecar injection on `ako-istio` clusters** — shipped
   `apps/base/headlamp-istio-patch` (commit `1d2d704`). Injects a ytt overlay into
   the addon's own guest `PackageInstall`

@@ -857,6 +857,14 @@ add-on.
 
 ## 21. How does Headlamp get the user's identity? (pasted VCFA bearer, not an OIDC relying party)
 
+> **PARKED (2026-08-25).** The chosen design below is implemented but **not on
+> `main`** — it lives on `wip/headlamp-oidc-auth`. Setting the apiserver's
+> structured `AuthenticationConfiguration` (`extraAuthentication`) **removes
+> anonymous authentication**, which breaks Pinniped Concierge — i.e. it takes
+> out the vcf CLI path in exchange for the dashboard path. Blocked on a VKS
+> release. The analysis below stands; only the status changed. See
+> `docs/BACKLOG.md` for the re-land checklist.
+
 **The problem.** Headlamp is a browser dashboard that needs to act as the
 logged-in user against a workload cluster. The obvious design — Headlamp as an
 OIDC **relying party** doing the auth-code flow against VCFA — forces a client
@@ -914,4 +922,8 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
   for a platform/admin audience.
 - *Control-plane roll.* Enabling `oidc-auth` writes the apiserver's structured
   authn, which rolls the control plane once (`validate.sh` warns on single-replica
-  CPs). The Concierge cert path stays as break-glass.
+  CPs).
+- *Anonymous auth — the blocker.* Structured authn as VKS applies it also
+  **disables anonymous authentication**. Pinniped Concierge needs it, so the
+  Concierge cert path is **not** break-glass here: enabling the bearer path
+  removes the CLI path. That is what parked this (see the note at the top).
