@@ -148,7 +148,7 @@ fi
 name="${CTX_NAME:-${CLUSTER}-${ns}}"
 # The credential cache is keyed by cluster UUID only, so two identities sharing
 # the default file evict each other. Scope it per user.
-cache="${HOME}/.config/vcf/vcfa/credentials-$(tr -c 'A-Za-z0-9_.-' '_' <<<"$whoami_claim").json"
+cache="${HOME}/.config/vcf/vcfa/credentials-$(printf '%s' "$whoami_claim" | tr -c 'A-Za-z0-9_.-' '_').json"
 
 if [ -n "$guest_ca" ]; then
   tls="    certificate-authority-data: ${guest_ca}"
