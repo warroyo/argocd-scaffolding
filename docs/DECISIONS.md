@@ -1056,10 +1056,13 @@ platform's own initial write of `.spec.input`. New objects (the
 updates conflicted, which is why this surfaced on the promotion rather than when
 the policies were first created.
 
-Forcing the conflict once displaces that entry, and it does not come back: a
-later apply contests only against the platform's real controller, which owns
-different fields. So `field_manager { force_conflicts = true }` is a **migration
-step, not configuration** — it is deliberately *not* left in the modules, since
+Forcing the conflict once displaces that entry, and it does not come back —
+**verified**: with the block removed again, the next `make apply-infra` ran
+clean, the three containment policies stayed at `deny`, and the platform's
+labels were intact on all five. A later apply contests only against the
+platform's real controller, which owns different fields. So
+`field_manager { force_conflicts = true }` is a **migration step, not
+configuration** — it is deliberately *not* left in the modules, since
 a standing force would silently take any field the platform later starts
 managing. If the conflict ever reappears, add the block, run once, remove it
 again.
