@@ -1034,64 +1034,10 @@ identity. The `vcf` CLI/Pinniped path is deliberately left alone — project-rea
 members get nothing there, which is the status quo, and binding it too would
 resurrect the derivation this decision removed.
 
+## 23. Why a field you deleted from git stays on the cluster
 
-## 23. Why `force_conflicts` on the policy modules, and why removing a field from git does not remove it from the cluster
-
-Two field-ownership surprises, found the same afternoon (2026-08-25), both from
-Kubernetes server-side apply semantics rather than from anything this repo does.
-
-**A. A one-time field-manager conflict, resolved by forcing once — not in the
-config.** Promoting the containment policies from `dryrun` to `deny` failed on
-every *existing* `ClusterPolicy`:
-
-```
-Apply failed with 1 conflict: conflict with "before-first-apply" using
-policy.management.kubernetes.vmware.com/v1alpha1: .spec.input
-```
-
-`before-first-apply` is the synthetic manager the API server records for state
-that existed before the first server-side apply touched an object — here, the
-platform's own initial write of `.spec.input`. New objects (the
-`rolebinding-subject-containment` policy and its template) applied fine; only
-updates conflicted, which is why this surfaced on the promotion rather than when
-the policies were first created.
-
-Forcing the conflict once displaces that entry, and it does not come back —
-**verified**: with the block removed again, the next `make apply-infra` ran
-clean, the three containment policies stayed at `deny`, and the platform's
-labels were intact on all five. A later apply contests only against the
-platform's real controller, which owns different fields. So
-`field_manager { force_conflicts = true }` is a **migration step, not
-configuration** — it is deliberately *not* left in the modules, since
-a standing force would silently take any field the platform later starts
-managing. If the conflict ever reappears, add the block, run once, remove it
-again.
-
-Forcing has a visible side effect worth expecting: evicting the
-`before-first-apply` entry takes the fields it exclusively owned with it, so the
-apply returns objects missing the platform's `mgmt.k8s.vmware.com/name`
-(`ClusterPolicy`) and `mgmt.k8s.vmware.com/policy-type: custom-policy`
-(`ClusterPolicyTemplate`) labels, and the provider fails its post-apply
-consistency check:
-
-```
-.object.metadata.labels: was cty.MapVal(map[string]cty.Value{
-  "mgmt.k8s.vmware.com/name":cty.StringVal("require-namespace-labels")}), but now null
-```
-
-The platform's controller stamps the labels back immediately and **the applies
-take effect regardless** — the enforcement flips were live while this error was
-still firing. The manifests deliberately do not declare those labels: Terraform
-applies only the fields this repo owns and lets the platform mutate the rest,
-and `kubernetes_manifest` already ignores server-side label/annotation changes
-(`computed_fields` defaults to `["metadata.annotations", "metadata.labels"]`,
-verified in provider 2.38.0). Declaring a platform-namespaced label would mean
-asserting a value the platform derives, and fighting it forever if that
-derivation changed.
-
-**B. ArgoCD's diff does not notice a field you deleted from git.** Backing the
-Headlamp bearer path out of `main` (#21) removed `components/oidc-auth`, so the
-rendered `Cluster` no longer carried
+Backing the Headlamp bearer path out of `main` (#21) removed
+`components/oidc-auth`, so the rendered `Cluster` no longer carried
 `spec.topology.variables[kubernetes].apiServerConfiguration`. The Application
 reported **`Synced`** at the new revision, reconciled minutes earlier — and the
 live cluster kept `extraAuthentication` anyway, with `argocd-controller` still
