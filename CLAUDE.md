@@ -207,6 +207,10 @@ Design in `docs/ARCHITECTURE.md` → "Tenant human access"; rationale in
 `docs/DECISIONS.md` #22. Tenants are **read-only** on their clusters — writes go
 through the tenant's own gitops flow, never Headlamp.
 
+0. Give the tenant a kubeconfig with `scripts/pinniped-kubeconfig.sh <cluster>`
+   (run from a VCFA namespace context). `vcf cluster kubeconfig get` **hangs for
+   a tenant** — it polls the CAPI admin kubeconfig Secret and treats the 403 as
+   "not ready". Details: `docs/GETTING-STARTED.md` 4.3.
 1. Set the tenant's `group:` in `tenants.yaml`, exactly as it appears in a VCFA
    token, then `make apply-infra` and commit the re-rendered `tenant-vars.yaml`.
 2. Add people to that group in VCFA. Nothing in this repo changes.

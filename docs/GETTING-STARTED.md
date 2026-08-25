@@ -553,6 +553,50 @@ patches:
 kubeconfig — useful for `auth whoami` against VCFA, not for cluster login. A
 cluster will reject it until the parked component returns.
 
+### 4.3 A tenant's kubectl access (`scripts/pinniped-kubeconfig.sh`)
+
+Cluster access for a tenant is the vcf CLI / Concierge path: the user logs in to
+VCFA, Concierge exchanges that token for a short-lived client certificate, and
+RBAC on the cluster decides the rest.
+
+**`vcf cluster kubeconfig get` cannot be used by a tenant.** It polls the CAPI
+admin kubeconfig Secret (`<cluster>-kubeconfig`) in the supervisor namespace,
+and a tenant's `Forbidden` on that read is treated as "not created yet" — so it
+polls forever with no output and no timeout. The Secret holds a **cluster-admin
+client certificate**, so the 403 is correct and must stay: granting it would
+hand the tenant the cluster. The hang is a CLI bug; the permission is not.
+
+Generate the kubeconfig instead — it holds no credentials, only endpoints and
+public CAs, and the identity comes from whoever's token the exec plugin presents
+at run time:
+
+```sh
+vcf context use <org>-<user>:<supervisor-ns>:<project>     # a VCFA namespace context
+./scripts/pinniped-kubeconfig.sh <cluster> -o ~/.kube/<cluster>.config
+
+VCF_CLI_VCFA_API_TOKEN='<your VCFA API token>' \
+  KUBECONFIG=~/.kube/<cluster>.config kubectl auth whoami
+```
+
+Everything is derived from the current context — the control-plane endpoint and
+cluster UID from the `Cluster` object, the VCFA endpoint and CA from the
+context itself, the org from the token's `org_name` claim. Two things worth
+knowing:
+
+- **The guest cluster CA is the one value VCFA does not expose to a tenant.**
+  It is not on any object the tenant can read and the API server serves only its
+  leaf certificate, so the script falls back to a local kubeconfig entry for the
+  same server, then to `--ca-file`. A tenant starting clean needs the platform to
+  hand over that CA once — it is a public certificate, safe to share.
+- **The credential cache is keyed by cluster UUID only**, so two identities using
+  the default cache evict each other. The script scopes it per user
+  (`credentials-<username>.json`) so an admin and a tenant context can be live at
+  the same time.
+
+`VCF_CLI_VCFA_API_TOKEN` also avoids the interactive `Provide API Token:` prompt,
+which draws itself with cursor-position queries and can appear to hang in some
+terminals.
+
 **Tenant group binding (WIP — cannot be verified until the bearer path
 returns).** Tenants get **read-only**; every write goes through
 the tenant's gitops flow. The grant is in place if three things are true:
