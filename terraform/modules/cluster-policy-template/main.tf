@@ -17,6 +17,11 @@ resource "kubernetes_manifest" "policy_template" {
     "metadata" = {
       "name"      = var.template_name
       "namespace" = "@org"
+      # Platform-stamped; declared so a forced apply doesn't drop it. Same
+      # reason as the cluster-policy module. See docs/DECISIONS.md #23.
+      "labels" = {
+        "mgmt.k8s.vmware.com/policy-type" = "custom-policy"
+      }
     }
     "spec" = {
       "templateType" = "OPAGatekeeper"

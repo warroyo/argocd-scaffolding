@@ -52,6 +52,12 @@ resource "kubernetes_manifest" "cluster_policy" {
     "metadata" = {
       "name"      = local.policy_name
       "namespace" = local.policy_namespace
+      # The platform stamps this label itself. Declare it so a forced apply
+      # (see field_manager above) doesn't drop it and fail the provider's
+      # post-apply consistency check. See docs/DECISIONS.md #23.
+      "labels" = {
+        "mgmt.k8s.vmware.com/name" = var.policy_name
+      }
     }
     "spec" = local.policy_spec
   }
