@@ -1056,7 +1056,7 @@ objects (the `rolebinding-subject-containment` policy and its template) applied
 fine; only updates conflicted, which is why this appeared on the promotion and
 not when the policies were first created.
 
-**A2. Forcing the conflict then dropped the platform's labels.** With
+**A2. Forcing the conflict then dropped the platform's labels — once.** With
 `force_conflicts` in place the applies landed, but the provider then failed its
 post-apply consistency check on every policy:
 
@@ -1071,24 +1071,25 @@ it. `mgmt.k8s.vmware.com/name` (on a `ClusterPolicy`) and
 `mgmt.k8s.vmware.com/policy-type: custom-policy` (on a `ClusterPolicyTemplate`)
 are platform-stamped and were owned by exactly that entry, so the apply returned
 an object without them. The platform's controller stamps them back immediately,
-which is why the objects look correct in the cluster while Terraform still
-errors — and why the error repeats on every run. Fix: declare both labels in the
-modules' manifests, so Terraform's desired state contains what the platform
-would set anyway and plan matches apply. Note the applies **do** take effect
-despite the error — the enforcement flips were live before this was fixed.
+which is why the objects look correct in the cluster while Terraform reports a
+mismatch. The applies **do** take effect regardless — the enforcement flips were
+live while this error was still firing.
 
-*Why not just ignore the field instead of declaring it?* `kubernetes_manifest`
-already ignores it — `computed_fields` defaults to
-`["metadata.annotations", "metadata.labels"]` (verified in provider 2.38.0) and
-the error fired anyway. Those paths are resolved **inside `manifest`**, so a
-field the config never mentions has no path to mark computed: the planned value
-comes from prior state, the apply returns null, and the consistency check trips.
-Declaring the label is what puts the path in the manifest and lets the existing
-default cover it. The two work together. Ownership stays narrow — SSA merges
-label maps per key, so the one key we declare is the only one we own and any
-label the platform adds later survives (and is now tolerated rather than fatal).
-Should the platform ever change the value scheme, it shows up as a permanently
-non-empty plan, not as silent drift.
+**The manifests deliberately do not declare those labels.** Terraform applies
+only the fields this repo owns and lets the platform mutate the rest behind it;
+`kubernetes_manifest` already ignores server-side changes to labels and
+annotations (`computed_fields` defaults to
+`["metadata.annotations", "metadata.labels"]`, verified in provider 2.38.0).
+Declaring a platform-namespaced label would mean asserting a value the platform
+derives, and fighting it forever if that derivation ever changed.
+
+The expectation is that the eviction is a **one-time migration cost**: the
+`before-first-apply` entry only exists until the first server-side apply
+displaces it, after which the platform's own controller owns those labels under
+its own manager and a forced apply has nothing of its to take. If the
+consistency error proves to recur on later runs instead, the field is being
+rewritten rather than merged, and the options are (in order) declaring the label
+after all, or `lifecycle { ignore_changes }` on the manifest attribute.
 
 Terraform is the declared owner of a `ClusterPolicy`'s spec in this repo — the
 catalog in `policies.tf` and the per-tenant enablement in `tenants.yaml` are the
