@@ -1077,6 +1077,19 @@ modules' manifests, so Terraform's desired state contains what the platform
 would set anyway and plan matches apply. Note the applies **do** take effect
 despite the error — the enforcement flips were live before this was fixed.
 
+*Why not just ignore the field instead of declaring it?* `kubernetes_manifest`
+already ignores it — `computed_fields` defaults to
+`["metadata.annotations", "metadata.labels"]` (verified in provider 2.38.0) and
+the error fired anyway. Those paths are resolved **inside `manifest`**, so a
+field the config never mentions has no path to mark computed: the planned value
+comes from prior state, the apply returns null, and the consistency check trips.
+Declaring the label is what puts the path in the manifest and lets the existing
+default cover it. The two work together. Ownership stays narrow — SSA merges
+label maps per key, so the one key we declare is the only one we own and any
+label the platform adds later survives (and is now tolerated rather than fatal).
+Should the platform ever change the value scheme, it shows up as a permanently
+non-empty plan, not as silent drift.
+
 Terraform is the declared owner of a `ClusterPolicy`'s spec in this repo — the
 catalog in `policies.tf` and the per-tenant enablement in `tenants.yaml` are the
 source of truth — so taking ownership is correct, not a workaround:
