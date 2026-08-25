@@ -1065,28 +1065,29 @@ divergence from
 [warroyo/vcfa-terraform-examples](https://github.com/warroyo/vcfa-terraform-examples/tree/main/cluster-policy-custom);
 keep it when re-vendoring, or every rego edit and enforcement flip fails again.
 
-**B. ArgoCD does not prune a field you deleted from git.** Backing the Headlamp
-bearer path out of `main` (#21) removed `components/oidc-auth`, so the rendered
-`Cluster` no longer carried
+**B. ArgoCD's diff does not notice a field you deleted from git.** Backing the
+Headlamp bearer path out of `main` (#21) removed `components/oidc-auth`, so the
+rendered `Cluster` no longer carried
 `spec.topology.variables[kubernetes].apiServerConfiguration`. The Application
-reported **`Synced`** at the new revision — and the live cluster kept
-`extraAuthentication` anyway, with `argocd-controller` still listed as its
-owning manager from the sync 11 days earlier. Anonymous auth stayed off, so
-Concierge stayed broken and the vcf CLI could not log in to the guest.
+reported **`Synced`** at the new revision, reconciled minutes earlier — and the
+live cluster kept `extraAuthentication` anyway, with `argocd-controller` still
+listed as its owning manager from a sync eleven days before. Anonymous auth
+stayed off, so Concierge stayed broken and the vcf CLI could not log in to the
+guest.
 
-ArgoCD's diff asks whether the live object is a superset of the desired one.
-Extra fields in live are assumed to be defaults or another controller's
-business, so a field that disappears from git is simply left alone; prune
-applies to whole *resources*, never to fields. The consequence is general and
-worth internalising: **reverting a commit is not a rollback.** Anything a
-component adds *into* an existing object — a patch, an `op: add`, a variable
-entry — has to be removed from the live object by hand (or by a component that
-explicitly sets it back), and only whole objects come back out with the git
-revert. This one needed:
+The apply path is fine: a **manual sync removed the field immediately**
+(three-way merge against the last-applied state does delete what desired no
+longer declares). What failed is the *comparison*. ArgoCD's diff asks whether
+live is a superset of desired — extra fields in live are assumed to be defaults
+or another controller's business — so the object compared equal, status stayed
+`Synced`, and `automated: {selfHeal: true}` had nothing to act on. The revision
+bump alone doesn't force an apply when the diff says there is nothing to do.
 
-```sh
-kubectl -n <supervisor-ns> patch cluster <cluster> --type=json \
-  -p '[{"op":"remove","path":"/spec/topology/variables/1/value/apiServerConfiguration"}]'
-```
-
-which rolls the control plane once more, the same cost as adding it.
+The operational rule: **a revert is not self-applying.** Removing a whole
+resource from git is pruned normally, but removing a *field* from an object that
+stays — a patch, an `op: add`, a variable entry — leaves the object as-is and
+the UI showing green. After that kind of change, sync the Application explicitly
+and verify on the live object rather than trusting the status column. This is
+the same failure shape as the stale-`Synced` `ComparisonError` already recorded
+in `docs/BACKLOG.md` under failure visibility: the sync/health columns are not
+evidence.
