@@ -443,8 +443,11 @@ from **their own repos** — the platform repo never carries tenant
 manifests.
 
 `docs/examples/sample-tenant-repo/` shows the shape of a tenant's repo:
-plain kustomize app manifests plus one ArgoCD `Application` pointing at
-them:
+plain kustomize app manifests, the `Namespace` they run in (with its two
+mandatory `gitops.platform/*` labels — ArgoCD's `CreateNamespace=true` would
+create it unlabeled and the policy rejects that), a `RoleBinding` giving the
+tenant's humans access to it ("Headlamp SSO" below), plus one ArgoCD `Application` pointing
+at them:
 
 ```yaml
 # the tenant's app.yaml (see docs/examples/sample-tenant-repo/tenant-1/app.yaml)
@@ -520,7 +523,7 @@ would ship the `ExternalSecret` in their own repo (Part 4); the
 `KeyValueSecret` is applied by hand or by whatever owns the secret's
 lifecycle.
 
-### Headlamp — expose the UI (login is parked)
+### 4.2 Headlamp — expose the UI (login is parked)
 
 Headlamp is exposed through Gateway API, but there is **no working browser
 login** today. The design was a pasted VCFA bearer accepted by the guest
@@ -549,6 +552,51 @@ patches:
 `scripts/headlamp-token.sh` still prints the VCFA bearer from your vcf CLI
 kubeconfig — useful for `auth whoami` against VCFA, not for cluster login. A
 cluster will reject it until the parked component returns.
+
+**Tenant group binding (WIP — cannot be verified until the bearer path
+returns).** Tenants get **read-only**; every write goes through
+the tenant's gitops flow. The grant is in place if three things are true:
+
+a. **Your token carries the tenant's group.** The workload apiserver sees
+   only `claims.groups + claims.roles`, so the bindable string is your VCFA
+   org/IdP group — *not* a supervisor-derived `view-…`/`edit-…` SSO group
+   (those exist only on the `vcf` CLI/Pinniped path). Read it off a live
+   token:
+   ```
+   kubectl --server=https://<guest-api>:6443 --certificate-authority=<guest-ca> \
+     --token="$(./scripts/headlamp-token.sh)" auth whoami
+   # -> Groups [tenant-1-users Organization User system:authenticated]
+   #             ^^^^^^^^^^^^^^ this one. Never bind the org role — every
+   #                            user in the org carries it.
+   ```
+
+b. **That group is in `tenants.yaml`**, then rendered and committed:
+   ```yaml
+   - name: "tenant-1"
+     group: "tenant-1-users"
+   ```
+   `make apply-infra` writes it as `tenant_group` in
+   `infrastructure/clusters/tenant-1/vars/tenant-vars.yaml`; commit that file.
+
+c. **The cluster references its tenant-vars** — one line in the cluster's
+   `apps/kustomization.yaml` (`validate.sh` fails without it):
+   ```yaml
+   - ../../../vars
+   ```
+
+After that, adding a person to the group in VCFA gives them cluster access
+with nothing to change in this repo.
+
+**Why read-only, and why project read not edit.** VKS auth-sync mirrors a
+project's *edit* group onto every workload cluster as **`cluster-admin`**,
+and the *view* group not at all:
+```sh
+kubectl get clusterrolebinding | grep vmware-system-auth-sync
+```
+Neither binding is reachable from a VCFA bearer, so on the Headlamp path a
+project member has no authorization at all until this layer binds them —
+and an edit-member is cluster-admin on the CLI path regardless of anything
+in this repo. Full reasoning: [DECISIONS.md #22](DECISIONS.md).
 
 Design: `docs/ARCHITECTURE.md` "VCFA identity". Rationale (why not a relying
 party / Concierge): `docs/DECISIONS.md` #21.
@@ -608,20 +656,34 @@ kubectl get clusterpolicytemplate -n @org
 kubectl get clusterpolicy -n tenant-1
 ```
 
-*You should see* four templates and four `ClusterPolicy` objects, all
-`enforcementAction: dryrun` (`tenants.yaml` ships them that way — see
+*You should see* five templates and five `ClusterPolicy` objects. Three
+(`require-namespace-labels`, `gitops-namespace-containment`,
+`rolebinding-subject-containment`) are `enforcementAction: deny` — they are the
+fence that makes cluster-wide `admin` on the sync identity safe; the other two
+ship `dryrun` (see
 [README.md → "Adding a Cluster Policy"](../README.md#5-adding-a-cluster-policy)
-for the rollout order before flipping any to `deny`). Then, on the
-workload cluster:
+for the rollout order). Then, on the workload cluster:
 
 ```sh
-kubectl get constrainttemplate      # the four propagated into dev1-cluster
+kubectl get constrainttemplate      # the five propagated into dev1-cluster
+```
+
+**Promoting to `deny` on a live cluster — label existing namespaces first.**
+`require-namespace-labels` also refuses *adoption*: the tenant's sync identity
+may not add the project label to a namespace that didn't already carry it. So a
+namespace created before these policies (or by `CreateNamespace=true`) can't be
+brought under the tenant's repo by the tenant — a platform admin labels it once,
+by hand, and the tenant's `Namespace` manifest then syncs clean:
+
+```sh
+kubectl label ns music-store gitops.platform/project=tenant-1 gitops.platform/environment=dev
 ```
 
 Try a violation: remove `gitops.platform/project`/`environment` from the
-`music-store` Namespace in your tenant repo, push, let it sync — the
-violation shows up recorded against the constraint (dryrun never blocks
-the sync), not as a sync failure. Restore the labels before continuing.
+`music-store` Namespace in your tenant repo, push, let it sync — at `deny` the
+sync **fails** with the policy's message on the Application. Restore the labels
+before continuing. (Flip that policy to `dryrun` in `tenants.yaml` first if you'd
+rather see it recorded without blocking.)
 
 ## You're done — and what you have now
 

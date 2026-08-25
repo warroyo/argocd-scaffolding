@@ -1,0 +1,72 @@
+# Human (VCFA identity) access on a workload cluster. Design:
+# docs/ARCHITECTURE.md "Tenant human access"; rationale: docs/DECISIONS.md #22.
+# Identical for every tenant — only the subject varies, and that comes from
+# tenant-vars' `tenant_group` (TF-generated) via cluster-var-injector.
+---
+# Read-only for the tenant's humans. Writes are the gitops path's alone
+# (tenant-sync-<tenant>), so Headlamp is a window, not a console. Cluster-wide
+# because the tenant's namespaces are created by its own gitops flow and don't
+# exist when this is written; the cluster belongs to exactly one project.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: tenant-project-members
+  labels:
+    app.kubernetes.io/name: tenant-users
+    config.k8s.io/inject-tenant-group: "true"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+# Filled by cluster-var-injector from tenant-vars' `tenant_group`. A cluster
+# missing `- ../../../vars` renders replace-me and validate.sh fails.
+- kind: Group
+  apiGroup: rbac.authorization.k8s.io
+  name: replace-me
+---
+# Namespaced kinds the built-in `admin`/`edit` roles miss: their CRDs carry no
+# aggregate-to-* label, so aggregating here is what makes the tenant-sync SA's
+# `admin` binding a complete grant. Humans get the read-only half below.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tenant-user-extras
+  labels:
+    app.kubernetes.io/name: tenant-users
+    rbac.authorization.k8s.io/aggregate-to-admin: "true"
+    rbac.authorization.k8s.io/aggregate-to-edit: "true"
+rules:
+- apiGroups: ['gateway.networking.k8s.io']
+  resources: ['*']
+  verbs: ['*']
+- apiGroups: ['networking.istio.io']
+  resources: ['*']
+  verbs: ['*']
+- apiGroups: ['ako.vmware.com']
+  resources: ['*']
+  verbs: ['*']
+- apiGroups: ['external-secrets.io', 'generators.external-secrets.io']
+  resources: ['*']
+  verbs: ['*']
+---
+# Read-only half, aggregated into the built-in `view` the binding above uses.
+# Without it Headlamp shows empty screens for Gateways/ExternalSecrets, and its
+# CRD-driven views fail outright — `view` carries no apiextensions rule.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: tenant-user-extras-view
+  labels:
+    app.kubernetes.io/name: tenant-users
+    rbac.authorization.k8s.io/aggregate-to-view: "true"
+rules:
+- apiGroups: ['gateway.networking.k8s.io', 'networking.istio.io', 'ako.vmware.com']
+  resources: ['*']
+  verbs: ['get', 'list', 'watch']
+- apiGroups: ['external-secrets.io', 'generators.external-secrets.io']
+  resources: ['*']
+  verbs: ['get', 'list', 'watch']
+- apiGroups: ['apiextensions.k8s.io']
+  resources: ['customresourcedefinitions']
+  verbs: ['get', 'list', 'watch']

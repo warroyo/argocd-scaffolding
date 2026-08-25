@@ -1,0 +1,19 @@
+# A tenant creates its own namespaces through git. Both labels are MANDATORY —
+# the require-namespace-labels policy (deny) rejects the namespace without them,
+# and gitops-namespace-containment then uses the project label to decide where
+# this tenant may write at all. Do NOT rely on ArgoCD's CreateNamespace=true:
+# the namespace it creates carries no labels and is rejected.
+#
+# Nothing here grants humans access — the platform already binds this tenant's
+# VCFA group read-only on every cluster in the project (apps/base/tenant-users,
+# subjects from tenant-vars). A RoleBinding in this repo may only bind
+# ServiceAccounts from its own namespace; binding a user or group is rejected at
+# admission (rolebinding-subject-containment). See docs/ARCHITECTURE.md "Tenant
+# human access".
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: music-store
+  labels:
+    gitops.platform/project: tenant-1
+    gitops.platform/environment: dev

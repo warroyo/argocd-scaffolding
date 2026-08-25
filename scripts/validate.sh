@@ -93,6 +93,12 @@ while IFS= read -r details; do
     if [ -n "$apps_project" ] && [ "$apps_project" != "$project" ]; then
       fail "$dir/apps/kustomization.yaml: vars project is '$apps_project' but the directory implies '$project'"
     fi
+    # tenant-vars (../../../vars) carries this tenant's human identity groups.
+    # Without it the tenant-users binding renders replace-me — the replace-me
+    # sweep below catches that, so this is only a clearer early message.
+    if ! grep -qE '^\s*-\s*\.\./\.\./\.\./vars\s*($|#)' "$dir/apps/kustomization.yaml" 2>/dev/null; then
+      fail "$dir/apps/kustomization.yaml: missing '- ../../../vars' (tenant-vars) — the tenant-users ClusterRoleBinding has no subjects to inject"
+    fi
     echo "building $dir/apps"
     build_check "$dir/apps"
   fi

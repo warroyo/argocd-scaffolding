@@ -37,9 +37,13 @@ locals {
           items = { type = "string" }
         }
       }
+      # Pod/ReplicaSet are here despite the "keep it narrow" rule (CLAUDE.md
+      # "Adding a policy"): without them a cluster-wide-admin sync identity can
+      # run a bare Pod in a platform namespace under a privileged SA and read
+      # its token — admission is the only place that write is visible.
       target_resources = [
-        { apiGroups = [""], kinds = ["Service", "ConfigMap", "Secret", "ServiceAccount", "PersistentVolumeClaim"] },
-        { apiGroups = ["apps"], kinds = ["Deployment", "StatefulSet", "DaemonSet"] },
+        { apiGroups = [""], kinds = ["Service", "ConfigMap", "Secret", "ServiceAccount", "PersistentVolumeClaim", "Pod"] },
+        { apiGroups = ["apps"], kinds = ["Deployment", "StatefulSet", "DaemonSet", "ReplicaSet"] },
         { apiGroups = ["batch"], kinds = ["Job", "CronJob"] },
         { apiGroups = ["networking.k8s.io"], kinds = ["Ingress"] },
         { apiGroups = ["gateway.networking.k8s.io"], kinds = ["HTTPRoute", "Gateway"] },
@@ -48,6 +52,25 @@ locals {
       ]
       # NotIn also matches unlabeled namespaces — no platform exclusion list.
       selector_mode = "not_in"
+    }
+
+    "rolebinding-subject-containment" = {
+      template_name   = "rolebindingsubjectcontainment"
+      constraint_kind = "RoleBindingSubjectContainment"
+      rego            = file("${path.module}/rego/rolebinding-subject-containment.rego")
+      parameters_schema = {
+        project = { type = "string" }
+        syncServiceAccounts = {
+          type  = "array"
+          items = { type = "string" }
+        }
+      }
+      target_resources = [
+        { apiGroups = ["rbac.authorization.k8s.io"], kinds = ["RoleBinding"] },
+      ]
+      # Only the tenant's own namespaces — RoleBindings elsewhere are already
+      # blocked by gitops-namespace-containment.
+      selector_mode = "in"
     }
 
     "hostname-ownership" = {

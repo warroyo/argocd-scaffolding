@@ -223,10 +223,10 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `components/`: Kustomize components for optional features and environment overlays. `envs/{env}` carries the real per-environment values AND the always-on version pins (cluster class, Kubernetes version, AKO addon); feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp`) pin shared add-on versions and are included by the namespace's `namespace-resources` kustomization alongside the add-on base. `addon-bundles/{bundle}` adds the bundle label (`addons.kubernetes.vmware.com/profile: standard` — istio + external-secrets + cert-manager + observability) that a whole set of `AddonInstall`s selects on; per-add-on components override it in either direction (`istio` / `disable-istio`, `disable-external-secrets`, `disable-cert-manager`, `disable-observability`, `disable-headlamp`); `addon-defaults` lists the `AddonConfig`s shipped to every cluster (values an add-on is wrong without, e.g. external-secrets' `helmOptions.targetNamespace` — helm add-ons install to `default` otherwise), while `istio-config` is the opt-in form for values a cluster merely *might* want to change. `headlamp-config` is an opt-in component exposing the Headlamp UI via Gateway API — but browser login is **parked**: the apiserver-side bearer path (`oidc-auth`) disables anonymous auth and thereby breaks Pinniped Concierge (the vcf CLI path), so it lives on branch `wip/headlamp-oidc-auth` pending a VKS release. Cluster access today is the vcf CLI / Concierge client-cert exchange (see `docs/ARCHITECTURE.md` "VCFA identity", `docs/BACKLOG.md`).
   - `profiles/common/`: The env-agnostic half of every profile — bases + always-on components + the add-on bundle + `addon-defaults`. Edit to change every cluster in every environment.
   - `profiles/{env}/`: References `profiles/common` and adds only the `envs/{env}` overlay, so adding an environment is a two-line file. Clusters reference a profile instead of enumerating everything.
-  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml`; `clusters/{project}/{namespace_ref}/vars/` holds the Terraform-rendered `ns-vars.yaml` (the suffixed supervisor namespace name, feeding the secret-store mount/role). `clusters/{project}/{namespace_ref}/namespace-resources/` (optional) holds namespace-scoped shared resources synced once per supervisor namespace by the `namespace-resources` ApplicationSet — the shared, label-gated `AddonInstall`s (`base/{addon}/install` for headlamp, istio, external-secrets, cert-manager) and their env version pins.
+  - `clusters/{project}/{namespace_ref}/{cluster}/`: Per-cluster definitions (`kustomization.yaml`, `apps/kustomization.yaml`, `cluster-details.yaml`). Each references a profile and adds only deltas + override patches. `clusters/{project}/vars/` holds the Terraform-rendered `tenant-vars.yaml` (the ArgoCD namespace handoff plus the tenant's human identity group); `clusters/{project}/{namespace_ref}/vars/` holds the Terraform-rendered `ns-vars.yaml` (the suffixed supervisor namespace name, feeding the secret-store mount/role). `clusters/{project}/{namespace_ref}/namespace-resources/` (optional) holds namespace-scoped shared resources synced once per supervisor namespace by the `namespace-resources` ApplicationSet — the shared, label-gated `AddonInstall`s (`base/{addon}/install` for headlamp, istio, external-secrets, cert-manager) and their env version pins.
 - `apps/`
-  - `base/`: Base application manifests, incl. `tenant-sync` — the per-tenant ArgoCD sync-impersonation `ServiceAccount`/RBAC (see [Cluster Policy & Namespace Self-Service](#cluster-policy--namespace-self-service)), named per-cluster by the apps-side `cluster-var-injector` — and `secret-store` — the external-secrets `ClusterSecretStore` (+ SA/CRB) wiring the VCF Secret Store Service into every cluster (mount/role injected from `ns-vars`; opt out with `components/disable-secret-store`).
-  - `components/stacks/`: Application stacks (e.g., `standard`, which includes `tenant-sync` and `secret-store` — shipped to every cluster).
+  - `base/`: Base application manifests, incl. `tenant-users` — all of tenant human access, identical for every tenant: the `tenant-user-extras` ClusterRoles (aggregated into the built-in `admin`/`edit` and `view`) plus the `tenant-project-members` ClusterRoleBinding to the built-in `view`, whose subject the injector fills from `tenant-vars`' `tenant_group` (see [Tenant human access](docs/ARCHITECTURE.md#tenant-human-access-who-can-see-what-once-logged-in)) — `tenant-sync` — the per-tenant ArgoCD sync-impersonation `ServiceAccount`/RBAC (see [Cluster Policy & Namespace Self-Service](#cluster-policy--namespace-self-service)), named per-cluster by the apps-side `cluster-var-injector` — and `secret-store` — the external-secrets `ClusterSecretStore` (+ SA/CRB) wiring the VCF Secret Store Service into every cluster (mount/role injected from `ns-vars`; opt out with `components/disable-secret-store`).
+  - `components/stacks/`: Application stacks (e.g., `standard`, which includes `tenant-sync`, `tenant-users`, and `secret-store` — shipped to every cluster).
   - `components/envs/{env}/`: Per-environment app values (e.g. the secret store's CA bundle), applied via the profile. Neither observability nor cert-manager is an app stack any more — both are add-ons on the infra side, delivered by the `standard` bundle (opt out with `infrastructure/components/disable-observability` / `disable-cert-manager`); see [DECISIONS](docs/DECISIONS.md) #20.
   - `profiles/common/`, `profiles/{env}/`: Same split as the infra tree — `common` holds the stack, `{env}` adds its overlay.
 - `docs/examples/`
@@ -336,7 +336,11 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
    in the infra component list. The apps-side injector (also last) and its
    `vars` configMapGenerator (`cluster_name` **and** `project`) are required on
    every cluster — the standard app stack's `tenant-sync` SA needs `project`
-   injected everywhere, not just on istio-ako-patch clusters.
+   injected everywhere, not just on istio-ako-patch clusters. `apps/kustomization.yaml`
+   also references `../../vars` (per-namespace `ns-vars`) and `../../../vars`
+   (per-tenant `tenant-vars`, which carries the tenant's identity group —
+   without it nobody can use the cluster with Headlamp); `validate.sh` checks
+   both.
 4. Commit. The `cluster-provisioning` ApplicationSet joins the directory to its
    supervisor namespace by label (`gitops.platform/project` +
    `gitops.platform/namespace-ref`) and provisions it. The vcfa-generated
@@ -407,7 +411,8 @@ and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#cluster-policy--namespace-self-s
 step-by-step recipe in [CLAUDE.md → "Adding a policy"](CLAUDE.md). Briefly:
 write a `.rego` file (`terraform/infra/rego/`), add a `local.policy_catalog`
 entry (`terraform/infra/policies.tf`), enable it per tenant in `tenants.yaml`
-(`dryrun` first). `ClusterPolicyTemplate` is an org-wide singleton — one
+(`dryrun` first — the three shipped containment policies have since been
+promoted to `deny`). `ClusterPolicyTemplate` is an org-wide singleton — one
 catalog entry serves every tenant that enables it, never one per tenant.
 
 ## Inheritance model (profiles, components, overrides)
@@ -481,10 +486,15 @@ mechanisms close that gap:
   Apply patch owning one `argocd-cm` key, not the whole ConfigMap.
 - **A custom `ClusterPolicy` catalog** (`terraform/infra/policies.tf` +
   `terraform/infra/rego/`, applied via Terraform — `ClusterPolicyTemplate` is
-  org-admin-only) keys 4 policies on that per-tenant identity: namespace
+  org-admin-only) keys 5 policies on that per-tenant identity: namespace
   labeling (`gitops.platform/project`/`environment`, with no-adoption),
   namespace containment (writes limited to the tenant's own labeled
-  namespaces), hostname ownership, and service exposure. All ship `dryrun`.
+  namespaces), RoleBinding subject containment (a tenant's gitops
+  flow may bind only same-namespace service accounts; human access comes from
+  the platform's project binding, not from a tenant repo), hostname ownership,
+  and service exposure. The three
+  containment policies ship `deny` (they are what makes cluster-wide `admin` on
+  the sync identity safe); the last two ship `dryrun`.
 - **The AppProject itself** denies the 3 namespaces (`kube-system`,
   `gatekeeper-system`, `vmware-system-vksm`) the Gatekeeper webhook backing
   policy enforcement is hard-exempted from — the one seam no amount of

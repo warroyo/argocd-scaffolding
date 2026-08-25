@@ -28,6 +28,14 @@ locals {
     }
   ]
 
+  # The identity group a tenant's humans carry in their VCFA token, verbatim
+  # from tenants.yaml. Never derived: the workload apiserver sees only
+  # `claims.groups + claims.roles`, so the bindable string is the tenant's own
+  # IdP group name. See docs/DECISIONS.md #22.
+  tenant_group = {
+    for t_name, t in local.tenant_map : t_name => lookup(t, "group", "")
+  }
+
   # Decision-model invariant: (project, namespace_ref) must be unique. The yaml
   # decode already rejects duplicate namespace names within one tenant, but the
   # ns_deployments merge() would silently collapse a cross-tenant key collision
@@ -78,12 +86,16 @@ resource "local_file" "projects_kustomization" {
 }
 
 # ── Post-apply tenant-vars handoff (the single terraform -> argocd contract) ───
+# Also carries the tenant's human identity group, which cluster-var-injector
+# binds read-only via the ClusterRoleBinding in apps/base/tenant-users.
+# See docs/ARCHITECTURE.md "Tenant human access", docs/DECISIONS.md #22.
 
 resource "local_file" "tenant_vars" {
   for_each = local.tenant_map
   filename = "${path.module}/../../infrastructure/clusters/${each.key}/vars/tenant-vars.yaml"
   content = templatefile("${path.module}/templates/tenant-vars.yaml.tftpl", {
     argo_namespace = local.tenant_argo_namespace[each.key]
+    group          = local.tenant_group[each.key]
   })
 }
 

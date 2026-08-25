@@ -14,7 +14,8 @@ contracts, or design decisions they describe change:
 - GitHub Actions workflows (`.github/workflows/`) — triggers and behavior
 - The cluster directory layout and label/decision model
 
-Do not leave `README.md` describing a state that no longer exists in the repo.
+Update `README.md` in the same commit as the change it describes, so it always
+describes the repo's current state.
 
 ## Comment hygiene
 
@@ -35,7 +36,7 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 |------|------------------------|
 | `argocd/projects/*.yaml` | `terraform/infra` → `templates/appproject.yaml.tftpl` |
 | `argocd/projects/kustomization.yaml` | `terraform/infra` → `templates/projects-kustomization.yaml.tftpl` |
-| `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (needs state: `argo_namespace`) |
+| `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (needs state: `argo_namespace`; also carries `tenant_group`, the tenant's human identity group, which the apps-side injector binds via `apps/base/tenant-users`) |
 | `infrastructure/clusters/*/vars/kustomization.yaml` | `terraform/infra` → `templates/vars-kustomization.yaml.tftpl` |
 | `infrastructure/clusters/*/*/vars/ns-vars.yaml` | `terraform/infra` → `templates/ns-vars.yaml.tftpl` (needs state: the vcfa-**suffixed** supervisor namespace name; per `(tenant, namespace_ref)`, feeds the secret-store mount/role) |
 | `infrastructure/clusters/*/*/vars/kustomization.yaml` | `terraform/infra` → `templates/ns-vars-kustomization.yaml.tftpl` |
@@ -53,7 +54,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 
 | File | Controls |
 |------|---------|
-| `terraform/infra/tenants.yaml` | Tenants, namespaces (incl. `environment`), ArgoCD bootstrap, cluster labels, optional `source_repos` (tenant AppProject scoping), `vpc_private_cidr`, and `policies` (per-tenant custom cluster policy catalog — see "Adding a policy") |
+| `terraform/infra/tenants.yaml` | Tenants, namespaces (incl. `environment`), ArgoCD bootstrap, cluster labels, optional `source_repos` (tenant AppProject scoping), `vpc_private_cidr`, `policies` (per-tenant custom cluster policy catalog — see "Adding a policy"), and `group` (the tenant's human identity group, verbatim from the VCFA token — see "Tenant human access") |
 | `terraform/infra/policies.tf`, `terraform/infra/rego/*.rego` | The custom cluster policy catalog (`local.policy_catalog`) — one entry per policy kind, referenced by name from a tenant's `policies:` block in `tenants.yaml`. See "Adding a policy". |
 | `supervisor-addons/{addon}.yaml` | Registers a third-party helm chart repo as an installable VKS addon (`AddonRepository`/`AddonRepositoryInstall` in `vmware-system-vks-public`). **Not Terraform, not GitOps** — `vmware-system-vks-public` is genuine Supervisor-scope, unreachable by this repo's org-admin (`kubernetes.vcfa-org`) or per-tenant-namespace credentials. Hand-authored, applied manually out-of-band with `kubectl` by a human holding Supervisor-admin access; commands in `docs/GETTING-STARTED.md` Part 1.2. A registered repo is **frozen** — never edit one in place. Where upstream publishes a rolling tag (dayzero) the file never changes at all; otherwise a new version is an appended repo+install pair. See "Adding a custom helm addon" and "Rolling an addon repo version". |
 | `terraform/modules/cluster-policy/`, `terraform/modules/cluster-policy-template/` | Vendored from [warroyo/vcfa-terraform-examples](https://github.com/warroyo/vcfa-terraform-examples/tree/main/cluster-policy-custom) (split into two modules — see "Adding a policy" for why). Not tenant-specific; do not edit for a new policy, only to change the underlying `ClusterPolicy`/`ClusterPolicyTemplate` mechanics. |
@@ -62,6 +63,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `infrastructure/components/addon-bundles/{bundle}/` | Which add-ons a bundle turns on, as one cluster label (`addons.kubernetes.vmware.com/profile`). Labels only — config lives in `addon-defaults`. See "VKS add-ons" → add-on bundles. |
 | `infrastructure/components/addon-defaults/` | The `AddonConfig`s shipped to every cluster (values an add-on is wrong without). One line per add-on; patch per env or per cluster on top. See "VKS add-ons" → add-on config. |
 | `infrastructure/base/argocd-attach-rbac/` + `supervisor-addons/dayzero.yaml` | **Mandatory baseline addon.** Seeds (via the [dayzero-addon-service](https://github.com/warroyo/dayzero-addon-service) day-zero addon, driven by `values.resources`) **one** `ClusterRoleBinding` granting the existing `cluster-admin` to `default:argo-attach-sa` on every workload cluster — the identity ArgoCD's `cluster-apps` sync impersonates under the `infra` project (no SA object; RBAC/impersonation are string-based). Without it the standard app stack can't sync to any workload cluster. Selects **every** cluster (`cluster.x-k8s.io/cluster-name Exists`), no opt-out; config in `addon-defaults`, install in every `namespace-resources`. Register the addon repo once (Supervisor-admin, `docs/GETTING-STARTED.md` Part 1.2). Rationale: `docs/DECISIONS.md` #18. |
+| `apps/base/tenant-users/` | All of tenant human access, identical for every tenant: `tenant-user-extras` (Gateway API / istio / AKO / external-secrets, **aggregated into the built-in `admin`/`edit`** — which is also how `tenant-sync` gets those rights, so don't drop this from a cluster), `tenant-user-extras-view` (the read-only half + CRD read, aggregated into `view`), and the `tenant-project-members` ClusterRoleBinding → built-in `view`. Ships in the standard app stack. Only the binding's **subjects** come from Terraform (`tenant-vars`). See "Tenant human access". |
 | `apps/base/secret-store/` | Workload-cluster wiring that consumes external-secrets against the VCF Secret Store Service (OpenBao): the `secret-store-access` SA + `system:auth-delegator` CRB and the `vcf-cluster-store` `ClusterSecretStore`. Ships default-on via the standard app stack; opt out with `apps/components/disable-secret-store`. Mount/role are injected from `ns-vars` + `cluster_name`; the endpoint IP is an infra env value (`components/envs/{env}` patch on the external-secrets `AddonConfig` `hostAliases`), the CA bundle an apps env value (`apps/components/envs/{env}` patch). See "Wiring the secret store" and `docs/ARCHITECTURE.md`. |
 | `components/headlamp-config/` | **Headlamp UI exposure.** Opt-in per cluster, Gateway API (`headlamp_hostname` in `cluster-details.yaml`). **There is no working browser login today** — the apiserver-side bearer path (`components/oidc-auth`, its TF generator, `var.vcfa_oidc_audience`, the `validate.sh` claim-parity check) is **parked on branch `wip/headlamp-oidc-auth`**: structured `extraAuthentication` disables anonymous auth, which breaks Pinniped Concierge (the vcf CLI path). Blocked on a VKS release. Cluster access is the vcf CLI / Concierge client-cert exchange; its claim expressions in `infrastructure/base/argocd-attach-rbac/config` are the identity contract the parked config must match byte-for-byte on re-land. See `docs/ARCHITECTURE.md` "VCFA identity", `docs/DECISIONS.md` #21, `docs/BACKLOG.md`. |
 | `infrastructure/components/envs/{env}/`, `apps/components/envs/{env}/` | Real per-environment values AND version pins (bases hold only `replace-me` placeholders). Always-on versions (cluster class, k8s, AKO; package bundle/baseline) apply via the profiles; shared add-on versions live in feature-scoped sub-components (`envs/{env}/istio`, `envs/{env}/headlamp`, `envs/{env}/cert-manager` — `releaseFilter.ref.name`, an `AddonRelease` name) included by the namespace's `namespace-resources` kustomization. Per-cluster canary: `patches:` in the cluster kustomization. |
@@ -142,7 +144,11 @@ validate` in `validate.yml`. Requires `kustomize`.
    suffixed supervisor namespace name), which the injector feeds into the
    secret-store `ClusterSecretStore`; the standard stack ships that store
    default-on (opt out with `apps/components/disable-secret-store`). See
-   "Wiring the secret store".
+   "Wiring the secret store". It must also reference
+   `- ../../../vars` (the per-tenant `tenant-vars`) — it carries the tenant's
+   identity groups, and without it the tenant-users binding renders `replace-me`
+   and no human can log in to this cluster. `validate.sh` fails when it is
+   missing. See "Tenant human access".
 4. Commit. The `cluster-provisioning` ApplicationSet picks it up via label join — the
    vcfa-generated namespace name is resolved from the cluster registration, not git.
 
@@ -163,8 +169,10 @@ self-service"; rationale in `docs/DECISIONS.md`. This section is the recipe.
    like `Namespace`; `"in"` / `"not_in"` to scope by
    `gitops.platform/project` on namespaced kinds).
 3. Enable it per tenant in `tenants.yaml` under that tenant's `policies:` key
-   (`enforcement: dryrun` first — always). `project` and `syncServiceAccounts`
-   are computed by Terraform and always win the merge — do not try to
+   (`enforcement: dryrun` first — always; the three shipped **containment**
+   policies have since been promoted to `deny` — see "Tenant human access").
+   `project` and `syncServiceAccounts` are computed by Terraform and always win
+   the merge — do not try to
    override them from `parameters:`.
 
 Three constraints that shape every policy here:
@@ -193,6 +201,45 @@ another tenant's cluster (the AppProject's `destinations` allow any
 registered cluster by name — see its own comment) impersonates its own name,
 which doesn't exist as a service account there, so the sync fails outright
 rather than silently acting under a trusted identity.
+
+### Tenant human access
+Design in `docs/ARCHITECTURE.md` → "Tenant human access"; rationale in
+`docs/DECISIONS.md` #22. Tenants are **read-only** on their clusters — writes go
+through the tenant's own gitops flow, never Headlamp.
+
+1. Set the tenant's `group:` in `tenants.yaml`, exactly as it appears in a VCFA
+   token, then `make apply-infra` and commit the re-rendered `tenant-vars.yaml`.
+2. Add people to that group in VCFA. Nothing in this repo changes.
+
+Rules that make this hold:
+- **The subject is the group the token carries** — the tenant's VCFA/IdP group,
+  not a derived SSO group. The workload apiserver sees only
+  `claims.groups + claims.roles`. Confirm before wiring a tenant:
+  `kubectl --server=… --token="$(./scripts/headlamp-token.sh)" auth whoami`.
+- **Never bind an org role.** `claims.roles` supplies entries like
+  `Organization User` that every user in the org holds.
+- **Two identity paths, different subjects.** The `vcf` CLI/Pinniped path carries
+  the supervisor's derived `edit-…`/`view-…` groups; a VCFA bearer never does.
+  Binding one does nothing for the other — this repo binds the bearer path only.
+- **`view`, cluster-wide.** The tenant's namespaces don't exist when the binding
+  is written, so a ClusterRoleBinding is the only option; `view` keeps the
+  cluster-wide scope cheap.
+- **RBAC in base, identity in Terraform.** The binding lives once in
+  `apps/base/tenant-users` and is identical for every tenant. Only its subject
+  is generated — `tenant_group`, an ordinary key in the `tenant-vars` ConfigMap
+  that `cluster-var-injector` fills like any other var. One group per tenant (a
+  ConfigMap value is a string); several would mean one binding per group. Don't
+  add per-tenant RBAC directories.
+- **The three containment policies run at `deny`** (`require-namespace-labels`,
+  `gitops-namespace-containment`, `rolebinding-subject-containment`). In dryrun
+  they are documentation, not a boundary.
+- **A tenant repo may bind only same-namespace ServiceAccounts.** Human access
+  never comes from git, so `rolebinding-subject-containment` costs the tenant
+  nothing legitimate.
+- **Don't drop `apps/base/tenant-users` from a cluster.** Its
+  `tenant-user-extras` ClusterRole is aggregated into the built-in `admin`, so
+  the tenant-sync SA loses Gateway API / istio / AKO / external-secrets rights
+  with it.
 
 ### Adding a custom helm addon
 Some add-ons (e.g. `external-secrets`) aren't in the built-in VKS catalog
@@ -298,8 +345,9 @@ Identity/scope: the SA/CRB/store are platform-provisioned (synced by
 `cluster-apps` under the `infra` project as `argo-attach-sa`), so they need no
 tenant RBAC. A **tenant's own** `ExternalSecret` runs under `tenant-sync-<project>`,
 whose built-in `admin` role doesn't cover `external-secrets.io` — hence the
-`tenant-sync-external-secrets` ClusterRole in `apps/base/tenant-sync/rbac.yaml`
-(namespaced kinds only; the shared cluster-scoped store stays platform-owned via
+`external-secrets.io` group on the `tenant-user-extras` ClusterRole in
+`apps/base/tenant-users` — aggregated into the built-in `admin`/`edit`, so one
+object covers the sync SA and tenant humans alike (namespaced kinds only; the shared cluster-scoped store stays platform-owned via
 the tenant AppProject's Namespace-only `clusterResourceWhitelist`).
 
 ### Changing every cluster in an environment

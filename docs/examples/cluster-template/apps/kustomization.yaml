@@ -6,6 +6,7 @@ resources:
 # - ../../../../../../apps/base/istio-ako-patch      # only if this cluster runs istio + AKO
 # - ../../../../../../apps/base/headlamp-istio-patch # only if this cluster runs headlamp on an ako-istio mesh
 - ../../vars                                 # ns-vars (suffixed supervisor ns) — feeds secret-store; TF-generated
+- ../../../vars                              # tenant-vars (this tenant's human identity groups) — feeds tenant-users; TF-generated
 
 components:
 # cluster-var-injector MUST be last, and is REQUIRED on every cluster

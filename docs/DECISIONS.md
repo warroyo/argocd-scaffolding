@@ -927,3 +927,110 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
   **disables anonymous authentication**. Pinniped Concierge needs it, so the
   Concierge cert path is **not** break-glass here: enabling the bearer path
   removes the CLI path. That is what parked this (see the note at the top).
+
+## 22. How does a tenant's *human* get access to its workload clusters?
+
+`oidc-auth` (#21) only authenticates — a logged-in VCFA user sees nothing until
+RBAC binds them. The question is what to bind them *to*, given a tenant's
+namespaces are created by its own gitops flow at sync time and Kubernetes RBAC
+has no label-scoped grant.
+
+**A workload cluster trusts two issuers, and they produce different subjects.**
+This is what an earlier draft of this decision got wrong:
+
+```
+tkg-jwt-authenticator   iss=<supervisor>/wcp/pinniped   groups = supervisor SSO groups
+tm-vks-jwt-authenticator + oidc-auth structured authn
+                        iss=<vcfa>/oidc                 groups = claims.groups + claims.roles
+```
+
+VCFA maintains an SSO group per project *and per project role*, and binds them in
+the project's supervisor namespaces (`edit-<projectId>-<project>@<domain>`,
+`view-…`). VKS **auth-sync** mirrors only the *edit* one onto the workload
+clusters, as `cluster-admin`. But those group strings live in the **Pinniped**
+token; a VCFA bearer never carries them. Verified live — an Org Administrator's
+bearer resolves on a workload cluster to:
+
+```
+Username  admin
+Groups    [Organization Administrator system:authenticated]
+```
+
+and `can-i` answers `no` for get pods, list namespaces, create namespaces and get
+nodes. So on the Headlamp path the mirrored `edit-…` binding is unreachable and
+the `view-…` group was never mirrored in the first place: a derived-SSO-group
+binding is dead on both paths at once.
+
+**The decision: bind the group the token actually carries, read-only.** The
+subject is the tenant's own VCFA/IdP group (`tenant-1-users`), declared in
+`tenants.yaml` and bound to the built-in `view` ClusterRole.
+
+- **Declared, not derived.** There is nothing to compute — the bindable string is
+  whatever the IdP put in `claims.groups`. Terraform contributes only that one
+  value; the `project_id`-plus-domain derivation and its
+  `var.vcfa_project_group_domain` are deleted.
+- **Read-only.** Writes stay on the gitops path (`tenant-sync-<tenant>`), so
+  Headlamp is a window, not a console, and git remains the only way state
+  changes. `tenant-user-extras-view` aggregates into `view` so Gateways and
+  ExternalSecrets are visible; it also carries `customresourcedefinitions` read,
+  which built-in `view` lacks and Headlamp's CRD-driven views need.
+- **Never bind an org role.** `claims.roles` contributes entries like
+  `Organization User` that every user in the org holds. Only `claims.groups`
+  entries are tenant-specific.
+- **Cluster-wide, because it must be.** The namespaces the tenant will create do
+  not exist when the binding is written, and a `ClusterRoleBinding` is the only
+  RBAC object that can cover them. At `view` the cost is reading platform
+  namespaces on clusters that already belong to that one project.
+
+**RBAC in base, identity in Terraform.** The binding is hand-authored once in
+`apps/base/tenant-users` and is byte-identical for every tenant; only its subject
+varies. That subject is `tenant_group`, an ordinary key in the tenant's existing
+`tenant-vars` ConfigMap, filled by `cluster-var-injector` exactly like
+`cluster_name` and `project`. Rejected: a generated `apps/tenants/{tenant}`
+directory per tenant, which duplicated identical RBAC once per tenant and put
+role definitions in generated output where nobody reviews them. Also rejected: a
+second `local-config` document in `tenant-vars.yaml` carrying a subject *list* —
+it supports several groups per tenant, but a stub `ClusterRoleBinding` used only
+as a replacement source is not the injector pattern anyone reading this repo
+already knows, and the consistency is worth more than the second group. A tenant
+that genuinely needs several groups takes one binding per group.
+
+An empty `group:` renders a subject nobody can hold, so the binding stays valid
+and grants nothing.
+
+**The gitops path stays fenced.** `tenant-sync-<tenant>` holds `admin`
+cluster-wide, and `admin` covers `rolebindings` — so a tenant repo could
+otherwise bind an arbitrary human or a foreign ServiceAccount and launder access
+through it. `rolebinding-subject-containment` (deny) allows the sync identity to
+bind **only ServiceAccounts from the RoleBinding's own namespace**. Human access
+never arrives from a tenant repo, so nothing legitimate is lost. Other service
+accounts (platform controllers) are exempt by identity, not by an exemption list.
+
+**Enforcement.** The three containment policies (`require-namespace-labels`,
+`gitops-namespace-containment`, `rolebinding-subject-containment`) ship at
+`deny`, not `dryrun` — in dryrun they are documentation, and they are the fence
+that makes cluster-wide `admin` on the sync identity safe. `hostname-ownership`
+and `service-exposure` stay `dryrun`: they guard against mistakes, not privilege.
+
+**`Pod`/`ReplicaSet` were added to `gitops-namespace-containment`'s targets**,
+against the otherwise-strict "keep policy targets narrow" rule (CLAUDE.md
+"Adding a policy"). Without them a cluster-wide-admin sync identity can run a
+bare Pod in a platform namespace under a privileged ServiceAccount — the one
+remaining laundering path, and admission is the only place it is visible. The
+rego short-circuits on identity, so the added evaluation surface costs a
+username comparison per pod create.
+
+**Rejected: fighting auth-sync.** Deleting the mirrored `cluster-admin` binding
+to force edit-members down to namespaced scope means racing a platform
+controller with no supported knob, and losing break-glass access if it doesn't
+come back. If tenants must not be cluster-admin, the answer is to grant them
+project *read* in VCFA — which is exactly the model this repo assumes.
+
+**Residual, accepted:** a tenant's members can read every namespace on their
+project's clusters, platform namespaces included (`view` excludes Secrets). They
+are the cluster's owner; the boundary that matters is between *projects*, and
+that one is held by the cluster's own registration and the per-tenant sync
+identity. The `vcf` CLI/Pinniped path is deliberately left alone — project-read
+members get nothing there, which is the status quo, and binding it too would
+resurrect the derivation this decision removed.
+

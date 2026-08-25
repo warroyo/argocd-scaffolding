@@ -493,20 +493,22 @@ flowchart TB
     subgraph gk["VKSM / Gatekeeper (Terraform ClusterPolicy, per project)"]
         p1["require-namespace-labels:<br/>this SA's Namespace writes must carry<br/>gitops.platform/project = &lt;tenant&gt;<br/>+ environment, no relabeling (no-adoption)"]
         p2["gitops-namespace-containment:<br/>this SA may write only into<br/>namespaces labeled as its own tenant"]
+        p4["rolebinding-subject-containment:<br/>inside those namespaces, gitops may<br/>bind only same-namespace<br/>ServiceAccounts"]
         p3["hostname-ownership /<br/>service-exposure:<br/>scoped to this tenant's own<br/>labeled namespaces"]
     end
 
     dsa -- "sync impersonates" --> sa
     sa -- "identity Gatekeeper keys on" --> p1
     p1 -- "guarantees the label exists<br/>on everything this tenant creates" --> p2
-    p2 -. "labeled namespaces are then<br/>the guardrail surface" .-> p3
+    p2 -. "labeled namespaces are then<br/>the guardrail surface" .-> p4
+    p4 -. .-> p3
     deny -. "covers what Gatekeeper<br/>structurally cannot see" .-> gk
 ```
 
 | Layer | Mechanism | Holds |
 |-------|-----------|-------|
 | AppProject | `sourceRepos`, `clusterResourceWhitelist: Namespace` only, `destinationServiceAccounts` (per-tenant impersonation), deny-destinations for the 3 webhook-exempt namespaces | Splits tenant identity from platform identity; no cluster-scoped kinds; covers the one seam Gatekeeper can't reach |
-| Per-tenant SA + RBAC (`apps/base/tenant-sync`) | `ClusterRole: admin` bound cluster-wide (namespaced kinds only) | No cluster-scoped writes even if the AppProject were misconfigured |
+| Per-tenant SA + RBAC (`apps/base/tenant-sync`) | `ClusterRole: admin` bound cluster-wide (namespaced kinds only), extended by the aggregated `tenant-user-extras` role | No cluster-scoped writes even if the AppProject were misconfigured. Cluster-*wide* because the namespaces it must write into don't exist yet — humans get no such binding (DECISIONS #22) |
 | Gatekeeper (VCF Automation `ClusterPolicy`) | The 4 policies below, keyed on the impersonated identity | Label-aware namespace ownership |
 | VKSM built-ins | Pod-security policies (shipped by the platform) | Escape-to-node from inside a tenant's own namespace |
 
@@ -522,18 +524,22 @@ value) means that SA doesn't exist at all on a cluster it isn't native to —
 the sync fails outright rather than silently succeeding under a trusted
 identity.
 
-**The four policies** (catalog: `terraform/infra/policies.tf`; see CLAUDE.md
+**The five policies** (catalog: `terraform/infra/policies.tf`; see CLAUDE.md
 → "Adding a policy" to extend it):
 
 | Policy | Rule | Selector |
 |--------|------|----------|
 | `require-namespace-labels` | The tenant's own sync identity must set `gitops.platform/project`/`environment` on any Namespace it creates or updates; no-adoption blocks relabeling a namespace that didn't already carry this tenant's value | none (`Namespace` is cluster-scoped) |
-| `gitops-namespace-containment` | The tenant's own sync identity may write only into namespaces labeled as its own project | `gitops.platform/project NotIn [tenant]` (also matches unlabeled namespaces — no exclude-list) |
+| `gitops-namespace-containment` | The tenant's own sync identity may write only into namespaces labeled as its own project. Targets include `Pod`/`ReplicaSet` — without them a cluster-wide-admin identity can run a bare Pod in a platform namespace under a privileged SA (DECISIONS #22) | `gitops.platform/project NotIn [tenant]` (also matches unlabeled namespaces — no exclude-list) |
+| `rolebinding-subject-containment` | Inside the tenant's own namespaces, the tenant's sync identity may bind only ServiceAccounts from the RoleBinding's own namespace — no users, no groups, no foreign SAs. Human access arrives from the platform's project binding instead (see "Tenant human access") | `gitops.platform/project In [tenant]` |
 | `hostname-ownership` | `Ingress` / `Gateway` (Gateway API and istio) / `HTTPRoute` hosts must fall under an allowed DNS suffix | `gitops.platform/project In [tenant]` |
 | `service-exposure` | Deny `NodePort`, steering exposure to a Gateway-backed LoadBalancer. `LoadBalancer` Services are **allowed** — a tenant exposes via its own `Gateway` (any GatewayClass: `avi-lb`, `istio`, or customer-brought), which the provider realizes as an LB Service. Not policed by controller identity (would couple the policy to one provider and miss customer-brought ones); LB sprawl is bounded by the cluster's Avi SEG / VPC IP pool instead | `gitops.platform/project In [tenant]` |
 
-All four ship in `dryrun`; see `tenants.yaml` → a tenant's `policies:` block
-and CLAUDE.md's rollout order before flipping to `deny`.
+The three **containment** policies ship at `deny` — they are the fence that makes
+cluster-wide `admin` on the sync identity safe, and in dryrun they are
+documentation rather than a boundary. `hostname-ownership` and `service-exposure`
+ship `dryrun` (mistake guards, not privilege). See `tenants.yaml` → a tenant's
+`policies:` block, and CLAUDE.md's rollout order before flipping the rest.
 
 **Enabling impersonation.** ArgoCD sync impersonation
 (`application.sync.impersonation.enabled`) is set via a *minimal* `ConfigMap`
@@ -606,7 +612,7 @@ flowchart LR
 | Endpoint IP (`hostAlias` for cert `CN=secret-store`) | external-secrets `AddonConfig` `hostAliases`, `infrastructure/components/envs/{env}` | ESO helm value (infra tree) | It's a helm value the operator needs, so it rides the add-on config. |
 | CA bundle | `ClusterSecretStore.caBundle`, `apps/components/envs/{env}` | apps tree patch | It's a store field; public cert, safe to commit. |
 | `KeyValueSecret` (writes the secret) | applied by hand into the supervisor namespace | human / tenant, out-of-band | Writes straight to OpenBao KV, never etcd; not a repo artifact. |
-| `ExternalSecret` (reads it) | the tenant's own app | tenant sync, **tenant project** as `tenant-sync-<project>` | Tenant-owned; needs the `tenant-sync-external-secrets` RBAC (below). |
+| `ExternalSecret` (reads it) | the tenant's own app | tenant sync, **tenant project** as `tenant-sync-<project>` | Tenant-owned; needs the `tenant-user-extras` RBAC (below). |
 
 **The mount/role are built by segment replacement**, not concatenation (kustomize
 can't concatenate). The base `ClusterSecretStore` carries no-hyphen placeholders
@@ -619,8 +625,10 @@ rejects a surviving `replaceme`, the same guardrail as `replace-me`.
 `infra` project (full whitelist, `argo-attach-sa`), so they need no tenant RBAC.
 A tenant's own `ExternalSecret`, though, syncs under `tenant-sync-<project>`,
 whose built-in `admin` role doesn't cover `external-secrets.io` — so
-`apps/base/tenant-sync/rbac.yaml` adds a `tenant-sync-external-secrets`
-ClusterRole (namespaced kinds only). The tenant AppProject's Namespace-only
+`apps/base/tenant-users` adds the `external-secrets.io` group to the
+`tenant-user-extras` ClusterRole, aggregated into `admin`/`edit` (namespaced
+kinds only), which covers the sync SA and tenant humans in one object (DECISIONS
+#22). The tenant AppProject's Namespace-only
 `clusterResourceWhitelist` keeps the tenant from creating its own
 cluster-scoped `ClusterSecretStore` even though the RBAC group grant would allow
 the API — defense in depth, same as the gateway-api grant.
@@ -685,6 +693,93 @@ flowchart LR
   tok -.->|paste into Headlamp<br/>PARKED: needs oidc-auth| hl[Headlamp UI]
   hl -.->|bearer rejected today| api1
 ```
+
+## Tenant human access (who can see what, once logged in)
+
+`oidc-auth` above authenticates; this is the authorization half. Rationale and
+the rejected alternatives: `docs/DECISIONS.md` #22.
+
+**Reachability today:** the subjects below are the ones a **VCFA bearer**
+carries, and that path is parked (`oidc-auth`, see above). The bindings ship and
+are correct, but nobody resolves to them until the bearer path returns — a
+`vcf` CLI login lands on the supervisor's derived groups instead. Treat this
+section as the design plus the RBAC that is already in place, not as access a
+tenant can use right now.
+
+**Two identity paths reach a workload cluster, and they carry different
+subjects.** Getting this wrong is the whole trap:
+
+| Path | Authenticator | Username | Groups |
+|------|---------------|----------|--------|
+| `vcf` CLI → kubectl | `tkg-jwt-authenticator` (issuer `…/wcp/pinniped`) | SSO user | supervisor SSO groups, incl. the derived `edit-<projectId>-<project>@<domain>` |
+| VCFA bearer → Headlamp, and `tm-vks-jwt-authenticator` | `oidc-auth` structured authn (issuer `<vcfa>/oidc`) | `claims.preferred_username` | `claims.groups + claims.roles` — the org's IdP groups and the VCFA **org** role names |
+
+**What the platform already does — and what it doesn't.** VCFA maintains an SSO
+group per project *per project role* and binds them in the project's supervisor
+namespaces, so a project-view member gets read on the supervisor namespace. VKS
+**auth-sync** then mirrors only the *edit* group onto the workload clusters, as
+`cluster-admin` (`ClusterRoleBinding vmware-system-auth-sync-edit:…`, labelled
+`run.tanzu.vmware.com/vmware-system-synced-from-supervisor: yes`). The *view*
+group is not mirrored at all — **and neither group ever appears in a VCFA
+bearer**, so those bindings are unreachable from Headlamp regardless. Verified
+live: an Org Administrator's bearer resolves to
+`Groups [Organization Administrator system:authenticated]` and `can-i` answers
+`no` for every verb on a workload cluster.
+
+Tenants here hold project **read**, so without this layer they authenticate on
+the guest and are authorized for nothing.
+
+| Piece | Where | Scope | Who writes it |
+|-------|-------|-------|---------------|
+| `tenant-user-extras` ClusterRole | `apps/base/tenant-users` (standard stack) | Gateway API / istio / AKO / external-secrets, **aggregated into `admin`/`edit`** — this is how the `tenant-sync-<tenant>` SA gets them | Platform, every cluster |
+| `tenant-user-extras-view` ClusterRole | same | the read-only half + `customresourcedefinitions` read, **aggregated into `view`** (built-in `view` has no apiextensions rule, and Headlamp's views need it) | Platform, every cluster |
+| `tenant-project-members` ClusterRoleBinding | same — identical for every tenant | the tenant's identity group → built-in `view` | Platform; only the **subject** comes from Terraform (`tenant-vars`) |
+
+So a tenant's people get read-only across the clusters of their own project, and
+nothing cluster-scoped. Writes stay on the gitops path — Headlamp is a window,
+not a console. Cluster-wide because the tenant's namespaces are created by its
+own gitops flow and don't exist when the binding is written; a cluster belongs to
+exactly one project, so the blast radius is that project's own clusters.
+
+**The subject is declared, not derived.** The bindable string is whatever the
+token actually carries, so it is the tenant's own IdP group name — there is
+nothing to compute:
+
+```mermaid
+flowchart LR
+  ty["terraform/infra/tenants.yaml<br/>group: tenant-1-users"] --> tf[terraform/infra]
+  tf -->|renders one value| tv["clusters/{tenant}/vars/tenant-vars.yaml<br/>data.tenant_group"]
+  base["apps/base/tenant-users<br/>CRB: subject replace-me → ClusterRole view"] --> inj
+  tv --> inj[cluster-var-injector]
+  inj -->|fills subjects.0.name| gc[Workload clusters of that project]
+  gc --> hl([Headlamp, as the VCFA user])
+  idp["VCFA org group<br/>(membership managed here)"] -.->|same string in claims.groups| hl
+```
+
+`tenant_group` is an ordinary key in the per-tenant `tenant-vars` ConfigMap, and
+the injector fills it exactly like `cluster_name` and `project` — the RBAC itself
+(role, aggregation, labels) is hand-authored once and identical for every tenant.
+One group per tenant, because a ConfigMap value is a string; a tenant needing
+several would take one binding per group. A tenant with no `group:` renders a
+subject nobody can hold, so the manifest stays valid and grants nothing.
+
+Adding a person to the group in VCFA is the whole workflow — nothing in this repo
+changes. Confirm what a token actually resolves to before wiring a new tenant:
+
+```sh
+kubectl --server=https://<guest-api>:6443 --certificate-authority=<guest-ca> \
+  --token="$(./scripts/headlamp-token.sh)" auth whoami
+# -> Groups [<the group to put in tenants.yaml> <org role> system:authenticated]
+```
+
+Never bind the org-role entries (`Organization User` and friends): they come from
+`claims.roles` and every user in the org carries them.
+
+**The gitops path stays fenced.** Human access never comes from a tenant repo, so
+`rolebinding-subject-containment` (deny) lets the tenant's sync identity bind
+**only ServiceAccounts from the RoleBinding's own namespace** — closing the
+"bind an arbitrary human through a machine identity" path without costing the
+tenant anything they legitimately need.
 
 ## Pattern vs lab: the seams
 

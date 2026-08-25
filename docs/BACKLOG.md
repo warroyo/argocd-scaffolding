@@ -63,6 +63,10 @@ improvement · **P3** = nice-to-have / hygiene.
 - **What:** the only credential is a single shared admin password (TF var). The
   AppProject lockdown only matters once tenants authenticate as themselves —
   today it's either admin-for-everyone or ticket-driven.
+- **Scope note:** this is the **ArgoCD UI/API** only. Human access on the
+  *workload clusters* (Headlamp + kubectl, VCFA identity, per-namespace
+  RoleBindings, policy-fenced) is done — see Done. A tenant still cannot create
+  its own `Application` object without the platform applying it.
 - **Action:** SSO/OIDC on the ArgoCD instance (check what the
   `argocd-service.vsphere.vmware.com` operator CR exposes) + ArgoCD RBAC roles
   mapping tenant groups to their AppProjects.
@@ -153,28 +157,25 @@ improvement · **P3** = nice-to-have / hygiene.
   already kept: nothing is env-keyed today.
 - **Size:** L (rides the multi-org repo partition).
 
-### P2 — Finish rolebinding-subject-containment policy (parked on a branch)
-- **What:** `tenant-sync-<tenant>` (the real per-tenant ArgoCD sync-impersonation
-  SA in `platform-gitops`) holds cluster-wide `admin`, and `admin` can create
-  RoleBindings — so a tenant commit could bind an arbitrary **human** or a
-  **foreign ServiceAccount**, laundering self-granted access through a machine
-  identity. A cluster policy (`RoleBindingSubjectContainment`) that restricts the
-  sync SA to binding only **same-namespace ServiceAccounts** is written but
-  **incomplete**.
-- **Where:** committed on branch
-  `wip/rolebinding-subject-containment-policy` (not on `main`) — the rego
-  (`terraform/infra/rego/rolebinding-subject-containment.rego`), the
-  `local.policy_catalog` entry (`selector_mode = "in"`, tenant's own namespaces),
-  and the `tenants.yaml` enablement (`dryrun`).
-- **Blockers before it can merge/enforce:**
-  1. `apps/base/tenant-users` does not exist — the policy (and its comments)
-     assume that human access arrives through it instead of tenant-authored
-     RoleBindings; that replacement path must ship first, or tenants lose human
-     access entirely.
-  2. No `docs/DECISIONS.md` entry — the rego/tenants.yaml comments reference one.
-  3. Still `enforcement: dryrun` — promote to enforce only after 1–2 and a
-     dryrun-violation review.
-- **Size:** M (mostly the `tenant-users` dependency).
+### P2 — Sync identity can still *read* outside its namespaces
+- **What:** `tenant-sync-<tenant>` holds the built-in `admin` bound
+  cluster-wide (it must — the namespaces it writes into don't exist until it
+  creates them). `gitops-namespace-containment` at `deny` now blocks its
+  *writes* everywhere but its own labeled namespaces, including `Pod` and
+  `ReplicaSet`. Reads are invisible to admission, so the SA can still list
+  Secrets/ConfigMaps in `kube-system`, `default`, and platform namespaces.
+  Practical impact depends on what those namespaces hold (modern k8s doesn't
+  auto-create SA token Secrets), but it is a real residual.
+- **Action:** replace the cluster-wide `admin` binding with a narrow
+  cluster-wide role (namespaces + roles/rolebindings + `bind` on an allow-list
+  of ClusterRoles) and have the sync SA self-grant `admin` **inside** each
+  namespace it creates, fenced by the same containment policy. Escalation
+  prevention then caps it at the allow-listed roles, and nothing outside its
+  namespaces is readable.
+- **Blocker:** needs a live soak — the self-grant is a chicken-and-egg on the
+  first sync of a brand-new namespace, and ArgoCD sync-wave ordering has to put
+  the RoleBinding before the workloads. See `docs/DECISIONS.md` #22.
+- **Size:** M.
 
 ### P2 — Git boundary for tenants (CODEOWNERS / branch protection)
 - **What:** tenants PR into `infrastructure/clusters/{their-project}/`, but
@@ -271,6 +272,28 @@ improvement · **P3** = nice-to-have / hygiene.
 
 ## Done
 <!-- Move completed items here with the PR/commit that closed them. -->
+- **Tenant RBAC story: human access + rolebinding containment** — closes the
+  parked `wip/rolebinding-subject-containment-policy` branch (rego rewritten,
+  branch can be deleted). Tenants are **read-only** on their clusters: one
+  hand-authored `ClusterRoleBinding` in `apps/base/tenant-users`, identical for
+  every tenant, binds the tenant's own VCFA/IdP group to the built-in `view`;
+  only the subject is generated, as a `tenant_group` key in the existing
+  `tenant-vars` ConfigMap that `cluster-var-injector` fills. Verified
+  live that a workload cluster trusts two issuers with different subjects — a
+  VCFA bearer carries `claims.groups + claims.roles` and never the supervisor's
+  derived `view-…`/`edit-…` SSO groups — so an earlier design that bound the
+  derived group was dead on both paths; the `project_id` derivation and
+  `var.vcfa_project_group_domain` are gone with it. `apps/base/tenant-users`
+  also ships `tenant-user-extras` (aggregated into `admin`/`edit`) and
+  `tenant-user-extras-view` (into `view`, incl. CRD read Headlamp needs),
+  replacing `tenant-sync`'s own copies of those roles.
+  `rolebinding-subject-containment` restricts the gitops path to same-namespace
+  ServiceAccounts; `Pod`/`ReplicaSet` added to `gitops-namespace-containment`
+  targets to close the bare-Pod-in-a-platform-namespace laundering path; the
+  three containment policies promoted from `dryrun` to **`deny`**. Docs:
+  ARCHITECTURE "Tenant human access", DECISIONS #22. **Caveat:** the group
+  binding is only reachable over the VCFA **bearer** path, which is parked (see
+  the P1 item above) — the RBAC is in place, the login is not.
 - **OIDC bundle generated by Terraform (issuer + CA derived, audience a var)** —
   `components/oidc-auth/kustomization.yaml` is now rendered by the infra run
   (`terraform/infra/oidc.tf` + `templates/oidc-auth.yaml.tftpl`, `local_file` in

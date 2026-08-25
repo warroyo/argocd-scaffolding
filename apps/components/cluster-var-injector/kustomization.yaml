@@ -41,6 +41,18 @@ replacements:
           delimiter: '-'
           index: 2
 
+  # Tenant human access (apps/base/tenant-users): this tenant's identity group
+  # from the per-tenant tenant-vars. Whole-value — no delimiter/index.
+  - source:
+      kind: ConfigMap
+      name: tenant-vars
+      fieldPath: data.tenant_group
+    targets:
+      - select:
+          labelSelector: "config.k8s.io/inject-tenant-group=true"
+        fieldPaths:
+        - subjects.0.name
+
   # secret-store ClusterSecretStore (apps/base/secret-store): build the Secret
   # Store auth mountPath (kubernetes-<supervisor_ns>-<cluster>) and role
   # (<supervisor_ns>-<cluster>) by segment replacement. ORDER MATTERS — the

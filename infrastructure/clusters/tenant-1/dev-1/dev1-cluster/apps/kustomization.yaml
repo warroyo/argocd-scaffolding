@@ -13,6 +13,9 @@ resources:
 # Per-namespace vars (ns-vars: suffixed supervisor namespace) — feeds the
 # secret-store ClusterSecretStore mount/role via the injector. TF-generated.
 - ../../vars
+# Per-tenant vars (tenant-vars: the tenant's human identity groups) — feeds the
+# tenant-users ClusterRoleBinding via the injector. TF-generated.
+- ../../../vars
 
 components:
 # --- Optional per-cluster app stacks (deltas on top of the profile) ---

@@ -2,16 +2,28 @@ tenants:
   - name: "tenant-1"
     type: tenant
     argo_namespace: "infra"
+    # This tenant's human identity group, exactly as it appears in a VCFA
+    # token's `groups` claim (the VCFA org group, NOT a derived SSO group — the
+    # workload apiserver only ever sees claims.groups + claims.roles). Bound
+    # read-only cluster-wide on this tenant's clusters. Omit for none.
+    # See docs/ARCHITECTURE.md "Tenant human access".
+    group: "tenant-1-users"
     # vpc_connectivity_profile_name: "default--us-east-a"  # optional — default is looked up via data source if unset
     # Custom cluster policies — see CLAUDE.md "Adding a policy" for the catalog
     # and docs/ARCHITECTURE.md "Cluster policy + namespace self-service" for the
-    # design. All start in dryrun; flip to deny per the rollout order in the
-    # policy's own docs once dryrun violations are clean.
+    # design. New policies start in dryrun; flip to deny per the rollout order in
+    # the policy's own docs once dryrun violations are clean.
     policies:
+      # The three containment policies run at `deny` — they are the fence that
+      # makes cluster-wide `admin` on the sync identity safe, and in dryrun they
+      # are documentation, not a boundary. The two below stay dryrun (guardrails
+      # against mistakes, not privilege).
       require-namespace-labels:
-        enforcement: dryrun
+        enforcement: deny
       gitops-namespace-containment:
-        enforcement: dryrun
+        enforcement: deny
+      rolebinding-subject-containment:
+        enforcement: deny
       hostname-ownership:
         enforcement: dryrun
         parameters:

@@ -64,67 +64,9 @@ subjects:
 - kind: ServiceAccount
   name: tenant-sync-replaceme
   namespace: platform-gitops
----
-# Gateway API / AKO / istio CRDs don't carry the aggregate-to-admin label, so the
-# built-in "admin" ClusterRole above doesn't cover them — grant explicitly so a
-# tenant can create its own Gateway (any provider). Namespaced kinds only, same
-# cluster-wide model as admin.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: tenant-sync-gateway-api
-rules:
-- apiGroups: ['gateway.networking.k8s.io']
-  resources: ['*']
-  verbs: ['*']
-- apiGroups: ['networking.istio.io']
-  resources: ['*']
-  verbs: ['*']
-- apiGroups: ['ako.vmware.com']
-  resources: ['*']
-  verbs: ['*']
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: tenant-sync-gateway-api
-  labels:
-    config.k8s.io/inject-project-subject: "true"
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: tenant-sync-gateway-api
-subjects:
-- kind: ServiceAccount
-  name: tenant-sync-replaceme
-  namespace: platform-gitops
----
-# external-secrets.io CRDs don't aggregate to "admin", so a tenant can't create
-# its own ExternalSecret/SecretStore without this. Namespaced kinds only (same
-# cluster-wide model as admin); the shared ClusterSecretStore is platform-owned
-# (synced under the infra project) and stays out of the tenant's reach via the
-# AppProject's Namespace-only clusterResourceWhitelist. See docs/ARCHITECTURE.md
-# "Secret store".
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: tenant-sync-external-secrets
-rules:
-- apiGroups: ['external-secrets.io', 'generators.external-secrets.io']
-  resources: ['*']
-  verbs: ['*']
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: tenant-sync-external-secrets
-  labels:
-    config.k8s.io/inject-project-subject: "true"
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: tenant-sync-external-secrets
-subjects:
-- kind: ServiceAccount
-  name: tenant-sync-replaceme
-  namespace: platform-gitops
+# Gateway API / AKO / istio / external-secrets CRDs carry no aggregate-to-admin
+# label, so built-in "admin" misses them. They are added by the
+# `tenant-user-extras` ClusterRole in apps/base/tenant-users (aggregated into
+# admin/edit), which the same standard stack ships — so this SA and a human
+# bound to `admin` in one namespace get the identical set. Don't drop
+# tenant-users from a cluster: this SA loses those rights with it.
