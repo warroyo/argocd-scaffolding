@@ -112,6 +112,41 @@ improvement · **P3** = nice-to-have / hygiene.
   columns everyone actually looks at.
 - **Size:** M.
 
+### P1 — No cluster is attached to VKSM, so no policy is actually enforced
+- **What:** every `ClusterPolicy` this repo manages is configured and projected
+  correctly, and **none of them run**. The three containment policies read
+  `enforcementAction: deny` at the org API, and the platform even projects each
+  one down per cluster (`prj:<name>:cluster:dev1-cluster:supervisor-namespace:dev-1-y8qw4`,
+  `inherited: true`) — but the guest has no engine to evaluate them: no
+  `constraints.gatekeeper.sh` CRDs, no `policy.management.kubernetes.vmware.com`
+  CRDs, no ValidatingAdmissionPolicies, no webhook, and `vmware-system-vksm`
+  holds nothing but istio CA configmaps.
+- **Where it stops (2026-08-25):** the VKSM-managed cluster object
+  (`clusters.core.management.kubernetes.vmware.com`) sits at
+  **`phase: ReadyToAttach`, `state: Unknown`** — for *all three* clusters in the
+  install, across two projects, created 25 days apart. Attachment would create
+  an `installers.tmc.cloud.vmware.com` `AgentInstall` on the Supervisor for the
+  `tmc-agent-installer` CronJob (`svc-tmc-c9`, runs every minute) to act on;
+  **zero `AgentInstall` objects exist**, so the job logs `no processing
+  required` each run and the guest agents are never installed. Nothing here is
+  cluster-specific and nothing in this repo can drive it: the managed Cluster's
+  `spec` carries only a `selector`, attach is entirely controller-driven, and
+  `ClusterPolicyInsights` is empty everywhere (no cluster has ever reported).
+- **Why it matters:** the tenant containment story assumes admission is real.
+  Today `tenant-sync-<tenant>`'s cluster-wide `admin` is **unfenced** —
+  verified by impersonating it: a RoleBinding to `Group tenant-1-users` and one
+  to a `kube-system` ServiceAccount were both accepted in a tenant namespace,
+  which `rolebinding-subject-containment` at `deny` should reject outright.
+- **Action:** platform/vendor side. Check whether policy management needs
+  enabling per org/project in the VCFA UI, whether `svc-tmc-c9` is fully
+  deployed (it holds only the installer CronJob, a SA, and a TLS configmap —
+  no controller), and the appliance-side VKSM logs, which are not reachable
+  through any kubeconfig here.
+- **Until then:** treat every policy in `tenants.yaml` as documentation, not a
+  boundary, regardless of its `enforcement:` value — and re-run the
+  impersonation checks above before claiming the fence works.
+- **Size:** unknown (not a repo change).
+
 ### P1 — Removed fields need a forced sync; `Synced` doesn't mean applied
 - **What:** delete a component that patched a field into an existing object and
   the rendered manifest loses the field, but ArgoCD's diff compares live as a
