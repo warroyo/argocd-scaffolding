@@ -40,6 +40,8 @@ spec:
     - apiVersion: authentication.concierge.pinniped.dev/v1alpha1
       kind: JWTAuthenticator
       metadata:
+        # Name is fixed by the vcf CLI (hardcoded, not a kubeconfig flag) —
+        # renaming breaks CLI login. docs/ARCHITECTURE.md "VCFA identity".
         name: tm-vks-jwt-authenticator
       spec:
         issuer: replace-me

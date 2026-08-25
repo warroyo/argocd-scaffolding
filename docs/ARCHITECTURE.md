@@ -637,6 +637,19 @@ Every workload cluster trusts the same VCFA identity plane. Today there is
   day-zero `tm-vks-jwt-authenticator` — audience `<cluster>-<uid>`, seeded by the
   mandatory `argocd-attach-rbac` dayzero payload). This is `kubectl`.
 
+**The authenticator's name is a CLI-facing contract.** `tm-vks-jwt-authenticator`
+is hardcoded in the `vcf` binary, not carried in the kubeconfig: the exec plugin
+it writes (`vcf vcfa-auth login --concierge-endpoint=… --vcfa-tenant-name=…
+--workload-cluster-name=…`) passes no `--concierge-authenticator-name`, so the
+CLI names the authenticator itself in the `TokenCredentialRequest` it sends.
+Rename the object in `infrastructure/base/argocd-attach-rbac/config` and CLI
+login breaks — Concierge has no authenticator under the name the CLI asks for.
+Its *contents* (issuer, CA, `audience: <cluster>-<uid>`, claim expressions) are
+ours to set; `metadata.name` is not. That is why the dayzero payload pre-creates
+it under exactly that name instead of running
+`vcf … register-vcfa-jwt-authenticator` per cluster. `tkg-jwt-authenticator`
+(the supervisor's own, kapp-managed) is a different object and off-limits.
+
 **The Headlamp bearer path is parked.** Headlamp cannot do the Concierge cert
 exchange, so the design was to tell the guest **apiserver** to trust VCFA tokens
 directly via structured `AuthenticationConfiguration` (`components/oidc-auth`).
