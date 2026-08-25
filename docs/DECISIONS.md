@@ -1034,3 +1034,59 @@ identity. The `vcf` CLI/Pinniped path is deliberately left alone — project-rea
 members get nothing there, which is the status quo, and binding it too would
 resurrect the derivation this decision removed.
 
+
+## 23. Why `force_conflicts` on the policy modules, and why removing a field from git does not remove it from the cluster
+
+Two field-ownership surprises, found the same afternoon (2026-08-25), both from
+Kubernetes server-side apply semantics rather than from anything this repo does.
+
+**A. `force_conflicts` on `kubernetes_manifest`.** Promoting the containment
+policies from `dryrun` to `deny` failed on every *existing* `ClusterPolicy`:
+
+```
+Apply failed with 1 conflict: conflict with "before-first-apply" using
+policy.management.kubernetes.vmware.com/v1alpha1: .spec.input
+```
+
+`before-first-apply` is the synthetic manager the API server records for state
+that existed before the first server-side apply touched the object — here, the
+platform's own initial write of `.spec.input`. The Terraform Kubernetes
+provider refuses to steal a field from another manager unless told to. New
+objects (the `rolebinding-subject-containment` policy and its template) applied
+fine; only updates conflicted, which is why this appeared on the promotion and
+not when the policies were first created.
+
+Terraform is the declared owner of a `ClusterPolicy`'s spec in this repo — the
+catalog in `policies.tf` and the per-tenant enablement in `tenants.yaml` are the
+source of truth — so taking ownership is correct, not a workaround:
+`field_manager { force_conflicts = true }` on both vendored modules
+(`cluster-policy`, `cluster-policy-template`). It is a deliberate local
+divergence from
+[warroyo/vcfa-terraform-examples](https://github.com/warroyo/vcfa-terraform-examples/tree/main/cluster-policy-custom);
+keep it when re-vendoring, or every rego edit and enforcement flip fails again.
+
+**B. ArgoCD does not prune a field you deleted from git.** Backing the Headlamp
+bearer path out of `main` (#21) removed `components/oidc-auth`, so the rendered
+`Cluster` no longer carried
+`spec.topology.variables[kubernetes].apiServerConfiguration`. The Application
+reported **`Synced`** at the new revision — and the live cluster kept
+`extraAuthentication` anyway, with `argocd-controller` still listed as its
+owning manager from the sync 11 days earlier. Anonymous auth stayed off, so
+Concierge stayed broken and the vcf CLI could not log in to the guest.
+
+ArgoCD's diff asks whether the live object is a superset of the desired one.
+Extra fields in live are assumed to be defaults or another controller's
+business, so a field that disappears from git is simply left alone; prune
+applies to whole *resources*, never to fields. The consequence is general and
+worth internalising: **reverting a commit is not a rollback.** Anything a
+component adds *into* an existing object — a patch, an `op: add`, a variable
+entry — has to be removed from the live object by hand (or by a component that
+explicitly sets it back), and only whole objects come back out with the git
+revert. This one needed:
+
+```sh
+kubectl -n <supervisor-ns> patch cluster <cluster> --type=json \
+  -p '[{"op":"remove","path":"/spec/topology/variables/1/value/apiServerConfiguration"}]'
+```
+
+which rolls the control plane once more, the same cost as adding it.

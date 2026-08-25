@@ -112,6 +112,29 @@ improvement · **P3** = nice-to-have / hygiene.
   columns everyone actually looks at.
 - **Size:** M.
 
+### P1 — Field-level drift: ArgoCD leaves behind what git deleted
+- **What:** removing a component from a cluster's kustomization removes the
+  field it patched from the *rendered* manifest, and ArgoCD then reports
+  **`Synced`** while the live object keeps the field. Its diff treats live as
+  correct when live is a superset of desired; prune covers whole resources, not
+  fields. Verified 2026-08-25: `dev1-cluster` still carried
+  `apiServerConfiguration.extraAuthentication` after the `oidc-auth` revert
+  (`argocd-controller` still the owning manager, from a sync 11 days earlier),
+  so anonymous auth stayed off and Concierge/vcf-CLI login stayed broken. See
+  `docs/DECISIONS.md` #23.
+- **Why it matters beyond this one field:** every `op: add` component in the
+  repo has the same property. Disabling one (`disable-*`, dropping a component)
+  is not self-cleaning unless the opt-out component explicitly writes the value
+  back — which is exactly why the `disable-{addon}` components set the label to
+  `disabled` rather than deleting it. Nothing enforces that pattern today.
+- **Action:** decide the mechanism — server-side apply sync option
+  (`syncOptions: ServerSideApply=true` makes ArgoCD's field manager relinquish
+  removed fields), or a rule that every additive component ships a paired
+  opt-out that writes the neutral value, plus a review of existing components
+  against that rule. SSA is the smaller change but affects every synced object,
+  so it wants a canary cluster first.
+- **Size:** M.
+
 ### P1 — Headlamp bearer login parked (extraAuthentication kills anonymous auth → Concierge)
 - **What:** the guest apiserver's structured `AuthenticationConfiguration`
   (`apiServerConfiguration.extraAuthentication`, shipped as
@@ -129,6 +152,11 @@ improvement · **P3** = nice-to-have / hygiene.
 - **Blocker:** a **VKS release** that keeps anonymous auth (or otherwise keeps
   Concierge working) when `extraAuthentication` is set. Nothing to do in this
   repo until then.
+- **Reverting git was not enough (2026-08-25):** the live `Cluster` kept
+  `extraAuthentication` after the component was removed — see the field-drift
+  item above. Any cluster that enabled `oidc-auth` needs the field removed by
+  hand (`kubectl patch ... -p '[{"op":"remove","path":"/spec/topology/variables/1/value/apiServerConfiguration"}]'`),
+  which rolls its control plane once.
 - **Still on `main`:** `components/headlamp-config` (UI via Gateway),
   `scripts/headlamp-token.sh` (prints the VCFA bearer — `auth whoami` only), and
   the Concierge `JWTAuthenticator` claim expressions in
