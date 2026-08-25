@@ -3,14 +3,6 @@
 # admins can create templates. creating a template auto generates a
 # ClusterPolicySchema of type custom-policy named "<template_name>:custom-policy".
 resource "kubernetes_manifest" "policy_template" {
-  # The platform writes .spec.input before Terraform's first server-side apply,
-  # leaving a "before-first-apply" field manager that conflicts on every update.
-  # Terraform is the declared owner here. Local divergence from the vendored
-  # upstream — keep it when re-vendoring. See docs/DECISIONS.md #23.
-  field_manager {
-    force_conflicts = true
-  }
-
   manifest = {
     "apiVersion" = "policy.management.kubernetes.vmware.com/v1alpha1"
     "kind"       = "ClusterPolicyTemplate"

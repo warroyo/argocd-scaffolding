@@ -31,14 +31,6 @@ locals {
 }
 
 resource "kubernetes_manifest" "cluster_policy" {
-  # The platform writes .spec.input before Terraform's first server-side apply,
-  # leaving a "before-first-apply" field manager that conflicts on every update.
-  # Terraform is the declared owner here. Local divergence from the vendored
-  # upstream — keep it when re-vendoring. See docs/DECISIONS.md #23.
-  field_manager {
-    force_conflicts = true
-  }
-
   lifecycle {
     precondition {
       condition     = var.policy_scope != "cluster" || (var.cluster_name != null && var.supervisor_namespace_name != null)
