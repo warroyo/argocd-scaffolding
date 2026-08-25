@@ -699,20 +699,28 @@ flowchart LR
 `oidc-auth` above authenticates; this is the authorization half. Rationale and
 the rejected alternatives: `docs/DECISIONS.md` #22.
 
-**Reachability today:** the subjects below are the ones a **VCFA bearer**
-carries, and that path is parked (`oidc-auth`, see above). The bindings ship and
-are correct, but nobody resolves to them until the bearer path returns — a
-`vcf` CLI login lands on the supervisor's derived groups instead. Treat this
-section as the design plus the RBAC that is already in place, not as access a
-tenant can use right now.
+**This works today, without the parked bearer path.** Verified live
+(2026-08-25) on `dev1-cluster` with a tenant user holding project read: the
+`vcf` CLI / Concierge certificate resolves to
+`Groups [tenant-1-users Organization User system:authenticated]`, and the
+authorization that follows is exactly this layer — pods readable cluster-wide,
+CRDs/Gateways/ExternalSecrets readable (only `tenant-user-extras-view` grants
+those), Secrets denied, every write denied. `oidc-auth` is needed for the
+*Headlamp browser* login, not for tenant access as such.
 
 **Two identity paths reach a workload cluster, and they carry different
 subjects.** Getting this wrong is the whole trap:
 
 | Path | Authenticator | Username | Groups |
 |------|---------------|----------|--------|
-| `vcf` CLI → kubectl | `tkg-jwt-authenticator` (issuer `…/wcp/pinniped`) | SSO user | supervisor SSO groups, incl. the derived `edit-<projectId>-<project>@<domain>` |
-| VCFA bearer → Headlamp, and `tm-vks-jwt-authenticator` | `oidc-auth` structured authn (issuer `<vcfa>/oidc`) | `claims.preferred_username` | `claims.groups + claims.roles` — the org's IdP groups and the VCFA **org** role names |
+| `vcf` CLI → kubectl (Concierge cert) | `tm-vks-jwt-authenticator` (issuer `<vcfa>/oidc`, audience `<cluster>-<uid>`) | `claims.preferred_username` | `claims.groups + claims.roles` — the tenant's VCFA/IdP group, the VCFA **org** role, and (for project-*edit* members) the derived `edit-<projectId>-<project>@<domain>` |
+| VCFA bearer → Headlamp | `oidc-auth` structured authn (issuer `<vcfa>/oidc`) — **parked** | `claims.preferred_username` | same expressions, byte-identical by design |
+| supervisor SSO → supervisor namespace | `tkg-jwt-authenticator` (issuer `…/wcp/pinniped`) | SSO user | supervisor SSO groups — never reaches a workload cluster |
+
+Both cluster-facing rows run the **same claim expressions**, which is why one
+binding covers the CLI today and the dashboard when it returns. Verified live:
+tenant user → `[tenant-1-users Organization User …]`, Org Administrator →
+`[Organization Administrator edit-<projectId>-tenant1@… …]`.
 
 **What the platform already does — and what it doesn't.** VCFA maintains an SSO
 group per project *per project role* and binds them in the project's supervisor
@@ -720,11 +728,12 @@ namespaces, so a project-view member gets read on the supervisor namespace. VKS
 **auth-sync** then mirrors only the *edit* group onto the workload clusters, as
 `cluster-admin` (`ClusterRoleBinding vmware-system-auth-sync-edit:…`, labelled
 `run.tanzu.vmware.com/vmware-system-synced-from-supervisor: yes`). The *view*
-group is not mirrored at all — **and neither group ever appears in a VCFA
-bearer**, so those bindings are unreachable from Headlamp regardless. Verified
-live: an Org Administrator's bearer resolves to
-`Groups [Organization Administrator system:authenticated]` and `can-i` answers
-`no` for every verb on a workload cluster.
+group is not mirrored at all, so a project-read tenant gets nothing from the
+platform — which is what this layer supplies. Note the derived `edit-…` group
+*does* travel on the Concierge path for project-edit members (it is in their
+VCFA token's groups claim), so an edit member is `cluster-admin` on the cluster
+no matter what this repo does. That is the reason tenants are given project
+**read**.
 
 Tenants here hold project **read**, so without this layer they authenticate on
 the guest and are authorized for nothing.

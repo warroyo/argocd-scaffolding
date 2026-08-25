@@ -222,9 +222,14 @@ Rules that make this hold:
   `kubectl --server=… --token="$(./scripts/headlamp-token.sh)" auth whoami`.
 - **Never bind an org role.** `claims.roles` supplies entries like
   `Organization User` that every user in the org holds.
-- **Two identity paths, different subjects.** The `vcf` CLI/Pinniped path carries
-  the supervisor's derived `edit-…`/`view-…` groups; a VCFA bearer never does.
-  Binding one does nothing for the other — this repo binds the bearer path only.
+- **One set of subjects, two front doors.** The `vcf` CLI (Concierge cert, via
+  `tm-vks-jwt-authenticator`) and the parked Headlamp bearer path run the **same**
+  claim expressions, so both resolve `claims.groups + claims.roles` — the tenant's
+  VCFA group included. Verified live: a project-read tenant is
+  `[tenant-1-users Organization User system:authenticated]` on the CLI path, and
+  the binding grants there today. A project-**edit** member additionally carries
+  the derived `edit-…` group, which VKS auth-sync binds to `cluster-admin` — hence
+  tenants get project read, never edit.
 - **`view`, cluster-wide.** The tenant's namespaces don't exist when the binding
   is written, so a ClusterRoleBinding is the only option; `view` keeps the
   cluster-wide scope cheap.

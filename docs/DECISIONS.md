@@ -930,8 +930,17 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
 
 ## 22. How does a tenant's *human* get access to its workload clusters?
 
-`oidc-auth` (#21) only authenticates — a logged-in VCFA user sees nothing until
-RBAC binds them. The question is what to bind them *to*, given a tenant's
+> **Verified live 2026-08-25, and it corrected this entry.** The binding works
+> on the **vcf CLI / Concierge** path today — a project-read tenant resolves to
+> `Groups [tenant-1-users Organization User system:authenticated]` and gets
+> exactly the access described below. An earlier draft of this decision claimed
+> the tenant's VCFA group reaches only the (parked) Headlamp bearer path; that is
+> wrong. Both cluster-facing paths run the same claim expressions, so one binding
+> serves both, and tenant access does not wait on `oidc-auth` (#21) — only the
+> browser login does.
+
+`oidc-auth` (#21) only authenticates the *dashboard* path — and either way, a
+logged-in VCFA user sees nothing until RBAC binds them. The question is what to bind them *to*, given a tenant's
 namespaces are created by its own gitops flow at sync time and Kubernetes RBAC
 has no label-scoped grant.
 

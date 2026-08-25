@@ -602,8 +602,10 @@ knowing:
 which draws itself with cursor-position queries and can appear to hang in some
 terminals.
 
-**Tenant group binding (WIP — cannot be verified until the bearer path
-returns).** Tenants get **read-only**; every write goes through
+**Tenant group binding — verified working on the CLI path (2026-08-25).**
+A tenant user resolves to `[tenant-1-users Organization User system:authenticated]`
+through the Concierge certificate and gets exactly this layer's authorization; the
+parked bearer path is only needed for the Headlamp browser login. Tenants get **read-only**; every write goes through
 the tenant's gitops flow. The grant is in place if three things are true:
 
 a. **Your token carries the tenant's group.** The workload apiserver sees
