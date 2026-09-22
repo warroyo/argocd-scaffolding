@@ -635,8 +635,8 @@ the API — defense in depth, same as the gateway-api grant.
 
 ## VCFA identity (cluster access)
 
-Every workload cluster trusts the same VCFA identity plane. Today there is
-**one** working path to it:
+Every workload cluster trusts the same VCFA identity plane. One path reaches
+it:
 
 - **CLI access (client certificate).** The vcf CLI logs a user into VCFA (a
   Pinniped Supervisor federates to VCFA via `OIDCIdentityProvider/oidc-idp`),
@@ -658,26 +658,16 @@ it under exactly that name instead of running
 `vcf … register-vcfa-jwt-authenticator` per cluster. `tkg-jwt-authenticator`
 (the supervisor's own, kapp-managed) is a different object and off-limits.
 
-**The Headlamp bearer path is parked.** Headlamp cannot do the Concierge cert
-exchange, so the design was to tell the guest **apiserver** to trust VCFA tokens
-directly via structured `AuthenticationConfiguration` (`components/oidc-auth`).
-That config **disables anonymous authentication**, which breaks Pinniped
-Concierge — and Concierge is the CLI path every cluster depends on. The
-component, its Terraform generator, and the `validate.sh` claim-parity check
-were removed from `main` and live on the branch `wip/headlamp-oidc-auth`,
-waiting on a VKS release that fixes the anonymous-auth interaction. Design
-rationale is still recorded in `docs/DECISIONS.md` #21 (marked parked); status
-and the re-land checklist are in `docs/BACKLOG.md`.
+**The guest apiserver accepts no bearer tokens.** The Concierge exchange above
+is the only authenticator on a workload cluster, so the subjects RBAC can bind
+are exactly the ones its `JWTAuthenticator` produces —
+`claims.preferred_username` and `claims.groups + claims.roles`, set in
+`infrastructure/base/argocd-attach-rbac/config`. An apiserver-side bearer path
+(what a Headlamp browser login would need) is not implemented; see
+`docs/DECISIONS.md` #21 and `docs/BACKLOG.md`.
 
-Consequence for authorization: RBAC subjects a **bearer** would carry
-(`claims.groups + claims.roles`, no prefix) are not reachable on a cluster
-today. The claim expressions in the Concierge `JWTAuthenticator`
-(`base/argocd-attach-rbac/config`) are the identity contract — the parked
-apiserver config must match them byte-for-byte when it returns, or the two paths
-resolve different subjects.
-
-`headlamp-config` still exposes the Headlamp UI through Gateway API (its login
-just has no VCFA bearer to accept). It defaults its GatewayClass to `avi-lb`
+`headlamp-config` exposes the Headlamp UI through Gateway API; the UI has no
+working browser login today. It defaults its GatewayClass to `avi-lb`
 (AKO/AVI is default-on every cluster; Gateway API has no is-default-class, so
 this is an explicit default value). A **non-AKO** cluster running headlamp
 overrides `className` per-cluster (a `patches:` block targeting the headlamp
@@ -690,23 +680,19 @@ flowchart LR
   user([User]) -->|vcf CLI login| vcfa[(VCFA OIDC<br/>+ Pinniped Supervisor)]
   vcfa -->|VCFA bearer<br/>aud=org-global client| tok[/id/access token/]
   tok -->|kubectl: TokenCredentialRequest| concierge[Concierge on guest<br/>tm-vks-jwt-authenticator] -->|client cert| api1[Guest apiserver]
-  tok -.->|paste into Headlamp<br/>PARKED: needs oidc-auth| hl[Headlamp UI]
-  hl -.->|bearer rejected today| api1
 ```
 
 ## Tenant human access (who can see what, once logged in)
 
-`oidc-auth` above authenticates; this is the authorization half. Rationale and
-the rejected alternatives: `docs/DECISIONS.md` #22.
+The Concierge path above authenticates; this is the authorization half.
+Rationale and the rejected alternatives: `docs/DECISIONS.md` #22.
 
-**This works today, without the parked bearer path.** Verified live
-(2026-08-25) on `dev1-cluster` with a tenant user holding project read: the
+**Verified live** (2026-08-25) on `dev1-cluster` with a tenant user holding project read: the
 `vcf` CLI / Concierge certificate resolves to
 `Groups [tenant-1-users Organization User system:authenticated]`, and the
 authorization that follows is exactly this layer — pods readable cluster-wide,
 CRDs/Gateways/ExternalSecrets readable (only `tenant-user-extras-view` grants
-those), Secrets denied, every write denied. `oidc-auth` is needed for the
-*Headlamp browser* login, not for tenant access as such.
+those), Secrets denied, every write denied.
 
 **Two identity paths reach a workload cluster, and they carry different
 subjects.** Getting this wrong is the whole trap:
@@ -714,11 +700,9 @@ subjects.** Getting this wrong is the whole trap:
 | Path | Authenticator | Username | Groups |
 |------|---------------|----------|--------|
 | `vcf` CLI → kubectl (Concierge cert) | `tm-vks-jwt-authenticator` (issuer `<vcfa>/oidc`, audience `<cluster>-<uid>`) | `claims.preferred_username` | `claims.groups + claims.roles` — the tenant's VCFA/IdP group, the VCFA **org** role, and (for project-*edit* members) the derived `edit-<projectId>-<project>@<domain>` |
-| VCFA bearer → Headlamp | `oidc-auth` structured authn (issuer `<vcfa>/oidc`) — **parked** | `claims.preferred_username` | same expressions, byte-identical by design |
 | supervisor SSO → supervisor namespace | `tkg-jwt-authenticator` (issuer `…/wcp/pinniped`) | SSO user | supervisor SSO groups — never reaches a workload cluster |
 
-Both cluster-facing rows run the **same claim expressions**, which is why one
-binding covers the CLI today and the dashboard when it returns. Verified live:
+Only the first row reaches a workload cluster. Verified live:
 tenant user → `[tenant-1-users Organization User …]`, Org Administrator →
 `[Organization Administrator edit-<projectId>-tenant1@… …]`.
 
@@ -761,8 +745,8 @@ flowchart LR
   base["apps/base/tenant-users<br/>CRB: subject replace-me → ClusterRole view"] --> inj
   tv --> inj[cluster-var-injector]
   inj -->|fills subjects.0.name| gc[Workload clusters of that project]
-  gc --> hl([Headlamp, as the VCFA user])
-  idp["VCFA org group<br/>(membership managed here)"] -.->|same string in claims.groups| hl
+  gc --> usr([Tenant user, via vcf CLI + kubectl])
+  idp["VCFA org group<br/>(membership managed here)"] -.->|same string in claims.groups| usr
 ```
 
 `tenant_group` is an ordinary key in the per-tenant `tenant-vars` ConfigMap, and

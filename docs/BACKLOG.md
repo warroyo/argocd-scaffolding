@@ -171,13 +171,26 @@ improvement · **P3** = nice-to-have / hygiene.
   by hand and check the live object.
 - **Size:** M.
 
-### P1 — Headlamp bearer login parked (extraAuthentication kills anonymous auth → Concierge)
+### P1 — Headlamp bearer login parked (extraAuthentication drops Concierge's anonymous paths)
 - **What:** the guest apiserver's structured `AuthenticationConfiguration`
   (`apiServerConfiguration.extraAuthentication`, shipped as
   `components/oidc-auth`) makes the cluster accept VCFA bearers — and as VKS
-  applies it, it also **removes anonymous authentication**. Pinniped Concierge
-  needs anonymous auth, so enabling the dashboard path **breaks the vcf CLI
-  path** every cluster depends on. Not a trade: it's a regression.
+  applies it, it narrows anonymous authentication to a **fixed four-path
+  allowlist** (`/healthz`, `/readyz`, `/livez`,
+  `kube-public/cluster-info`), ignoring any `anonymous` block the cluster
+  supplies. Pinniped Concierge needs two paths that aren't on it, so enabling
+  the dashboard path **breaks the vcf CLI path** every cluster depends on. Not a
+  trade: it's a regression.
+- **Blocker narrowed (2026-08-27), measured live.** Exactly two anonymous
+  requests break, both on the Concierge login flow: the
+  `kube-public/pinniped-info` read (how the client learns
+  `concierge_is_cluster_scoped`) and the anonymous `TokenCredentialRequest` POST
+  (the exchange itself) — both 401 with the config, 200/201 without.
+  `cluster-info` returns 200 either way, so
+  `scripts/pinniped-kubeconfig.sh` CA discovery and kubeadm worker join are
+  **unaffected** (a worker joined such a cluster and both nodes went `Ready`).
+  Full table and method: `docs/DECISIONS.md` #21. Earlier wording here — "removes
+  anonymous authentication" — overstated it.
 - **Where:** branch `wip/headlamp-oidc-auth` (cut from `main` at `cc6fa73`), and
   the removal commit on `main` is its inverse. Parked pieces:
   `infrastructure/components/oidc-auth/`, `terraform/infra/oidc.tf` +
@@ -185,9 +198,12 @@ improvement · **P3** = nice-to-have / hygiene.
   `generate.tf`, `var.vcfa_oidc_audience`, the `hashicorp/tls` provider, the
   `validate.sh` claim-parity check and single-replica-CP warning, and the
   per-cluster opt-in lines.
-- **Blocker:** a **VKS release** that keeps anonymous auth (or otherwise keeps
-  Concierge working) when `extraAuthentication` is set. Nothing to do in this
-  repo until then.
+- **Blocker:** a **VKS release** that adds Concierge's two paths
+  (`kube-public/pinniped-info` and the `TokenCredentialRequest` endpoint) to the
+  hardcoded anonymous allowlist, or makes the list extensible. The variable
+  schema states anonymous auth "cannot be customized", so there is no config-side
+  workaround — but the ask is now specific enough to file upstream rather than
+  waiting on an unspecified fix. Nothing to do in this repo until then.
 - **Reverting git was not enough (2026-08-25):** the live `Cluster` kept
   `extraAuthentication` until the Application was synced **by hand** — the diff
   never flagged it (see the forced-sync item above). Any cluster that enabled
@@ -201,7 +217,8 @@ improvement · **P3** = nice-to-have / hygiene.
   the Concierge `JWTAuthenticator` claim expressions in
   `infrastructure/base/argocd-attach-rbac/config`, which are the identity
   contract the parked config must match byte-for-byte on re-land.
-- **Re-land checklist:** confirm anonymous auth survives on the new VKS build →
+- **Re-land checklist:** confirm `kube-public/pinniped-info` and an anonymous
+  `TokenCredentialRequest` POST both answer non-401 on the new VKS build →
   merge the branch → restore the parity check → re-verify `auth whoami` on both
   paths (CLI cert AND pasted bearer) → then, and only then, bind bearer-carried
   subjects (`claims.groups + claims.roles`) in RBAC.

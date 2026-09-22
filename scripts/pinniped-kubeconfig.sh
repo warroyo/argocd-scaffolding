@@ -104,8 +104,9 @@ ns="$(jq -r '.metadata.namespace' <<<"$cluster_json")"
 
 # ── Guest cluster CA ──────────────────────────────────────────────────────────
 # kubeadm publishes it in the anonymously-readable kube-public/cluster-info
-# ConfigMap — the same discovery `kubeadm join` uses. Needs anonymous auth, which
-# the parked oidc-auth component would switch off (docs/BACKLOG.md).
+# ConfigMap — the same discovery `kubeadm join` uses. VKS keeps this path
+# anonymous even under `extraAuthentication` (worker join needs it) — see
+# docs/DECISIONS.md #21.
 cluster_info_ca() {
   command -v curl >/dev/null || return 1
   curl -sk --max-time 15 "${server}/api/v1/namespaces/kube-public/configmaps/cluster-info" 2>/dev/null \

@@ -528,11 +528,12 @@ lifecycle.
 Headlamp is exposed through Gateway API, but there is **no working browser
 login** today. The design was a pasted VCFA bearer accepted by the guest
 apiserver's structured `AuthenticationConfiguration` (`components/oidc-auth`) —
-that config **disables anonymous authentication**, which breaks Pinniped
-Concierge and so takes out the vcf CLI path. It is parked on
-`wip/headlamp-oidc-auth` until a VKS release fixes that; see `docs/BACKLOG.md`
-and `docs/DECISIONS.md` #21. Cluster access today is the vcf CLI (Concierge
-client-cert exchange).
+that config narrows anonymous authentication to a **fixed VKS allowlist**
+(`/healthz`, `/readyz`, `/livez`, `kube-public/cluster-info`) that omits the two
+paths Pinniped Concierge needs, so it takes out the vcf CLI path. It is parked
+on `wip/headlamp-oidc-auth` until a VKS release fixes that; see
+`docs/BACKLOG.md` and `docs/DECISIONS.md` #21. Cluster access today is the vcf
+CLI (Concierge client-cert exchange).
 
 **Expose the UI.** In the cluster's `kustomization.yaml` add
 `components/headlamp-config` (before `cluster-var-injector`) and set
@@ -590,9 +591,10 @@ knowing:
   certificate the endpoint presents, so a wrong or stale CA is caught; pin it
   out of band if you need protection from an active MITM. Fallbacks, in order:
   the Pinniped `CredentialIssuer`, a local kubeconfig entry for the same server,
-  `--ca-file`. Note this path needs **anonymous auth**, which the parked
-  `oidc-auth` component switches off — one more thing that breaks if it returns
-  unchanged.
+  `--ca-file`. This path needs **anonymous auth**, and it keeps working under
+  the parked `oidc-auth` component: VKS hardcodes `cluster-info` into the
+  anonymous allowlist because worker-node bootstrap depends on it (verified
+  2026-08-27, `docs/DECISIONS.md` #21).
 - **The credential cache is keyed by cluster UUID only**, so two identities using
   the default cache evict each other. The script scopes it per user
   (`credentials-<username>.json`) so an admin and a tenant context can be live at

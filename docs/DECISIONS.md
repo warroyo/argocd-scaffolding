@@ -857,13 +857,15 @@ add-on.
 
 ## 21. How does Headlamp get the user's identity? (pasted VCFA bearer, not an OIDC relying party)
 
-> **PARKED (2026-08-25).** The chosen design below is implemented but **not on
-> `main`** — it lives on `wip/headlamp-oidc-auth`. Setting the apiserver's
-> structured `AuthenticationConfiguration` (`extraAuthentication`) **removes
-> anonymous authentication**, which breaks Pinniped Concierge — i.e. it takes
-> out the vcf CLI path in exchange for the dashboard path. Blocked on a VKS
-> release. The analysis below stands; only the status changed. See
-> `docs/BACKLOG.md` for the re-land checklist.
+> **PARKED (2026-08-25), blocker narrowed (2026-08-27).** The chosen design
+> below is implemented but **not on `main`** — it lives on
+> `wip/headlamp-oidc-auth`. Setting the apiserver's structured
+> `AuthenticationConfiguration` (`extraAuthentication`) narrows anonymous
+> authentication to a fixed VKS allowlist that omits Pinniped Concierge's two
+> paths, so it takes out the vcf CLI path in exchange for the dashboard path.
+> Blocked on a VKS release. The analysis below stands; only the status changed.
+> See the *Anonymous auth* bullet for what was measured, and `docs/BACKLOG.md`
+> for the re-land checklist.
 
 **The problem.** Headlamp is a browser dashboard that needs to act as the
 logged-in user against a workload cluster. The obvious design — Headlamp as an
@@ -923,10 +925,58 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
 - *Control-plane roll.* Enabling `oidc-auth` writes the apiserver's structured
   authn, which rolls the control plane once (`validate.sh` warns on single-replica
   CPs).
-- *Anonymous auth — the blocker.* Structured authn as VKS applies it also
-  **disables anonymous authentication**. Pinniped Concierge needs it, so the
-  Concierge cert path is **not** break-glass here: enabling the bearer path
-  removes the CLI path. That is what parked this (see the note at the top).
+- *Anonymous auth — the blocker.* Structured authn as VKS applies it replaces
+  blanket anonymous authentication with a **fixed allowlist**, and the
+  `apiServerConfiguration.extraAuthentication` variable schema says so outright:
+  anonymous access "is automatically configured by VKS and cannot be
+  customized… Any anonymous configuration in the source
+  AuthenticationConfiguration is ignored." The hardcoded paths are `/healthz`,
+  `/readyz`, `/livez`, and `/api/v1/namespaces/kube-public/configmaps/cluster-info`.
+
+  Measured live 2026-08-27 on a throwaway cluster (`builtin-generic-v3.7.0`,
+  k8s v1.35.5) against a cluster without the config:
+
+  | anonymous request | no `extraAuthentication` | with it |
+  |---|---|---|
+  | `kube-public/cluster-info` | 200 | **200** |
+  | `kube-public/pinniped-info` | 200 | **401** |
+  | `TokenCredentialRequest` POST | 201 | **401** |
+  | `default/pods` | 403 | 401 |
+
+  The 403→401 shift on `default/pods` is the tell: without the config anonymous
+  authenticates and RBAC denies; with it anonymous is refused at the
+  authentication layer except on the four paths. The guest cluster still carries
+  the `pinniped:view-pinnipedinfo` RoleBinding to `system:anonymous`, so
+  *authorization* would allow it — authentication is what blocks.
+
+  **Both broken paths are on the login flow, and both are needed:**
+
+  - The **anonymous `TokenCredentialRequest` POST** is the Concierge exchange
+    itself — granted to `system:unauthenticated` by the
+    `pinniped-concierge-pre-authn-apis` ClusterRole (`create`/`list` on
+    `tokencredentialrequests` + `whoamirequests`).
+  - The **`kube-public/pinniped-info` read** is how the client learns
+    `concierge_is_cluster_scoped` — the only key that ConfigMap carries here —
+    which shapes the request it posts. The `vcf` binary reads it from
+    `pkg/auth/tkg/cluster_pinniped_info.go` (field `ConciergeIsClusterScoped`)
+    and has a hard failure path, `No pinniped-info found: Status code: %d`.
+
+  That the ConfigMap is granted to **`system:anonymous`**
+  (`pinniped:view-pinnipedinfo`, `get` on that one resource name) is the tell:
+  only a client that has no credential yet needs such a grant. It is read
+  *before* login, not by an already-authenticated kubeconfig generator.
+
+  No allowlist entry, no CLI login. Enabling the bearer path removes the CLI
+  path, and the Concierge cert path is **not** break-glass here. That is what
+  parked this.
+
+  Two things this does **not** break, contrary to an earlier reading:
+  `scripts/pinniped-kubeconfig.sh` guest-CA discovery, and kubeadm worker join —
+  both read `cluster-info`, the path VKS hardcodes precisely because CAPI joins
+  workers with `discovery.bootstrapToken`, which fetches it before holding any
+  credential. Verified: a worker joined such a cluster and both nodes reached
+  `Ready`. The re-land ask on VKS is therefore narrow — add Concierge's two paths
+  to the allowlist, or make it extensible.
 
 ## 22. How does a tenant's *human* get access to its workload clusters?
 
