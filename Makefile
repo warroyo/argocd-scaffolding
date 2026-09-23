@@ -36,7 +36,7 @@ SRC_BACKEND := set -a; [ -f $(BACKEND_ENV) ] && . $(BACKEND_ENV); set +a;
 # and '*' already crosses '/', so this one pattern catches both project-level vars
 # (tenant-vars.yaml) and namespace-level vars (ns-vars.yaml) in one shot. Without /**
 # the pattern matches nothing at all, since every real file has a filename after 'vars'.
-GENERATED_PATHS := argocd/projects 'infrastructure/clusters/*/vars/**' \
+GENERATED_PATHS := argocd/projects argocd/managed-entities 'infrastructure/clusters/*/vars/**' \
                    terraform/bootstrap/providers.tf terraform/bootstrap/main.tf
 
 .PHONY: validate state-backend check-generated-clean \

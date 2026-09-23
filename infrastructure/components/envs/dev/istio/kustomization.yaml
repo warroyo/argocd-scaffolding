@@ -12,4 +12,4 @@ patches:
   patch: |-
     - op: replace
       path: /spec/releaseFilter/ref/name
-      value: "istio.kubernetes.vmware.com.1.28.2-vmware.1-vks.1" # Dev istio AddonRelease
+      value: "istio.kubernetes.vmware.com.1.28.7-vmware.1-vks.1" # Dev istio AddonRelease

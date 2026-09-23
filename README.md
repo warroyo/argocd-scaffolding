@@ -169,12 +169,13 @@ bootstrap can't be destroyed through the Makefile. Recover by:
 **Deletion is live.** Removing or renaming a cluster directory deletes the real
 cluster (a rename is delete + recreate to ArgoCD). Likewise, committing the
 deletion of the `apply-infra`-rendered files (`argocd/projects/`,
+`argocd/managed-entities/`,
 `infrastructure/clusters/*/vars/`, `terraform/bootstrap/{main,providers}.tf`)
 makes ArgoCD prune the corresponding AppProjects. If you deleted them by
 accident, restore before syncing:
 
 ```sh
-git checkout -- argocd/projects 'infrastructure/clusters/*/vars/**' \
+git checkout -- argocd/projects argocd/managed-entities 'infrastructure/clusters/*/vars/**' \
   terraform/bootstrap/main.tf terraform/bootstrap/providers.tf
 ```
 
@@ -295,6 +296,7 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
 2. Run `make apply` (or push to `main` — the Apply workflow runs it). `apply-infra`:
    - provisions the supervisor namespace(s), and
    - renders `argocd/projects/{tenant}.yaml`, the projects kustomization,
+     `argocd/managed-entities/{tenant}-{namespace}.yaml` (+ kustomization),
      `infrastructure/clusters/{tenant}/vars/{tenant-vars,kustomization}.yaml`
      (with the auto-generated `argo_namespace`), and
      `terraform/bootstrap/{providers,main}.tf`.

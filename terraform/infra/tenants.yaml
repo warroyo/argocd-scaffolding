@@ -13,30 +13,33 @@ tenants:
     # and docs/ARCHITECTURE.md "Cluster policy + namespace self-service" for the
     # design. New policies start in dryrun; flip to deny per the rollout order in
     # the policy's own docs once dryrun violations are clean.
-    policies:
-      # The three containment policies run at `deny` — they are the fence that
-      # makes cluster-wide `admin` on the sync identity safe, and in dryrun they
-      # are documentation, not a boundary. The two below stay dryrun (guardrails
-      # against mistakes, not privilege).
-      require-namespace-labels:
-        enforcement: deny
-      gitops-namespace-containment:
-        enforcement: deny
-      rolebinding-subject-containment:
-        enforcement: deny
-      hostname-ownership:
-        enforcement: dryrun
-        parameters:
-          allowedSuffixes:
-            - ".will-org-apps.vcf.lab"
-      service-exposure:
-        enforcement: dryrun
-        parameters:
-          denyNodePort: true
+    # Disabled: VKSM policy APIs publish no OpenAPI GVK on this VCFA build, so
+    # kubernetes_manifest cannot plan them. Re-enable when fixed — docs/BACKLOG.md.
+    # policies:
+    #   # The three containment policies run at `deny` — they are the fence that
+    #   # makes cluster-wide `admin` on the sync identity safe, and in dryrun they
+    #   # are documentation, not a boundary. The two below stay dryrun (guardrails
+    #   # against mistakes, not privilege).
+    #   require-namespace-labels:
+    #     enforcement: deny
+    #   gitops-namespace-containment:
+    #     enforcement: deny
+    #   rolebinding-subject-containment:
+    #     enforcement: deny
+    #   hostname-ownership:
+    #     enforcement: dryrun
+    #     parameters:
+    #       allowedSuffixes:
+    #         - ".will-org-apps.vcf.lab"
+    #   service-exposure:
+    #     enforcement: dryrun
+    #     parameters:
+    #       denyNodePort: true
     namespaces:
       - name: "dev-1"
         environment: dev
-        zone_name: "domain-c9"   # always set explicitly — default exists but varies per region
+        zone_name: "west-1"   # always set explicitly — default exists but varies per region
+        storage_policy: "mgmt-cl01-optimal-datastore-default-policy-autoraid"
         storage_limit: "400Gi"
         mem_limit: "30Gi"
         cpu_limit: "20000M"
@@ -51,7 +54,8 @@ tenants:
     namespaces:
       - name: "infra"
         environment: prod
-        zone_name: "domain-c9"   # always set explicitly — default exists but varies per region
+        zone_name: "west-1"   # always set explicitly — default exists but varies per region
+        storage_policy: "mgmt-cl01-optimal-datastore-default-policy-autoraid"
         deploy_argo: true
         storage_limit: "20Gi"
         mem_limit: "4Gi"

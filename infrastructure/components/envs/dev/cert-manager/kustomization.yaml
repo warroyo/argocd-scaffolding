@@ -12,4 +12,4 @@ patches:
   patch: |-
     - op: replace
       path: /spec/releaseFilter/ref/name
-      value: "cert-manager.kubernetes.vmware.com.1.19.2-vmware.1-vks.1" # Dev cert-manager AddonRelease
+      value: "cert-manager.kubernetes.vmware.com.1.19.4-vmware.2-vks.1" # Dev cert-manager AddonRelease

@@ -84,8 +84,8 @@ cp .env.example .env
 # STATE_NS_STORAGE_POLICY to match your install (the rest can wait for Part 2)
 
 set -a; . ./.env; set +a                # load .env into this shell
-kubectl create -f terraform/state-namespace/project.yaml
-NAME=$(envsubst < terraform/state-namespace/state-namespace.yaml | kubectl create -f - -o jsonpath='{.metadata.name}')
+kubectl create --validate=false -f terraform/state-namespace/project.yaml
+NAME=$(envsubst < terraform/state-namespace/state-namespace.yaml | kubectl create --validate=false -f - -o jsonpath='{.metadata.name}')
 echo "namespace = \"$NAME\"" > terraform/state-backend/namespace.auto.tfvars
 git add terraform/state-backend/namespace.auto.tfvars
 git commit -m "capture state namespace name"
@@ -104,6 +104,11 @@ Two things worth knowing:
   so re-running `create` makes a *second* namespace. One-time on purpose.
 - A value left blank in `.env` renders as an empty string, which the API
   rejects — a missed value fails loudly at `create`, not silently.
+- The manifest sets `segName` from `TF_VAR_seg_name` — AVI regions reject a
+  namespace without it. On NSX_LB, delete that line before rendering.
+- `--validate=false` skips kubectl's client-side schema check, which some
+  VCFA builds break with a malformed OpenAPI document (`unknown model in
+  reference`). The server still validates.
 
 You never touch this again. Every `make` target refreshes its own
 short-lived credentials against this namespace automatically.
@@ -277,6 +282,7 @@ Apply complete! Resources: 14 added, 0 changed, 0 destroyed.
 $ git status --short
  M argocd/projects/kustomization.yaml
 ?? argocd/projects/tenant-1.yaml
+ M argocd/managed-entities/tenant-1-dev-1.yaml
  M infrastructure/clusters/tenant-1/vars/tenant-vars.yaml
 ?? infrastructure/clusters/tenant-1/dev-1/vars/
 ?? infrastructure/clusters/infra-1/infra/vars/
@@ -291,7 +297,7 @@ so git (not your shell) expands the glob — it needs to reach both
 only ever catches the first:
 
 ```sh
-git add argocd/projects 'infrastructure/clusters/*/vars/**' terraform/bootstrap/{providers,main}.tf
+git add argocd/projects argocd/managed-entities 'infrastructure/clusters/*/vars/**' terraform/bootstrap/{providers,main}.tf
 git commit -m "rendered config for tenants" && git push
 ```
 
@@ -846,7 +852,7 @@ it, and its finalizer deletes the VKS `Cluster`. No Terraform involved.
    resources keyed the same way.
 4. Commit the now-deleted rendered files, same as any other
    `apply-infra` run:
-   `git add -A argocd/projects 'infrastructure/clusters/*/vars/**' && git commit -m "remove tenant-1/dev-1" && git push`.
+   `git add -A argocd/projects argocd/managed-entities 'infrastructure/clusters/*/vars/**' && git commit -m "remove tenant-1/dev-1" && git push`.
 5. If the namespace ran `deploy_argo: true` (an infra tenant's ArgoCD),
    `apply-infra` alone doesn't remove its helm release — run
    `make apply-bootstrap` (which also reconciles the now-shorter

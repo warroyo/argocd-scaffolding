@@ -115,6 +115,23 @@ improvement · **P3** = nice-to-have / hygiene.
   columns everyone actually looks at.
 - **Size:** M.
 
+### P1 — Policies disabled: VKSM policy APIs publish no OpenAPI GVK
+- **What:** on the rebuilt lab (2026-09-23), `ClusterPolicyTemplate` /
+  `ClusterPolicy` (`policy.management.kubernetes.vmware.com/v1alpha1`) carry no
+  `x-kubernetes-group-version-kind` in the org endpoint's `/openapi/v2` or the
+  group's `/openapi/v3`. They are aggregated-API kinds, not CRDs, so
+  `kubernetes_manifest` (hashicorp/kubernetes 2.38.0) has no schema and every
+  plan fails: `Kind=ClusterPolicyTemplate resource not found in OpenAPI index`.
+  The same config planned fine on the previous build. Reported upstream.
+- **Until then:** tenant-1's `policies:` block in `tenants.yaml` is commented
+  out, so no policy is even configured (see also the VKSM attach entry below).
+- **Check:** `curl …/cci/kubernetes/openapi/v2 | jq '[.definitions | to_entries[]
+  | select(.key|endswith(".ClusterPolicyTemplate")) | .value["x-kubernetes-group-version-kind"]]'`
+  returns a GVK, not `[null]`. Then uncomment the block and `make apply-infra`.
+- **Fallback if upstream won't fix:** swap both policy modules to a provider
+  that applies without OpenAPI (e.g. `alekc/kubectl` `kubectl_manifest`).
+- **Size:** S once fixed upstream; M for the provider swap.
+
 ### P1 — No cluster is attached to VKSM, so no policy is actually enforced
 - **What:** every `ClusterPolicy` this repo manages is configured and projected
   correctly, and **none of them run**. The three containment policies read

@@ -21,12 +21,13 @@ spec:
     class: replace-me
     version: replace-me
     variables:
+      # Storage class: replace-me, supplied by the env overlay (per-install value).
       - name: vsphereOptions
         value:
           persistentVolumes:
             availableStorageClasses:
-              - vsan-default-storage-policy
-            defaultStorageClass: vsan-default-storage-policy
+              - replace-me
+            defaultStorageClass: replace-me
       - name: kubernetes
         value:
           certificateRotation:
@@ -35,7 +36,7 @@ spec:
       - name: vmClass
         value: best-effort-xlarge
       - name: storageClass
-        value: vsan-default-storage-policy
+        value: replace-me
     controlPlane:
       replicas: 1
       metadata:
@@ -61,5 +62,5 @@ spec:
                 value:
                   - name: vol-sq33
                     mountPath: /var/lib/containerd
-                    storageClass: vsan-default-storage-policy
+                    storageClass: replace-me
                     capacity: 20Gi

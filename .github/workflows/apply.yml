@@ -45,6 +45,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add -A -- \
             argocd/projects/ \
+            argocd/managed-entities/ \
             'infrastructure/clusters/*/vars/**' \
             terraform/bootstrap/providers.tf \
             terraform/bootstrap/main.tf

@@ -14,6 +14,7 @@ spec:
   description: Terraform state backend
   regionName: ${TF_VAR_region_name}
   vpcName: ${STATE_NS_VPC}
+  segName: ${TF_VAR_seg_name}   # AVI regions require it; on NSX_LB delete this line
   classConfigOverrides:
     storageClasses:
       - name: ${STATE_NS_STORAGE_POLICY}

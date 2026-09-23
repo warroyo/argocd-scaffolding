@@ -91,8 +91,11 @@ resource "local_file" "projects_kustomization" {
 # renders. Labels are the decision-model set. See docs/DECISIONS.md #24.
 
 locals {
+  # Filter on deploy_argo from tenants.yaml, not suffixed names — for_each keys
+  # must be known at plan time on a fresh apply.
   managed_namespaces = {
-    for k, ns in local.ns_deployments : k => ns if ns.ns_name != ns.argo_namespace
+    for k, ns in local.ns_deployments : k => ns
+    if !try([for n in local.tenant_map[ns.tenant_name].namespaces : lookup(n, "deploy_argo", false) if n.name == ns.ns_ref][0], false)
   }
 }
 
