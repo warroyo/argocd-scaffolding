@@ -8,7 +8,7 @@ metadata:
   annotations:
     config.kubernetes.io/local-config: "true"
 data:
-  argo_namespace: "infra-wxm32"
+  argo_namespace: "infra-h8qk6"
   # This tenant's human identity group, verbatim from tenants.yaml `group:` —
   # exactly the string a VCFA token carries. cluster-var-injector binds it
   # read-only via apps/base/tenant-users. Empty `group:` renders a subject
