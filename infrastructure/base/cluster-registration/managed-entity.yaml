@@ -1,0 +1,20 @@
+# One workload cluster's ArgoCD registration. Not part of the cluster tree:
+# the cluster-registration ApplicationSet syncs it into the ArgoCD namespace and
+# fills every replace-me from the cluster path. See docs/DECISIONS.md #24.
+apiVersion: argocd-service.vsphere.vmware.com/v1alpha1
+kind: ManagedEntity
+metadata:
+  name: replace-me
+spec:
+  targetRef:
+    apiGroup: cluster.x-k8s.io
+    kind: Cluster
+    name: replace-me
+    namespace: replace-me
+    project: replace-me
+  clusterName: replace-me
+  secretLabels:
+    type: tenant
+    gitops.platform/project: replace-me
+    gitops.platform/namespace-ref: replace-me
+    gitops.platform/namespace: replace-me

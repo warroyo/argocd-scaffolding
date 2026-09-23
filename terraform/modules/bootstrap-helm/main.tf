@@ -16,9 +16,8 @@ resource "helm_release" "bootstrap" {
 
   values = [
     yamlencode({
-      deployArgo    = var.config.deploy_argo
-      argoNamespace = var.config.argo_namespace
-      tenantName    = var.config.tenant_name
+      deployArgo = var.config.deploy_argo
+      tenantName = var.config.tenant_name
 
       # argo_password must already be a bcrypt hash (see variables.tf). It is NOT
       # hashed here: bcrypt() is non-deterministic and would rewrite the secret on

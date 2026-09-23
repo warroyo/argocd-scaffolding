@@ -15,6 +15,9 @@
 #   5. docs/examples/cluster-template and docs/examples/namespace-resources-template
 #      still build (via temp copies at the real directory depth), so the
 #      templates can't rot silently.
+#   6. each cluster's ManagedEntity renders from infrastructure/base/cluster-registration
+#      with the cluster-registration ApplicationSet's own patch (so the base and
+#      the appset can't drift) and leaves no replace-me behind.
 #
 # Usage: scripts/validate.sh   (requires kustomize on PATH)
 set -uo pipefail
@@ -51,6 +54,37 @@ build_check() {
 echo "building argocd"
 kustomize build argocd >/dev/null || fail "kustomize build failed: argocd"
 
+# The cluster-registration ApplicationSet's inline JSON patch, de-indented once.
+REG_APPSET="argocd/appsets/cluster-registration.yaml"
+REG_PATCH="$(sed -n '/patch: |-/,/^      destination:/p' "$REG_APPSET" | sed '1d;$d' | sed 's/^              //')"
+REG_TMP="infrastructure/.registration-check"
+trap 'rm -rf "$REPO_ROOT/$REG_TMP"' EXIT
+
+# Render one cluster's ManagedEntity the way the ApplicationSet would.
+registration_check() {
+  local project="$1" nsref="$2" cluster="$3" nsvars ns out
+  nsvars="infrastructure/clusters/$project/$nsref/vars/ns-vars.yaml"
+  ns="$(awk '/supervisor_namespace:/{print $2; exit}' "$nsvars" 2>/dev/null | tr -d '"')"
+  if [ -z "$ns" ]; then
+    fail "$nsvars: no supervisor_namespace — run make apply-infra"
+    return
+  fi
+  rm -rf "$REG_TMP"; mkdir -p "$REG_TMP"
+  sed -e "s|{{.path.basename}}|$cluster|g" -e "s|{{.values.namespace}}|$ns|g" \
+      -e "s|{{.values.project}}|$project|g" -e "s|{{.values.namespaceRef}}|$nsref|g" \
+      <<<"$REG_PATCH" > "$REG_TMP/patch.yaml"
+  if grep -q '{{' "$REG_TMP/patch.yaml"; then
+    fail "$REG_APPSET: patch uses a template value validate.sh doesn't substitute"
+  fi
+  printf 'resources:\n- ../base/cluster-registration\npatches:\n- path: patch.yaml\n  target:\n    kind: ManagedEntity\n' > "$REG_TMP/kustomization.yaml"
+  echo "building registration for $project/$nsref/$cluster"
+  if ! out="$(kustomize build "$REG_TMP")"; then
+    fail "$REG_APPSET: patch doesn't apply to infrastructure/base/cluster-registration"
+  elif grep -q "replace-me" <<<"$out"; then
+    fail "$REG_APPSET: patch leaves a replace-me in infrastructure/base/cluster-registration — add the matching op"
+  fi
+}
+
 while IFS= read -r details; do
   dir="$(dirname "$details")"
   # infrastructure/clusters/{project}/{namespace_ref}/{cluster}
@@ -78,6 +112,7 @@ while IFS= read -r details; do
 
   echo "building $dir"
   build_check "$dir"
+  registration_check "$project" "$nsref" "$cluster"
 
   if [ -d "$dir/apps" ]; then
     # The apps tree can't read ../cluster-details.yaml (kustomize load
@@ -117,7 +152,7 @@ done < <(find infrastructure/clusters -type d -name namespace-resources)
 # hidden (leading dot) so nothing else picks it up, and is always cleaned up.
 echo "building docs/examples/cluster-template (temp copy)"
 TPL_PROJECT="infrastructure/clusters/.template-check"
-cleanup_tpl() { rm -rf "$REPO_ROOT/$TPL_PROJECT"; }
+cleanup_tpl() { rm -rf "$REPO_ROOT/$TPL_PROJECT" "$REPO_ROOT/$REG_TMP"; }
 trap cleanup_tpl EXIT
 rm -rf "$TPL_PROJECT"
 mkdir -p "$TPL_PROJECT/tmpl-ns"

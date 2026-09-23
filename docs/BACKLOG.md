@@ -44,6 +44,9 @@ improvement · **P3** = nice-to-have / hygiene.
   removing the dead finalizer by hand. Teardown ordering therefore has to cover
   rebuilding the *infra* namespace too, not just tenant namespaces — any
   ArgoCluster outliving its argo namespace is unfinalizable.
+  `ArgoCluster` is gone since `docs/DECISIONS.md` #24; its replacement, the
+  `ManagedEntity`, lives *in* the ArgoCD namespace, so it is deleted with that
+  namespace instead of outliving it.
 - **Size:** S.
 
 ### P1 — Rotate and externalize credentials
@@ -271,7 +274,7 @@ improvement · **P3** = nice-to-have / hygiene.
 - **Size:** S.
 
 ### P2 — ArgoCD instance upgrade ownership
-- **What:** the ArgoCD version (`3.0.19` in chart values) is set at bootstrap
+- **What:** the ArgoCD version (`3.4.4` in chart values) is set at bootstrap
   and never reconciled afterwards; nobody owns upgrading the instances.
 - **Action:** decide the path (bump chart value + `make apply-bootstrap` as the
   documented procedure, or move the ArgoCD CR under gitops management).
@@ -283,7 +286,11 @@ improvement · **P3** = nice-to-have / hygiene.
   target ANOTHER tenant's workload clusters — cluster names carry no tenant
   prefix to match a destination glob on.
 - **Options:** prefix workload cluster names with the project (join + validate
-  changes), or per-tenant destination labels.
+  changes), or per-tenant destination labels, or project-scoped clusters: set
+  `argoCDProject: <tenant>` on each cluster's `ManagedEntity` and
+  `permitOnlyProjectScopedClusters: true` on the tenant AppProject (ArgoCD then
+  refuses any cluster not scoped to that project; see `docs/DECISIONS.md` #24
+  for why `argoCDProject` is unset today).
 - **Size:** M.
 
 ### P3 — Revisit `ns_ref` vs. Terraform-owned suffixed directories

@@ -1,0 +1,23 @@
+{{- if .Values.deployArgo }}
+# Registers the ArgoCD-hosting namespace with its own instance (root-bootstrap's
+# destination). Every other namespace's ManagedEntity is rendered by
+# terraform/infra into argocd/managed-entities/. See docs/DECISIONS.md #24.
+apiVersion: argocd-service.vsphere.vmware.com/v1alpha1
+kind: ManagedEntity
+metadata:
+  name: supervisor-ns-{{ .Release.Namespace }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  targetRef:
+    apiGroup: ""
+    kind: Namespace
+    name: {{ .Release.Namespace }}
+    project: {{ .Values.tenantName }}
+  clusterName: supervisor-ns-{{ .Release.Namespace }}
+  secretLabels:
+{{- range $k, $v := .Values.clusterLabels }}
+    {{ $k }}: {{ $v | quote }}
+{{- end }}
+    gitops.platform/namespace: {{ .Release.Namespace | quote }}
+    gitops.platform/argo-namespace: {{ .Release.Namespace | quote }}
+{{- end }}

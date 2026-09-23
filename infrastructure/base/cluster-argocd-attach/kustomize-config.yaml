@@ -1,5 +1,0 @@
-nameReference:
-- kind: ArgoCluster
-  fieldSpecs:
-  - path: spec/clusterName
-    kind: ArgoCluster

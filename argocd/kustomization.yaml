@@ -4,6 +4,7 @@ kind: Kustomization
 resources:
   - ./config
   - ./projects
+  - ./managed-entities
   - ./appsets
   - ./repo-config.yaml
 
@@ -26,6 +27,13 @@ replacements:
       - select:
           kind: ApplicationSet
           name: cluster-apps
+        fieldPaths:
+          - spec.generators.0.matrix.generators.1.git.repoURL
+          - spec.template.spec.source.repoURL
+      # cluster-registration: git generator nested inside matrix + source
+      - select:
+          kind: ApplicationSet
+          name: cluster-registration
         fieldPaths:
           - spec.generators.0.matrix.generators.1.git.repoURL
           - spec.template.spec.source.repoURL

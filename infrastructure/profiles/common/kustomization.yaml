@@ -6,11 +6,9 @@ kind: Kustomization
 
 resources:
 - ../../base/vks-cluster
-- ../../base/cluster-argocd-attach
 
 components:
 # CNI is NOT here — each cluster picks exactly one cni-* (day-0, immutable).
-- ../../components/argocd-tenant-cluster
 - ../../components/ako
 # Add-on bundle: istio + external-secrets + cert-manager + observability. Opt
 # out per cluster with the matching disable-* component.

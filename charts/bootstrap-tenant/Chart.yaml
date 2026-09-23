@@ -1,6 +1,6 @@
 apiVersion: v2
 name: bootstrap-tenant
-description: A Helm chart to bootstrap tenant namespaces with ArgoNamespace and optional ArgoCD instance
+description: "Bootstraps a supervisor namespace — the argo-attach-sa sync identity, plus (deployArgo) the ArgoCD instance, its own ManagedEntity and the root app"
 type: application
 version: 0.1.0
 appVersion: "1.0.0"

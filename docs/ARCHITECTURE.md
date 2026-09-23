@@ -19,7 +19,7 @@ Terms this document assumes, in one place:
 | **VKS cluster** | A workload Kubernetes cluster (vSphere Kubernetes Service), declared as a Cluster API `Cluster` resource inside a supervisor namespace. |
 | **CCI Project** | The vcfa grouping a tenant's supervisor namespaces live under (`Project` custom resource). One per tenant here. |
 | **ApplicationSet** | An ArgoCD controller that generates one ArgoCD `Application` per match from generators — here, a cluster-registration list joined with git directories. |
-| **`ArgoNamespace` / `ArgoCluster`** | vSphere-ArgoCD-operator custom resources that register a supervisor namespace / workload cluster with an ArgoCD instance, carrying the labels this design joins on. |
+| **`ManagedEntity`** | ArgoCD service (`argocd-service.vsphere.vmware.com`) custom resource that registers a supervisor namespace or workload cluster with an ArgoCD instance. It lives in the ArgoCD namespace and writes the ArgoCD cluster secret, carrying the labels this design joins on. |
 | **AKO** | Avi Kubernetes Operator — the load-balancer integration installed on workload clusters (this repo's lab uses Avi; see *Pattern vs lab*). |
 
 ## The problem that shapes everything
@@ -42,7 +42,7 @@ registration, and ApplicationSets join the two at sync time.
 flowchart TB
     subgraph git["Git (this repo)"]
         tenants["terraform/infra/tenants.yaml<br/>(source of truth: tenants + namespaces)"]
-        rendered["Rendered config (committed)<br/>argocd/projects/*.yaml<br/>infrastructure/clusters/{t}/vars/tenant-vars.yaml<br/>terraform/bootstrap/{providers,main}.tf"]
+        rendered["Rendered config (committed)<br/>argocd/projects/*.yaml<br/>argocd/managed-entities/*.yaml<br/>infrastructure/clusters/{t}/vars/tenant-vars.yaml<br/>terraform/bootstrap/{providers,main}.tf"]
         argodir["argocd/<br/>AppProjects + ApplicationSets"]
         clusterdirs["infrastructure/clusters/<br/>{project}/{namespace_ref}/{cluster}/"]
     end
@@ -53,13 +53,13 @@ flowchart TB
     end
 
     subgraph sup["Supervisor namespace (per tenant namespace)"]
-        chart["bootstrap-tenant chart:<br/>ArgoCD instance + ArgoNamespace CR<br/>+ root Application"]
+        chart["bootstrap-tenant chart:<br/>argo-attach-sa (every namespace);<br/>ArgoCD instance + its own ManagedEntity<br/>+ root Application (ArgoCD namespace)"]
         reg["ArgoCD cluster registration<br/>labels: project, namespace-ref,<br/>namespace = SUFFIXED name"]
         vks["VKS Cluster CRs"]
+        attach["workload cluster registration<br/>(ManagedEntity, ArgoCD namespace)<br/>labels: project, namespace-ref"]
     end
 
     subgraph wl["Workload clusters"]
-        attach["ArgoCluster registration<br/>labels: project, namespace-ref"]
         pkgs["Platform apps<br/>(tenant-sync, secret-store)"]
     end
 
@@ -69,10 +69,12 @@ flowchart TB
     bootstrap --> chart
     chart --> reg
     chart -- "root app syncs" --> argodir
+    argodir -- "root app syncs<br/>managed-entities/ (other namespaces)" --> reg
     argodir -- "cluster-provisioning appset:<br/>labels ⨯ git dirs" --> clusterdirs
     clusterdirs -- "provisioned into<br/>suffixed namespace (from label)" --> vks
     argodir -- "namespace-resources appset:<br/>labels ⨯ ns dir → one app per namespace" --> vks
-    vks --> attach
+    argodir -- "cluster-registration appset:<br/>labels ⨯ git dirs" --> attach
+    vks -. "same cluster" .- attach
     argodir -- "cluster-apps appset:<br/>labels ⨯ git dirs" --> pkgs
     attach -. "join keys" .-> pkgs
 ```
@@ -108,7 +110,7 @@ sequenceDiagram
     M->>I: init -reconfigure && apply
     I->>NS: create Project / VPC / SupervisorNamespace
     NS-->>I: suffixed names (dev-1-abcde)
-    I-->>G: render AppProjects, tenant-vars,<br/>bootstrap providers/main
+    I-->>G: render AppProjects, ManagedEntities,<br/>tenant-vars, bootstrap providers/main
     Note over G: operator commits rendered files<br/>(apply-bootstrap refuses if dirty)
     M->>B: init -reconfigure && apply<br/>(namespace_config from infra output)
     B->>NS: mint fresh tokens (data.vcfa_kubeconfig)<br/>helm install bootstrap-tenant per namespace
@@ -146,7 +148,7 @@ ArgoCD cluster registration, joined against the git directory layout:
 flowchart LR
     subgraph labels["Cluster registration labels"]
         sns["supervisor-ns registration<br/>type: supervisor-ns<br/>gitops.platform/project: tenant-1<br/>gitops.platform/namespace-ref: dev-1<br/>gitops.platform/namespace: dev-1-abcde<br/>gitops.platform/environment: dev"]
-        wcl["workload registration (ArgoCluster)<br/>type: tenant<br/>gitops.platform/project: tenant-1<br/>gitops.platform/namespace-ref: dev-1"]
+        wcl["workload registration (ManagedEntity)<br/>type: tenant<br/>gitops.platform/project: tenant-1<br/>gitops.platform/namespace-ref: dev-1<br/>gitops.platform/namespace: dev-1-abcde"]
     end
 
     subgraph dirs["Git directory path"]
@@ -161,9 +163,8 @@ How each label gets there:
 
 | Label | Computed in | Attached by |
 |-------|-------------|-------------|
-| `gitops.platform/project`, `namespace-ref`, `environment`, `type: supervisor-ns` | `terraform/infra/main.tf` (from `tenants.yaml`) | `bootstrap-tenant` chart → `ArgoNamespace` CR |
-| `gitops.platform/namespace` (the **suffixed** name) | the chart itself, from `.Release.Namespace` at install time | same |
-| workload `type: tenant`, `project`, `namespace-ref` | kustomize (`argocd-tenant-cluster` component + `cluster-var-injector`) | `ArgoCluster` CR synced with the cluster |
+| `gitops.platform/project`, `namespace-ref`, `environment`, `type: supervisor-ns`, `namespace` (the **suffixed** name), `argo-namespace` | `terraform/infra` (from `tenants.yaml` + state) | `ManagedEntity` `secretLabels` — rendered into `argocd/managed-entities/` for most namespaces; for the ArgoCD-hosting namespace, by the `bootstrap-tenant` chart from `.Release.Namespace` |
+| workload `type: tenant`, `project`, `namespace-ref`, `namespace` | the `cluster-registration` ApplicationSet, from the supervisor-ns labels + the cluster directory name | `ManagedEntity` `secretLabels`, synced into the ArgoCD namespace |
 
 The `cluster-provisioning` ApplicationSet pairs each supervisor-namespace
 registration with the git directories under
@@ -172,9 +173,19 @@ search path is built **from the registration's own label values**, each
 namespace finds exactly its own cluster directories, nothing else. The
 deployment target (`destination.namespace`) comes from the
 `gitops.platform/namespace` label, so the suffixed name flows
-vcfa → chart → label → ApplicationSet without ever touching git.
+vcfa → Terraform → ManagedEntity label → ApplicationSet. Terraform writes it
+into the rendered registration; no cluster author ever has to type it.
 `cluster-apps` does the same join plus the cluster name, landing on the exact
-`{cluster}/apps` path.
+`{cluster}/apps` path. The workload registration it joins on is produced by the
+`cluster-registration` ApplicationSet: the same join as `cluster-provisioning`,
+but it syncs one `ManagedEntity` per cluster directory into the **ArgoCD
+namespace** (a `ManagedEntity` must live next to its instance), found through
+the `gitops.platform/argo-namespace` label. `clusterName` is the directory
+name, so `cluster-apps` needs no mapping. Removing the directory prunes the
+`ManagedEntity` in the same commit that deletes the `Cluster` — a
+`ManagedEntity` never follows its target's deletion on its own. Both
+registrations use VCF Automation scope (`targetRef.project` set); why, and why
+not `EntityManagementPolicy`: `docs/DECISIONS.md` #24.
 
 Rules the join depends on — every one actively checked, none left implicit:
 
@@ -473,7 +484,7 @@ component that carries istio's value block at all).
 Tenants create and manage namespaces **through git only** — their Applications
 sync namespace manifests + workloads into their VKS clusters via the shared
 ArgoCD instance. The problem: the workload cluster's registration identity
-(`argo-attach-sa`, bound to `cluster-admin` — `vmware-system-auth-sync-argo-attach-sa`)
+(the ArgoCD instance's own VCFA account, via its `ManagedEntity`)
 is shared by every sync, tenant and platform alike, so nothing at the cluster
 API server can tell a tenant's own gitops flow apart from the platform's. Left
 alone, "self-service namespaces" means "tenant is cluster-admin."
@@ -808,7 +819,7 @@ what to keep, what to swap for your environment.
 | Package source & images | Broadcom add-on catalog, ubuntu content library | `infrastructure/components/envs/{env}` (os-image annotations, add-on pins) | Deliberately env-layer values, never in bases. The apps side pins no images: it ships no Carvel packages (`docs/DECISIONS.md` #20). |
 | Sizing & placement | `z-wld-a` zone, vSAN storage policy, class sizes | Defaults in `terraform/modules/tenant/variables.tf`; per-namespace overrides in `tenants.yaml` | Zone names vary per region — always set explicitly. |
 | GitOps repo identity | `github.com/warroyo/argocd-scaffolding` | `argocd/repo-config.yaml` — the single source; Terraform and the ApplicationSets both read it | One-file fork. |
-| ArgoCD flavor | vSphere ArgoCD operator CR (`argocd-service.vsphere.vmware.com`) | `charts/bootstrap-tenant/templates/argocd-instance.yaml` | The chart's other resources (ArgoNamespace, root app) are the pattern; the instance CR is the VCF-specific part. |
+| ArgoCD flavor + registration | VCF ArgoCD service CRs (`argocd-service.vsphere.vmware.com`): the instance, plus a `ManagedEntity` per supervisor namespace and per workload cluster | `charts/bootstrap-tenant/templates/{argocd-instance,managed-entity}.yaml`, `terraform/infra/templates/managed-entity.yaml.tftpl`, `infrastructure/base/cluster-registration` | The label set on each registration and the joins on it are the pattern; the `ManagedEntity` that writes the cluster secret is the VCF-specific part. On plain ArgoCD, write the labeled cluster secrets directly. |
 | Cluster policy values | Lab DNS suffix `.will-org-apps.vcf.lab` (hostname-ownership) | Per-tenant `policies:` → `parameters` in `tenants.yaml` | The policy *catalog* (`terraform/infra/policies.tf`, the Rego) is the pattern; the suffix is just the value a real tenant would set to their own domain. |
 | Secret store endpoint | VCF Secret Store external IP + CA (lab values captured from `svc-secret-store-*`) | IP → external-secrets `AddonConfig` `hostAliases` in `infrastructure/components/envs/{env}`; CA → `ClusterSecretStore` `caBundle` in `apps/components/envs/{env}` | The `secret-store` wiring (SA + CRB + `ClusterSecretStore`, injected mount/role) is the pattern; the IP/CA are per-Supervisor facts captured out-of-band (`docs/GETTING-STARTED.md`). See "Secret store". |
 
@@ -822,7 +833,7 @@ SSO/RBAC yet — the cluster-policy layer constrains what a tenant's *gitops
 flow* can do, not who can push to their repo),
 Terraform state lives on the platform it manages (back it up off-platform), and
 one region per install. On the cluster-policy layer specifically: ArgoCD sync
-impersonation is a beta feature (v3.0.19, this repo's shipped version); the
+impersonation is a beta feature (v3.4.4, this repo's shipped version); the
 tenant AppProject's cross-cluster destination gap (above) is mitigated, not
 closed — a tenant landing on another tenant's cluster still fails to sync
 rather than being isolated by a positive check; and whether ArgoCD hard-fails

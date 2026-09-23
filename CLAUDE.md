@@ -36,7 +36,9 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 |------|------------------------|
 | `argocd/projects/*.yaml` | `terraform/infra` → `templates/appproject.yaml.tftpl` |
 | `argocd/projects/kustomization.yaml` | `terraform/infra` → `templates/projects-kustomization.yaml.tftpl` |
-| `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (needs state: `argo_namespace`; also carries `tenant_group`, the tenant's human identity group, which the apps-side injector binds via `apps/base/tenant-users`) |
+| `argocd/managed-entities/*.yaml` | `terraform/infra` → `templates/managed-entity.yaml.tftpl` (needs state: suffixed namespace + ArgoCD namespace; one per namespace except an ArgoCD host, which `charts/bootstrap-tenant` registers) |
+| `argocd/managed-entities/kustomization.yaml` | `terraform/infra` → `templates/managed-entities-kustomization.yaml.tftpl` |
+| `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (needs state: `argo_namespace` — no longer read by anything since the `ArgoCluster` removal, `docs/DECISIONS.md` #24; also carries `tenant_group`, the tenant's human identity group, which the apps-side injector binds via `apps/base/tenant-users`) |
 | `infrastructure/clusters/*/vars/kustomization.yaml` | `terraform/infra` → `templates/vars-kustomization.yaml.tftpl` |
 | `infrastructure/clusters/*/*/vars/ns-vars.yaml` | `terraform/infra` → `templates/ns-vars.yaml.tftpl` (needs state: the vcfa-**suffixed** supervisor namespace name; per `(tenant, namespace_ref)`, feeds the secret-store mount/role) |
 | `infrastructure/clusters/*/*/vars/kustomization.yaml` | `terraform/infra` → `templates/ns-vars-kustomization.yaml.tftpl` |
@@ -70,6 +72,8 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` | Hand-authored cluster: `kustomization.yaml` (references a profile + deltas + override patches), `apps/kustomization.yaml`, `cluster-details.yaml` |
 | `terraform/bootstrap/locals.tf` | Merges secrets (argo_password) into the per-namespace config from the infra run's `namespace_config` output; repo_url defaults from `argocd/repo-config.yaml`. The `gitops.platform/*` label taxonomy and suffixed namespace names are computed in `terraform/infra/main.tf`. Per-namespace helm tokens are minted fresh by `terraform/bootstrap/vcfa.tf` (no kubeconfigs shuttle). |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
+| `infrastructure/base/cluster-registration/` + `argocd/appsets/cluster-registration.yaml` | Workload-cluster registration: the `ManagedEntity` base (all `replace-me`) and the ApplicationSet whose inline patch fills it per cluster dir. Change them together — `validate.sh` renders one with the other. Not part of any cluster tree. See `docs/DECISIONS.md` #24. |
+| `charts/bootstrap-tenant/` | Per-namespace bootstrap: `argo-attach-sa` + RoleBinding to `edit` (the `infra` project's impersonation target) everywhere; ArgoCD instance (version pin in `values.yaml`), its own namespace's `ManagedEntity`, and root app where `deployArgo`. |
 | `docs/examples/cluster-template/` | Copy-me template for a new cluster |
 | `docs/examples/namespace-resources-template/` | Copy-me template for a namespace's `namespace-resources/` dir (shared add-on installs) |
 | `terraform/state-namespace/{project,state-namespace}.yaml` | CCI `Project` + `SupervisorNamespace` CRs for the Terraform-state backend. Applied once out-of-band with `kubectl` (README → Backend Configuration explains the design; the commands live in `docs/GETTING-STARTED.md` Part 1.1). |
@@ -77,18 +81,26 @@ target), regardless of the tenant's name. There is no separate hand-authored
 
 ## Decision model (label-based targeting)
 
-Each supervisor namespace registers to ArgoCD with `clusterLabels`
-(`type: supervisor-ns`, `gitops.platform/project`, `gitops.platform/namespace-ref`,
-`gitops.platform/environment`, and `gitops.platform/namespace` = the vcfa-suffixed
-name captured at install). The `cluster-provisioning` ApplicationSet joins a cluster
-directory to its supervisor namespace on `(project, namespace_ref)` — which is also
+Each supervisor namespace registers to ArgoCD through an in-project `ManagedEntity`
+whose `secretLabels` are `type: supervisor-ns`, `gitops.platform/project`,
+`gitops.platform/namespace-ref`, `gitops.platform/environment`,
+`gitops.platform/namespace` (the vcfa-suffixed name) and
+`gitops.platform/argo-namespace` (the suffixed ArgoCD namespace). Terraform renders
+them into `argocd/managed-entities/`; the ArgoCD-hosting namespace's own entry comes
+from the bootstrap chart. Why `ManagedEntity` with `targetRef.project`, not
+`EntityManagementPolicy`: `docs/DECISIONS.md` #24. The `cluster-provisioning`
+ApplicationSet joins a cluster directory to its supervisor namespace on
+`(project, namespace_ref)` — which is also
 the directory path `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/`.
 `namespace_ref` must be unique per project (enforced by a precondition in
 `terraform/infra/generate.tf`).
 
-The workload `ArgoCluster` registrations mirror this taxonomy (`type: tenant` as
-the coarse selector, plus `gitops.platform/project` and
-`gitops.platform/namespace-ref` injected by `cluster-var-injector`). The
+The workload-cluster registrations mirror this taxonomy (`type: tenant` as the
+coarse selector, plus `gitops.platform/project`, `gitops.platform/namespace-ref`
+and `gitops.platform/namespace`). The `cluster-registration` ApplicationSet makes
+them — same join as `cluster-provisioning`, one `ManagedEntity` per cluster dir
+from `infrastructure/base/cluster-registration`, synced into the ArgoCD namespace,
+`clusterName` = the directory name. Nothing in a cluster directory registers it. The
 `cluster-apps` ApplicationSet uses both join keys, so its git path is exact —
 `infrastructure/clusters/{project}/{namespace_ref}/{cluster}/` — not a wildcard.
 
@@ -99,7 +111,9 @@ kustomize entrypoint (argocd root + each cluster's infra and `apps/` dirs + each
 `namespace-resources/` dir + temp copies of `docs/examples/cluster-template` and
 `docs/examples/namespace-resources-template`), checks each `cluster-details.yaml` against its directory
 path, rejects `replace-me` in rendered output (a cluster missing its env overlay), and
-cross-checks the apps-side `vars` cluster_name and project. If `opa` is on PATH it also
+cross-checks the apps-side `vars` cluster_name and project, and renders each cluster's
+`ManagedEntity` from `infrastructure/base/cluster-registration` with the
+`cluster-registration` ApplicationSet's own patch (so the two can't drift). If `opa` is on PATH it also
 `opa check`s the `terraform/infra/rego/` policy catalog (skipped cleanly if absent — not a
 hard dependency). CI runs the same script, plus `terraform fmt -check` / `terraform
 validate` in `validate.yml`. Requires `kustomize`.
@@ -150,7 +164,10 @@ validate` in `validate.yml`. Requires `kustomize`.
    and no human can log in to this cluster. `validate.sh` fails when it is
    missing. See "Tenant human access".
 4. Commit. The `cluster-provisioning` ApplicationSet picks it up via label join — the
-   vcfa-generated namespace name is resolved from the cluster registration, not git.
+   vcfa-generated namespace name is resolved from the cluster registration, not git —
+   and `cluster-registration` registers it with ArgoCD (a `ManagedEntity` in the
+   ArgoCD namespace, `Ready` once the control-plane VIP exists). Deleting the
+   directory prunes both.
 
 ### Adding a policy
 Full design (why Terraform not GitOps, the label-ownership model, sync

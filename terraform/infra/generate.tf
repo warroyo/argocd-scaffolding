@@ -1,5 +1,6 @@
-# Renders every config artifact derived from tenants.yaml (AppProjects, tenant-vars
-# handoff, bootstrap wiring the second run consumes). See docs/DECISIONS.md #1.
+# Renders every config artifact derived from tenants.yaml (AppProjects,
+# supervisor-namespace ManagedEntities, tenant-vars handoff, bootstrap wiring the
+# second run consumes). See docs/DECISIONS.md #1.
 
 locals {
   # Tenant names.
@@ -82,6 +83,37 @@ resource "local_file" "projects_kustomization" {
   filename = "${path.module}/../../argocd/projects/kustomization.yaml"
   content = templatefile("${path.module}/templates/projects-kustomization.yaml.tftpl", {
     projects = sort(values(local.project_names))
+  })
+}
+
+# ── Supervisor-namespace ManagedEntities (synced by root-bootstrap) ────────────
+# Every namespace except an ArgoCD host, whose own entry the bootstrap chart
+# renders. Labels are the decision-model set. See docs/DECISIONS.md #24.
+
+locals {
+  managed_namespaces = {
+    for k, ns in local.ns_deployments : k => ns if ns.ns_name != ns.argo_namespace
+  }
+}
+
+resource "local_file" "managed_entity" {
+  for_each = local.managed_namespaces
+  filename = "${path.module}/../../argocd/managed-entities/${each.key}.yaml"
+  content = templatefile("${path.module}/templates/managed-entity.yaml.tftpl", {
+    namespace      = each.value.ns_name
+    argo_namespace = each.value.argo_namespace
+    project        = each.value.tenant_name
+    labels = merge(each.value.cluster_labels, {
+      "gitops.platform/namespace"      = each.value.ns_name
+      "gitops.platform/argo-namespace" = each.value.argo_namespace
+    })
+  })
+}
+
+resource "local_file" "managed_entities_kustomization" {
+  filename = "${path.module}/../../argocd/managed-entities/kustomization.yaml"
+  content = templatefile("${path.module}/templates/managed-entities-kustomization.yaml.tftpl", {
+    entities = sort(keys(local.managed_namespaces))
   })
 }
 

@@ -35,16 +35,16 @@ finish this.
   `TF_VAR_avi_enabled` (AVI also needs a **Service Engine Group** name,
   `TF_VAR_seg_name`). Guessing wrong fails `apply-infra` at VPC creation.
 
-**Separately, three Supervisor Services** must already be enabled on the
+**Separately, two Supervisor Services** must already be enabled on the
 Supervisor cluster itself — a different access domain from vcfa, so ask
 whoever administers the vSphere/VCF fleet, not your vcfa provider admin:
 
-- **ArgoCD** — supplies `argocd-service.vsphere.vmware.com` CRDs. Without
-  it, the `ArgoCD` instance Part 2.3 creates never reconciles.
-- **[argocd-attach-service](https://github.com/warroyo/argocd-attach-service)**
-  — supplies `field.vmware.com/v1 ArgoCluster`, used to attach each
-  workload cluster to ArgoCD in Part 3. Without it, clusters provision but
-  never attach.
+- **ArgoCD, version 1.2.0 or later** — supplies the
+  `argocd-service.vsphere.vmware.com` CRDs: the `ArgoCD` instance Part 2.3
+  creates, and the `ManagedEntity` that registers every supervisor namespace
+  and workload cluster with it. Earlier versions have no `ManagedEntity`, so
+  nothing ever registers. The ArgoCD instance and the namespaces and clusters
+  it manages must be in the same region.
 - **Secret Store** — the OpenBao-backed service `apps/base/secret-store`
   talks to. Version requirement and capture steps in Part 1.3.
 
@@ -424,10 +424,29 @@ dev1-cluster   Provisioning   2m
 dev1-cluster   Provisioned    14m
 ```
 
-Once the cluster is ready, its `ArgoCluster` registration attaches it to
-ArgoCD, and a second Application appears: **`dev1-cluster-apps`** — the
-app stack (tenant-sync, secret-store, anything you enabled) reconciling
-onto the new cluster.
+Alongside it, **`tenant-1-dev-1-dev1-cluster-registration`** syncs the
+cluster's `ManagedEntity` into the ArgoCD namespace; it is `Ready` as soon
+as the cluster has a control-plane address, well before the nodes are up:
+
+```sh
+kubectl get managedentity -n infra-abcde    # your suffixed ArgoCD namespace
+NAME                        CLUSTER TYPE          PHASE   CLUSTER ENDPOINT URL
+dev-1-abcde-dev1-cluster    VKSClusterInProject   Ready   https://10.0.0.10:6443
+supervisor-ns-dev-1-abcde   SupervisorNamespaceInProject   Ready   https://<vcfa>/proxy/k8s/namespaces/urn:vcloud:namespace:…
+supervisor-ns-infra-abcde   SupervisorNamespaceInProject   Ready   https://<vcfa>/proxy/k8s/namespaces/urn:vcloud:namespace:…
+```
+
+Once the cluster is ready, a third Application appears:
+**`tenant-1-dev-1-dev1-cluster-apps`** — the app stack (tenant-sync,
+secret-store, anything you enabled) reconciling onto the new cluster.
+
+**If a `ManagedEntity` shows `Failed`**, read its conditions
+(`kubectl describe managedentity -n infra-abcde <name>`). The controller does
+not retry a failed entity, so after fixing the cause, delete it and let
+ArgoCD re-sync it. A namespace or cluster can have only one `ManagedEntity`:
+if it was already registered by hand or in the VCFA UI, the webhook rejects
+this repo's with `spec.targetRef is already in use by another ManagedEntity`.
+Delete the other one first.
 
 **If no Application ever appears** — this failure is *silent* by design
 of ApplicationSets, so check the join: the cluster registration's

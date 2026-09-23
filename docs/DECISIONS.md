@@ -279,7 +279,7 @@ no policy could cover them regardless of labeling.
 `argocd/` tree — consistent with the rest of the platform-admin surface, but
 one more place (alongside `tenants.yaml`, the AppProject template) that
 requires an infra apply rather than a plain git sync. Impersonation is a beta
-ArgoCD feature (v3.0.19, shipped here); its exact behavior when the target
+ArgoCD feature (v3.4.4 shipped here; first adopted on v3.0.19); its exact behavior when the target
 service account is momentarily missing (hard-fail vs. silent fallback to the
 un-impersonated identity) determines how much a brand-new cluster's bootstrap
 window actually matters, and is a verify-live item (see
@@ -727,6 +727,14 @@ adds no escalation: only `system:masters` (the admin-cert connection ArgoCD
 already holds) can impersonate it. It's the same privilege the platform already
 has on the guest, named so ArgoCD can target it.
 
+**Update (2026-09-22).** Workload clusters are now registered by an in-project
+`ManagedEntity` (#24), not `ArgoCluster`, so ArgoCD connects with the ArgoCD
+instance's VCFA credential (`--credential-type=vks-cluster`), not the admin
+certificate. That credential was verified to hold `impersonate` on the guest,
+so the binding and the bare-name config above are unchanged; the identity that
+can impersonate `default:argo-attach-sa` is now the platform ArgoCD's own VCFA
+account.
+
 ## 19. How does an addon repo roll a version, given it can never be edited?
 
 **The constraint.** Once an `AddonRepositoryInstall` references an
@@ -1120,3 +1128,76 @@ and verify on the live object rather than trusting the status column. This is
 the same failure shape as the stale-`Synced` `ComparisonError` already recorded
 in `docs/BACKLOG.md` under failure visibility: the sync/health columns are not
 evidence.
+
+## 24. How do namespaces and clusters register with ArgoCD? (in-project `ManagedEntity`)
+
+**The problem.** Every ArgoCD join in this repo keys on labels stamped on an
+ArgoCD cluster registration. Those registrations used to come from
+[argocd-attach-service](https://github.com/warroyo/argocd-attach-service), an
+extra Supervisor service with its own CRDs: `ArgoNamespace` (rendered by the
+bootstrap chart in each namespace) and `ArgoCluster` (synced with each cluster).
+ArgoCD service 1.2.0 ships native registration CRDs,
+`ManagedEntity` and `EntityManagementPolicy`, so the extra service can go. The
+question is which of the two, and in which scope.
+
+**What was measured** (sup-gpu, argocd-service `1.2.0.25642124`, ArgoCD
+`3.4.4+vmware.1-vks.1`, 2026-09-22):
+- A `ManagedEntity` lives in the **ArgoCD instance's namespace**, not the
+  target's, and it writes the ArgoCD cluster secret (`spec.secretLabels`,
+  `spec.clusterName` land as given).
+- **Scope is chosen by `targetRef.project`.** Set it and the entity is VCF
+  Automation scope (`SupervisorNamespaceInProject` / `VKSClusterInProject`):
+  the secret authenticates through `vcfa-credential-plugin` as the instance's
+  own VCFA service account, and it works with no extra RBAC. Leave it empty
+  and it is native Supervisor scope (`VKSCluster`): the controller requires
+  the instance's `argocd-k8s-sa` to hold a RoleBinding in the target
+  namespace, which nothing creates, and fails with
+  `ServiceAccount 'argocd-k8s-sa' is not bound to any role` — permanently, since
+  a `Failed` entity is never retried.
+- **`EntityManagementPolicy` is native-scope only.** Neither `spec.config` nor
+  `spec.rules[]` has a project field, so every entity it generates is
+  `VKSCluster`. It also only registers clusters that are `Available` and
+  `AddonsReconciled`, and when deleted it orphans its entities.
+- An in-project cluster entity goes `Ready` within seconds of the `Cluster`
+  being created: it needs only the control-plane VIP and CA, so there is no
+  provisioning race. It stays `Ready` through a guest outage, and it does
+  **not** follow its `Cluster`'s deletion — the secret stays until the
+  entity is deleted.
+- The cluster credential (`--credential-type=vks-cluster`) holds `impersonate`
+  on the guest: a sync as `default:argo-attach-sa` reached the apiserver as that
+  user, so #18's impersonation model is unchanged.
+- One entity per `targetRef` (webhook-enforced), and ArgoCD and target must be
+  in the same region (`RegionValid`).
+
+**The choice.** A hand-authored, **in-project** `ManagedEntity` for every
+supervisor namespace and every workload cluster; no `EntityManagementPolicy`.
+- *Namespaces:* Terraform already knows the suffixed name and the label set, so
+  `terraform/infra` renders one entity per namespace into
+  `argocd/managed-entities/`, which root-bootstrap syncs — the same idiom as
+  `argocd/projects/`. The ArgoCD-hosting namespace is the exception: nothing can
+  sync until it is registered, so the bootstrap chart renders its entry.
+- *Clusters:* clusters are born from git, so Terraform can't list them, and the
+  cluster tree syncs into the supervisor namespace while the entity must sit in
+  the ArgoCD namespace. A separate `cluster-registration` ApplicationSet does the
+  same join as `cluster-provisioning` and syncs one entity per cluster
+  directory from the shared `infrastructure/base/cluster-registration`, filled
+  by inline patches. Its destination comes from a new
+  `gitops.platform/argo-namespace` label on every supervisor-ns registration.
+  `clusterName` is the directory name, so `cluster-apps` is unchanged.
+- *Sync identity:* `ArgoNamespace` used to create `argo-attach-sa` bound to
+  `edit` in each namespace. The chart now renders exactly that, so the `infra`
+  project's bare `argo-attach-sa` resolves as before.
+- `argoCDProject` is left unset. For the `infra` tenant the tenant name isn't
+  its AppProject name, and no AppProject sets `permitOnlyProjectScopedClusters`,
+  so scoping would change nothing.
+
+**The trade-off.** Clusters need a fourth ApplicationSet and a label the old
+design didn't carry, and `validate.sh` renders each cluster's entity with the
+ApplicationSet's own patch to keep the base and the ApplicationSet in step.
+Cluster secrets now reach each guest's VIP directly rather than through the VCFA
+proxy, so the ArgoCD namespace needs network reach to every workload cluster
+VIP. A failed entity needs a delete-and-recreate, since the controller doesn't
+retry. In return the platform drops a Supervisor service and its CRDs, the
+registration identity is the instance's own VCFA account instead of a
+cluster-admin certificate, and a policy-driven variant stays available if a
+later argocd-service adds a project field to `EntityManagementPolicy`.

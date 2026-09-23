@@ -42,7 +42,7 @@ spec:
     kind: '*'
   # Sync impersonation: tenant syncs run as this tenant's own SA (apps/base/tenant-sync).
   # Needs application.sync.impersonation.enabled in argocd-cm. `server: '*'` glob
-  # is unverified on ArgoCD 3.0.19 — verify live (docs/GETTING-STARTED.md).
+  # is unverified on ArgoCD 3.4.4 — verify live (docs/GETTING-STARTED.md).
   destinationServiceAccounts:
   - server: '*'
     namespace: '*'

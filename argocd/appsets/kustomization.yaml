@@ -4,4 +4,5 @@ kind: Kustomization
 resources:
   - cluster-provision.yaml
   - cluster-apps.yaml
+  - cluster-registration.yaml
   - namespace-resources.yaml

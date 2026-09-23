@@ -1,0 +1,82 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: cluster-registration
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    # Same join as cluster-provisioning: one app per cluster dir, but the
+    # ManagedEntity lands in the ArgoCD namespace, not the cluster's.
+    # See docs/DECISIONS.md #24.
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchLabels:
+                  type: supervisor-ns
+              values:
+                project: '{{index .metadata.labels "gitops.platform/project"}}'
+                namespaceRef: '{{index .metadata.labels "gitops.platform/namespace-ref"}}'
+                namespace: '{{index .metadata.labels "gitops.platform/namespace"}}'
+                argoNamespace: '{{index .metadata.labels "gitops.platform/argo-namespace"}}'
+          - git:
+              repoURL: ARGOCD_REPO_URL
+              revision: main
+              files:
+                - path: infrastructure/clusters/{{.values.project}}/{{.values.namespaceRef}}/*/cluster-details.yaml
+  template:
+    metadata:
+      name: '{{.values.project}}-{{.values.namespaceRef}}-{{.path.basename}}-registration'
+      # Removing the cluster dir prunes the ManagedEntity, which unregisters the
+      # cluster (an ME never follows its Cluster's deletion on its own).
+      finalizers:
+      - resources-finalizer.argocd.argoproj.io
+      labels:
+        tenant: '{{.values.project}}'
+        type: "cluster-registration"
+    spec:
+      project: infra
+      source:
+        repoURL: ARGOCD_REPO_URL
+        targetRevision: main
+        path: infrastructure/base/cluster-registration
+        kustomize:
+          patches:
+          - target:
+              kind: ManagedEntity
+            patch: |-
+              - op: replace
+                path: /metadata/name
+                value: '{{.values.namespace}}-{{.path.basename}}'
+              - op: replace
+                path: /spec/targetRef/name
+                value: '{{.path.basename}}'
+              - op: replace
+                path: /spec/targetRef/namespace
+                value: '{{.values.namespace}}'
+              - op: replace
+                path: /spec/targetRef/project
+                value: '{{.values.project}}'
+              - op: replace
+                path: /spec/clusterName
+                value: '{{.path.basename}}'
+              - op: replace
+                path: /spec/secretLabels/gitops.platform~1project
+                value: '{{.values.project}}'
+              - op: replace
+                path: /spec/secretLabels/gitops.platform~1namespace-ref
+                value: '{{.values.namespaceRef}}'
+              - op: replace
+                path: /spec/secretLabels/gitops.platform~1namespace
+                value: '{{.values.namespace}}'
+      destination:
+        # The ArgoCD namespace's own registration (chart-rendered ME).
+        name: 'supervisor-ns-{{.values.argoNamespace}}'
+        namespace: '{{.values.argoNamespace}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true

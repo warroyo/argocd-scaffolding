@@ -1,12 +1,11 @@
 project: "default"
 
 deployArgo: false
-argoNamespace: "infra"
 tenantName: "tenant"
 
 argoInstance:
   name: "argocd"
-  version: "3.0.19+vmware.1-vks.1"
+  version: "3.4.4+vmware.1-vks.1"
   password: "" 
 
 clusterLabels: {}
