@@ -114,6 +114,7 @@ sequenceDiagram
     Note over G: operator commits rendered files<br/>(apply-bootstrap refuses if dirty)
     M->>B: init -reconfigure && apply<br/>(namespace_config from infra output)
     B->>NS: mint fresh tokens (data.vcfa_kubeconfig)<br/>helm install bootstrap-tenant per namespace
+    B->>B: grant the ArgoCD instance's VCFA service account<br/>the ArgoCD Instance role (DECISIONS #25)
 ```
 
 The infra → bootstrap handoff is exactly two contracts:

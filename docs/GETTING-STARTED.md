@@ -308,7 +308,11 @@ make apply-bootstrap
 ```
 
 *You should see* one helm release per namespace
-(`module.bootstrap_tenant_1_dev_1…`, `module.bootstrap_infra_1_infra…`).
+(`module.bootstrap_tenant_1_dev_1…`, `module.bootstrap_infra_1_infra…`),
+plus `terraform_data.argocd_sa_role["infra-1-infra"]`. That step gives the
+ArgoCD instance's VCFA service account the `ArgoCD Instance` role, which it
+needs to register namespaces (`docs/DECISIONS.md` #25). It needs `curl` and
+`jq`.
 
 **If not:** `apply-bootstrap` refusing with *"generated files are
 uncommitted"* is the guard working, not a bug — commit the rendered files
@@ -333,7 +337,14 @@ log in as `admin` with the password you hashed in 2.1.
 
 - one Application: `root-bootstrap` (synced — it deploys the `argocd/` dir)
 - AppProjects `infra` and `tenant-1`
-- ApplicationSets `cluster-provisioning` and `cluster-apps`
+- ApplicationSets `cluster-provisioning`, `cluster-apps`,
+  `cluster-registration` and `namespace-resources`
+- `Ready` ManagedEntities for both supervisor namespaces
+  (`kubectl get managedentities -n infra-kyrtt`)
+- **The ManagedEntities can take up to ~15 minutes to go `Ready`.** On a
+  fresh install the host entity is created before the role grant lands, fails
+  once, and waits for the controller's retry. `root-bootstrap` reports
+  `there are no clusters with this name` until then.
 - **zero generated Applications — this is correct.** No cluster
   directories exist in git yet, so the ApplicationSets have nothing to
   generate. That's the next part.

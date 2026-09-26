@@ -205,7 +205,7 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 
 - `terraform/`
   - `infra/`: Provisions vSphere supervisor namespaces and renders all generated config from `tenants.yaml` (`generate.tf` + `templates/*.tftpl`). Outputs `namespace_config` (suffixed namespace names + decision-model labels) for the bootstrap run.
-  - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) merges secrets into the infra run's `namespace_config` output (which carries the suffixed namespace names + `gitops.platform/*` labels). `vcfa.tf` mints a fresh per-namespace token for each helm provider on every run.
+  - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) merges secrets into the infra run's `namespace_config` output (which carries the suffixed namespace names + `gitops.platform/*` labels). `vcfa.tf` mints a fresh per-namespace token for each helm provider on every run. `argocd-sa-role.tf` runs `scripts/grant-argocd-sa-role.sh` to give each ArgoCD instance's VCFA service account the `ArgoCD Instance` role, which the operator's API path leaves empty (needs `curl` + `jq`; see [DECISIONS](docs/DECISIONS.md) #25).
   - `state-namespace/`: Committed `Project` + `SupervisorNamespace` manifests for the Terraform state backend, applied once out-of-band (see [Backend Configuration](#backend-configuration)).
   - `state-backend/`: Stateless helper that pulls the state-namespace creds and renders the gitignored `.kube-backend.config` kubeconfig (host + token; each `backend.tf` sets `config_path` to it) and `.kube-backend.env` (`KUBE_NAMESPACE`, sourced by the Makefile) for the infra/bootstrap Kubernetes backends. `namespace.auto.tfvars` holds the captured namespace name.
   - `modules/bootstrap-helm/`: Terraform module wrapping the bootstrap Helm chart (single `config` object input).
@@ -300,7 +300,8 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
      `infrastructure/clusters/{tenant}/vars/{tenant-vars,kustomization}.yaml`
      (with the auto-generated `argo_namespace`), and
      `terraform/bootstrap/{providers,main}.tf`.
-3. Commit those generated files; then bootstrap deploys the Helm chart and ArgoCD.
+3. Commit those generated files; then bootstrap deploys the Helm chart and ArgoCD,
+   and grants the ArgoCD instance's VCFA service account the `ArgoCD Instance` role.
    (`make apply-bootstrap` refuses to run while rendered files are uncommitted —
    ArgoCD reads git, so bootstrapping ahead of the commit would hand it stale
    config. Override with `SKIP_GENERATED_CHECK=1` if you know what you're doing.)

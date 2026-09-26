@@ -1148,12 +1148,14 @@ question is which of the two, and in which scope.
 - **Scope is chosen by `targetRef.project`.** Set it and the entity is VCF
   Automation scope (`SupervisorNamespaceInProject` / `VKSClusterInProject`):
   the secret authenticates through `vcfa-credential-plugin` as the instance's
-  own VCFA service account, and it works with no extra RBAC. Leave it empty
+  own VCFA service account, which needs the org role `ArgoCD Instance` (#25).
+  Leave it empty
   and it is native Supervisor scope (`VKSCluster`): the controller requires
   the instance's `argocd-k8s-sa` to hold a RoleBinding in the target
   namespace, which nothing creates, and fails with
-  `ServiceAccount 'argocd-k8s-sa' is not bound to any role` — permanently, since
-  a `Failed` entity is never retried.
+  `ServiceAccount 'argocd-k8s-sa' is not bound to any role`. A `Failed` entity
+  is retried roughly every 15 minutes (re-measured 2026-09-26), so the `PHASE`
+  column lags a fix.
 - **`EntityManagementPolicy` is native-scope only.** Neither `spec.config` nor
   `spec.rules[]` has a project field, so every entity it generates is
   `VKSCluster`. It also only registers clusters that are `Available` and
@@ -1196,8 +1198,40 @@ design didn't carry, and `validate.sh` renders each cluster's entity with the
 ApplicationSet's own patch to keep the base and the ApplicationSet in step.
 Cluster secrets now reach each guest's VIP directly rather than through the VCFA
 proxy, so the ArgoCD namespace needs network reach to every workload cluster
-VIP. A failed entity needs a delete-and-recreate, since the controller doesn't
-retry. In return the platform drops a Supervisor service and its CRDs, the
+VIP. A failed entity recovers on its own once the cause is fixed, but only on
+the controller's ~15-minute retry. In return the platform drops a Supervisor service and its CRDs, the
 registration identity is the instance's own VCFA account instead of a
 cluster-admin certificate, and a policy-driven variant stays available if a
 later argocd-service adds a project field to `EntityManagementPolicy`.
+
+## 25. Why does bootstrap assign a VCFA role to each ArgoCD instance?
+
+**The problem.** The ArgoCD operator creates a VCFA service account for every
+`ArgoCD` instance (`status.serviceAccounts.platform`) and stores its refresh
+token in `vcfa-config`. Created through the API, as `terraform/bootstrap` does,
+that account has **no roles**. The VCFA UI makes a second call that assigns the
+org role `ArgoCD Instance`. Without the role, every in-project
+`ManagedEntity` (#24) fails `VCFAutomationAccessValid` with `No assigned roles`,
+the ArgoCD host namespace never registers, and `root-bootstrap` reports
+`there are no clusters with this name`. Nothing syncs.
+
+**What was measured** (sup-gpu, argocd-service `1.2.0`, 2026-09-26): a
+UI-created instance's account holds `ArgoCD Instance`; ours held `roles: []`.
+The role carries `Projects: View`, `Namespace: View`, `Access Any Namespace:
+View/Edit` and `Namespace Usage: View/Manage`. `GET` and `PUT
+/cloudapi/1.0.0/serviceAccounts/<urn>` work with the org-admin refresh token
+Terraform already uses. Only the *list* call is forbidden, so the URN has to
+come from the `ArgoCD` CR's status.
+
+**The choice.** `terraform/bootstrap/argocd-sa-role.tf` runs
+`scripts/grant-argocd-sa-role.sh` once per `deploy_argo` namespace. The script
+waits for `status.serviceAccounts.platform.id`, looks the role up by name, and
+PUTs the account back with the role added. It is idempotent. The `vcfa`
+provider has no service-account resource, so a `terraform_data` +
+`local-exec` step is the only way to keep this inside `make apply-bootstrap`.
+
+**The trade-off.** The step needs `curl` and `jq` wherever bootstrap runs, the
+same tools `make destroy-apps` already needs. It re-runs only when the ArgoCD
+namespace changes: an instance deleted and recreated in place gets a new
+account that the step doesn't see until it is tainted. Drop the step once the
+operator assigns the role itself.
