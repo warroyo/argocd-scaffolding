@@ -342,7 +342,7 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
    in the infra component list. The apps-side injector (also last) and its
    `vars` configMapGenerator (`cluster_name` **and** `project`) are required on
    every cluster — the standard app stack's `tenant-sync` SA needs `project`
-   injected everywhere, not just on istio-ako-patch clusters. `apps/kustomization.yaml`
+   injected everywhere. `apps/kustomization.yaml`
    also references `../../vars` (per-namespace `ns-vars`) and `../../../vars`
    (per-tenant `tenant-vars`, which carries the tenant's identity group —
    without it nobody can use the cluster with Headlamp); `validate.sh` checks
@@ -467,10 +467,10 @@ cluster and remove it once the env-wide pin catches up.
 AKO is configured as a modular Kustomize component.
 
 - **Base**: `infrastructure/base/ako` defines the per-cluster `AddonConfig` (AKO is auto-installed by the platform, so there is no `AddonInstall` to author) with a `replace-me` placeholder for the `AddonConfigDefinition` version.
-- **Variable injection**: `cluster-var-injector` injects `cluster_name`/`project`/`namespace_ref` (from `cluster-details.yaml`) and `argo_namespace` (from `tenant-vars.yaml`). It must run **last** so it rewrites resources pulled in by the profile and the feature components. The apps tree has its own smaller injector (`apps/components/cluster-var-injector`) fed by a per-cluster `vars` configMapGenerator (kustomize load restrictions keep `apps/` from reading `../cluster-details.yaml`) plus the per-namespace `ns-vars` (referenced as `../../vars`); it names `tenant-sync` per tenant, makes `apps/base/istio-ako-patch` reusable across clusters, and builds the secret-store `ClusterSecretStore` mount/role by segment replacement (`kubernetes-<supervisor_ns>-<cluster>` / `<supervisor_ns>-<cluster>`).
+- **Variable injection**: `cluster-var-injector` injects `cluster_name`/`project`/`namespace_ref` (from `cluster-details.yaml`) and `argo_namespace` (from `tenant-vars.yaml`). It must run **last** so it rewrites resources pulled in by the profile and the feature components. The apps tree has its own smaller injector (`apps/components/cluster-var-injector`) fed by a per-cluster `vars` configMapGenerator (kustomize load restrictions keep `apps/` from reading `../cluster-details.yaml`) plus the per-namespace `ns-vars` (referenced as `../../vars`); it names `tenant-sync` per tenant, prefixes the addon `PackageInstall` that `apps/base/headlamp-istio-patch` adopts, and builds the secret-store `ClusterSecretStore` mount/role by segment replacement (`kubernetes-<supervisor_ns>-<cluster>` / `<supervisor_ns>-<cluster>`).
 - **Environment overlays**: `infrastructure/components/envs/{env}` pins the AKO `AddonConfigDefinition` version and is applied via the profile, so a cluster that skips it fails loudly instead of deploying a placeholder.
 - **Istio integration**: `infrastructure/components/ako-istio` enables Istio support in AKO. Kept separate from the add-on bundle because istio does not imply AKO/AVI — add it only on clusters running both.
-- **North-south ingress**: Gateway API on either `GatewayClass` — `avi-lb` (AKO) or `istio` (istiod provisions a gateway per `Gateway`, no static ingress gateway; `LoadBalancer` Services come from the paravirtual CPI, not AKO). A no-AKO cluster adds `components/disable-ako` and skips `ako-istio` + `apps/base/istio-ako-patch`. See `docs/ARCHITECTURE.md` → "North-south ingress".
+- **North-south ingress**: Gateway API on either `GatewayClass` — `avi-lb` (AKO) or `istio` (istiod provisions a gateway per `Gateway`, no static ingress gateway; `LoadBalancer` Services come from the paravirtual CPI, not AKO). A no-AKO cluster adds `components/disable-ako` and skips `ako-istio`. See `docs/ARCHITECTURE.md` → "North-south ingress".
 
 ## Cluster Policy & Namespace Self-Service
 

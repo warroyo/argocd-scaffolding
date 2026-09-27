@@ -466,7 +466,7 @@ istio-remote   istio.io/unmanaged-gateway    True
 |---|---|---|
 | `gatewayClassName` | `avi-lb` | `istio` |
 | Data path | Avi Service Engines | istiod-provisioned gateway pods |
-| Cluster components | `components/ako-istio` (AKO 2.2.1+ `istioEnabled` wires the sidecar/certs itself) + `apps/base/istio-ako-patch` (labels `avi-system` for injection) | `components/disable-ako`; neither pairing component |
+| Cluster components | `components/ako-istio` (AKO 2.2.1+ `istioEnabled` labels `avi-system` for injection and wires the sidecar/certs itself) | `components/disable-ako`; no `ako-istio` |
 | VIP comes from | Avi via AKO | `guest-cluster-cloud-provider` (vSphere paravirtual CPI) |
 
 The last row is the part worth stating plainly: **`LoadBalancer` Services do not

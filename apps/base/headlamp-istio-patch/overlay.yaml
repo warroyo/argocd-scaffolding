@@ -4,7 +4,7 @@
 # ytt overlay is injected into the addon's OWN guest PackageInstall render (via
 # the ext.packaging.carvel.dev/ytt-paths-from-secret-name annotation below), so
 # kapp keeps the label instead of stripping it. See docs/BACKLOG.md (headlamp
-# istio-sidecar injection) and apps/base/istio-ako-patch (same mechanism).
+# istio-sidecar injection).
 apiVersion: v1
 kind: Secret
 metadata:

@@ -421,8 +421,8 @@ improvement · **P3** = nice-to-have / hygiene.
 - **Headlamp istio-sidecar injection on `ako-istio` clusters** — shipped
   `apps/base/headlamp-istio-patch` (commit `1d2d704`). Injects a ytt overlay into
   the addon's own guest `PackageInstall`
-  (`ext.packaging.carvel.dev/ytt-paths-from-secret-name`, same mechanism as
-  `apps/base/istio-ako-patch`), so kapp keeps the change instead of stripping it.
+  (`ext.packaging.carvel.dev/ytt-paths-from-secret-name`), so kapp keeps the
+  change instead of stripping it.
   Two load-bearing stanzas: label `Namespace/headlamp` `istio-injection=enabled`
   (makes the injection webhook eligible) **and** add `sidecar.istio.io/inject:
   "true"` to the headlamp Deployment pod template (forces the one rollout that

@@ -151,8 +151,8 @@ validate` in `validate.yml`. Requires `kustomize`.
    The apps-side injector (`apps/components/cluster-var-injector`, also last)
    and its `vars` configMapGenerator (`cluster_name` **and** `project` — the
    apps tree can't read `../cluster-details.yaml`, kustomize load
-   restrictions) are **required on every cluster**, not just ones using
-   `apps/base/istio-ako-patch` — the standard app stack's `apps/base/tenant-sync`
+   restrictions) are **required on every cluster** — the standard app stack's
+   `apps/base/tenant-sync`
    (this tenant's ArgoCD sync-impersonation identity, see "Adding a policy" and
    `docs/ARCHITECTURE.md`) needs `project` injected everywhere. `validate.sh`
    cross-checks both against the directory path. `apps/kustomization.yaml` also
