@@ -253,7 +253,9 @@ It renders the argocd root and every cluster (infra + `apps/`) with kustomize an
   `components/envs/{env}` overlay);
 - an `apps/` dir that declares a `vars` cluster_name/project (for the apps-side
   injector) declares the directory's cluster name and tenant;
-- `docs/examples/cluster-template` still builds (via a temp copy at real depth).
+- `docs/examples/cluster-template` and `namespace-resources-template` still
+  build (via temp copies at real depth), and so does every cluster dir in
+  `docs/examples/sample-tenant-repo` (the repo GETTING-STARTED Part 4 syncs).
 
 Requires `kustomize` on your PATH. If `opa` is also on PATH, it additionally
 `opa check`s the custom cluster policy catalog (`terraform/infra/rego/`) —

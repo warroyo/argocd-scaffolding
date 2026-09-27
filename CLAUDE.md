@@ -110,7 +110,8 @@ from `infrastructure/base/cluster-registration`, synced into the ArgoCD namespac
 Run `make validate` (or `./scripts/validate.sh`) before pushing — it build-tests every
 kustomize entrypoint (argocd root + each cluster's infra and `apps/` dirs + each
 `namespace-resources/` dir + temp copies of `docs/examples/cluster-template` and
-`docs/examples/namespace-resources-template`), checks each `cluster-details.yaml` against its directory
+`docs/examples/namespace-resources-template` + each cluster dir of
+`docs/examples/sample-tenant-repo`), checks each `cluster-details.yaml` against its directory
 path, rejects `replace-me` in rendered output (a cluster missing its env overlay), and
 cross-checks the apps-side `vars` cluster_name and project, and renders each cluster's
 `ManagedEntity` from `infrastructure/base/cluster-registration` with the

@@ -15,5 +15,6 @@ kind: Namespace
 metadata:
   name: music-store
   labels:
+    istio-injection: enabled
     gitops.platform/project: tenant-1
     gitops.platform/environment: dev

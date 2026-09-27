@@ -425,6 +425,7 @@ building infrastructure/clusters/tenant-1/dev-1/dev1-cluster/apps
 building infrastructure/clusters/tenant-1/dev-1/namespace-resources
 building docs/examples/cluster-template (temp copy)
 building docs/examples/namespace-resources-template (temp copy)
+building docs/examples/sample-tenant-repo/tenant-1/clusters/dev1-cluster
 skipping opa check (opa not on PATH)     # only when opa isn't installed
 OK: all kustomize entrypoints build
 ```
@@ -504,9 +505,11 @@ manifests.
 `docs/examples/sample-tenant-repo/` shows the shape of a tenant's repo:
 plain kustomize app manifests, the `Namespace` they run in (with its two
 mandatory `gitops.platform/*` labels — ArgoCD's `CreateNamespace=true` would
-create it unlabeled and the policy rejects that), a `RoleBinding` giving the
-tenant's humans access to it ("Headlamp SSO" below), plus one ArgoCD `Application` pointing
-at them:
+create it unlabeled and the policy rejects that), plus one ArgoCD
+`Application` pointing at them. It carries no RoleBinding for humans: the
+platform already binds the tenant's VCFA group read-only on every cluster
+(4.3), and a tenant RoleBinding may only bind its own namespace's
+ServiceAccounts:
 
 ```yaml
 # the tenant's app.yaml (see docs/examples/sample-tenant-repo/tenant-1/app.yaml)
@@ -559,7 +562,7 @@ platform-provisioned store should be healthy on the workload cluster:
 
 ```sh
 kubectl get clustersecretstore vcf-cluster-store -o jsonpath='{.status.conditions[?(@.type=="Ready")].reason}{"\n"}'
-# -> ValidConnection   (an auth error here = mount/role name mismatch; cross-check
+# -> Valid   ("store validated"; an auth error here = mount/role name mismatch; cross-check
 #    the supervisor namespace's real suffixed name in ns-vars.yaml)
 ```
 

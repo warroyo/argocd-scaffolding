@@ -18,6 +18,8 @@
 #   6. each cluster's ManagedEntity renders from infrastructure/base/cluster-registration
 #      with the cluster-registration ApplicationSet's own patch (so the base and
 #      the appset can't drift) and leaves no replace-me behind.
+#   7. every cluster dir in docs/examples/sample-tenant-repo builds (the repo
+#      Part 4 of GETTING-STARTED deploys).
 #
 # Usage: scripts/validate.sh   (requires kustomize on PATH)
 set -uo pipefail
@@ -168,6 +170,12 @@ build_check "$TPL_PROJECT/tmpl-ns/tmpl-cluster/apps"
 echo "building docs/examples/namespace-resources-template (temp copy)"
 cp -r docs/examples/namespace-resources-template "$TPL_PROJECT/tmpl-ns/namespace-resources"
 build_check "$TPL_PROJECT/tmpl-ns/namespace-resources"
+
+# The sample tenant repo that GETTING-STARTED Part 4 syncs.
+for d in docs/examples/sample-tenant-repo/*/clusters/*/; do
+  echo "building ${d%/}"
+  build_check "${d%/}"
+done
 
 # Rego syntax check for the custom cluster policy catalog (terraform/infra/policies.tf).
 # Optional — opa is not a hard dependency like kustomize, this only runs if it's
