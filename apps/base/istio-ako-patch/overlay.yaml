@@ -22,6 +22,8 @@ kind: PackageInstall
 metadata:
   annotations:
     argocd.argoproj.io/sync-wave: '3'
+    # Platform-owned AKO install: removing this patch must never let ArgoCD prune it.
+    argocd.argoproj.io/sync-options: Prune=false
     ext.packaging.carvel.dev/ytt-paths-from-secret-name.0: istio-overlay-ako
   # Placeholder prefix — the apps-side cluster-var-injector rewrites this to
   # <cluster_name>-ako from the `vars` ConfigMap, so the base is reusable
