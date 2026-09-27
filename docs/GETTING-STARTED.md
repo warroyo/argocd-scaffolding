@@ -475,7 +475,10 @@ supervisor-ns-infra-abcde   SupervisorNamespaceInProject   Ready   https://<vcfa
 
 Once the cluster is ready, a third Application appears:
 **`tenant-1-dev-1-dev1-cluster-apps`** — the app stack (tenant-sync,
-secret-store, anything you enabled) reconciling onto the new cluster.
+secret-store, anything you enabled) reconciling onto the new cluster. It
+can sit `OutOfSync` for a few minutes: it patches add-on `PackageInstall`s
+that only appear once the add-ons install, and retries (with backoff, up to
+about an hour) until they do.
 
 **If a `ManagedEntity` shows `Failed`**, read its conditions
 (`kubectl describe managedentity -n infra-abcde <name>`). The controller

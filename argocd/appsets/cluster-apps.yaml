@@ -47,3 +47,11 @@ spec:
           selfHeal: true
         syncOptions:
         - CreateNamespace=true
+        # A new cluster's add-on PackageInstalls land minutes after it registers;
+        # the default 5 quick retries run out first. ~1h of backoff instead.
+        retry:
+          limit: 10
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m
