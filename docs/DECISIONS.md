@@ -1223,15 +1223,23 @@ View/Edit` and `Namespace Usage: View/Manage`. `GET` and `PUT
 Terraform already uses. Only the *list* call is forbidden, so the URN has to
 come from the `ArgoCD` CR's status.
 
-**The choice.** `terraform/bootstrap/argocd-sa-role.tf` runs
-`scripts/grant-argocd-sa-role.sh` once per `deploy_argo` namespace. The script
-waits for `status.serviceAccounts.platform.id`, looks the role up by name, and
-PUTs the account back with the role added. It is idempotent. The `vcfa`
-provider has no service-account resource, so a `terraform_data` +
-`local-exec` step is the only way to keep this inside `make apply-bootstrap`.
+**The choice.** `terraform/bootstrap/argocd-sa-role.tf` does it with the
+[TerraCurl](https://registry.terraform.io/providers/devops-rob/terracurl)
+provider, once per `deploy_argo` namespace. The `vcfa` provider has no
+service-account resource, and a `local-exec` script was rejected as poor
+practice.
+- *Wait:* a request polls the operator's `<instance>-argocd-vcfa-sa-secret`
+  until it stops returning 404. TerraCurl retries on status codes only, and
+  that secret is written alongside `status.serviceAccounts`. A data source then
+  reads the CR, with a postcondition that the URN is set.
+- *Credentials stay out of state:* the token exchange, the role lookup and the
+  account read are ephemeral resources; the PUT sends its headers and body as
+  write-only arguments.
+- *Re-runs:* the PUT's `*_wo_version` is derived from the account URN, so an
+  instance recreated with a new account is granted again.
 
-**The trade-off.** The step needs `curl` and `jq` wherever bootstrap runs, the
-same tools `make destroy-apps` already needs. It re-runs only when the ArgoCD
-namespace changes: an instance deleted and recreated in place gets a new
-account that the step doesn't see until it is tainted. Drop the step once the
+**The trade-off.** A third-party provider and Terraform 1.11+ (write-only
+arguments). The wait leans on the secret and the status landing together; if
+they ever drift apart, the postcondition fails and a re-run fixes it. A role
+removed by hand is not restored until the URN changes. Drop the step once the
 operator assigns the role itself.

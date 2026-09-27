@@ -194,7 +194,7 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 
 ### Key Technologies
 
-- **Terraform**: Provisions vSphere supervisor namespaces, bootstraps ArgoCD via Helm, and renders all generated config from `tenants.yaml` via `local_file`/`templatefile` (no Python, no ytt).
+- **Terraform**: Provisions vSphere supervisor namespaces, bootstraps ArgoCD via Helm (plus a TerraCurl call granting the instance its VCFA role), and renders all generated config from `tenants.yaml` via `local_file`/`templatefile` (no Python, no ytt).
 - **Helm**: Used by Terraform to deploy the `bootstrap-tenant` chart (ArgoCD instance + root app).
 - **ArgoCD**: GitOps engine managing the lifecycle of clusters and applications via the App of Apps pattern.
 - **Kustomize**: Structures Kubernetes manifests using Base/Components/Profiles with variable injection. Clusters inherit an environment **profile** and add only their own deltas, so fleet-wide changes happen in one place while per-cluster overrides stay easy.
@@ -205,7 +205,7 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
 
 - `terraform/`
   - `infra/`: Provisions vSphere supervisor namespaces and renders all generated config from `tenants.yaml` (`generate.tf` + `templates/*.tftpl`). Outputs `namespace_config` (suffixed namespace names + decision-model labels) for the bootstrap run.
-  - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) merges secrets into the infra run's `namespace_config` output (which carries the suffixed namespace names + `gitops.platform/*` labels). `vcfa.tf` mints a fresh per-namespace token for each helm provider on every run. `argocd-sa-role.tf` runs `scripts/grant-argocd-sa-role.sh` to give each ArgoCD instance's VCFA service account the `ArgoCD Instance` role, which the operator's API path leaves empty (needs `curl` + `jq`; see [DECISIONS](docs/DECISIONS.md) #25).
+  - `bootstrap/`: Deploys the `bootstrap-tenant` Helm chart into each namespace. `providers.tf`/`main.tf` are rendered by the infra run; `locals.tf` (hand-authored) merges secrets into the infra run's `namespace_config` output (which carries the suffixed namespace names + `gitops.platform/*` labels). `vcfa.tf` mints a fresh per-namespace token for each helm provider on every run. `argocd-sa-role.tf` gives each ArgoCD instance's VCFA service account the `ArgoCD Instance` role, which the operator's API path leaves empty, via the TerraCurl provider (ephemeral + write-only, so no VCFA credentials land in state; see [DECISIONS](docs/DECISIONS.md) #25).
   - `state-namespace/`: Committed `Project` + `SupervisorNamespace` manifests for the Terraform state backend, applied once out-of-band (see [Backend Configuration](#backend-configuration)).
   - `state-backend/`: Stateless helper that pulls the state-namespace creds and renders the gitignored `.kube-backend.config` kubeconfig (host + token; each `backend.tf` sets `config_path` to it) and `.kube-backend.env` (`KUBE_NAMESPACE`, sourced by the Makefile) for the infra/bootstrap Kubernetes backends. `namespace.auto.tfvars` holds the captured namespace name.
   - `modules/bootstrap-helm/`: Terraform module wrapping the bootstrap Helm chart (single `config` object input).

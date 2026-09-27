@@ -19,7 +19,7 @@ finish this.
 
 | Tool | Version | Used for |
 |------|---------|----------|
-| `terraform` | ≥ 1.9 | provisioning + rendering |
+| `terraform` | ≥ 1.11 | provisioning + rendering (bootstrap uses write-only arguments) |
 | `kustomize` | 5.x | `make validate` (same version CI pins) |
 | `kubectl` | recent | one-time state-namespace setup, verification |
 | `envsubst` | any (gettext) | rendering the state-namespace manifest (Part 1.1); macOS: `brew install gettext` |
@@ -309,10 +309,9 @@ make apply-bootstrap
 
 *You should see* one helm release per namespace
 (`module.bootstrap_tenant_1_dev_1…`, `module.bootstrap_infra_1_infra…`),
-plus `terraform_data.argocd_sa_role["infra-1-infra"]`. That step gives the
+plus `terracurl_request.argocd_sa_role["infra-1-infra"]`. That step gives the
 ArgoCD instance's VCFA service account the `ArgoCD Instance` role, which it
-needs to register namespaces (`docs/DECISIONS.md` #25). It needs `curl` and
-`jq`.
+needs to register namespaces (`docs/DECISIONS.md` #25).
 
 **If not:** `apply-bootstrap` refusing with *"generated files are
 uncommitted"* is the guard working, not a bug — commit the rendered files
