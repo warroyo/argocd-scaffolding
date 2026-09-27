@@ -733,7 +733,8 @@ the ConfigMap. This only works if the operator grants **per-key** field
 ownership, not one whole-object entry:
 
 ```sh
-kubectl get cm argocd-cm -n infra-kyrtt -o yaml   # your suffixed infra namespace
+# your suffixed infra namespace; kubectl hides managedFields without the flag
+kubectl get cm argocd-cm -n infra-kyrtt -o yaml --show-managed-fields
 ```
 
 *You should see* in `metadata.managedFields`: two managers, one owning
@@ -748,15 +749,18 @@ Confirm the flag stuck: `kubectl get cm argocd-cm -n infra-kyrtt -o jsonpath='{.
 
 ### 5.2 Confirm tenant syncs are actually impersonated
 
-Re-sync the `music-store-app` from Part 4, then check who applied it on
-the workload cluster:
+The application controller logs the identity each sync runs as. For the
+`music-store-app` from Part 4:
 
 ```sh
-kubectl get deploy -n music-store -o jsonpath='{.items[0].metadata.managedFields[0].manager}'
+kubectl logs -n infra-kyrtt argocd-application-controller-0 \
+  | grep 'application=music-store-app' | grep -o 'serviceAccount="[^"]*"' | sort -u
 ```
 
-*You should see* the impersonated identity (`tenant-sync-tenant-1`), not
-`argo-attach-sa`. If a sync from a **brand-new** cluster ever appears to
+*You should see* only the impersonated identity,
+`system:serviceaccount:platform-gitops:tenant-sync-tenant-1`, never
+`argo-attach-sa`. (A workload's `managedFields` can't tell you this: its
+`manager` is always `argocd-controller`, whichever identity was used.) If a sync from a **brand-new** cluster ever appears to
 succeed as `argo-attach-sa` instead of failing outright, that means this
 ArgoCD version falls back to the un-impersonated identity when the target
 service account is momentarily missing rather than hard-failing — worth
@@ -764,6 +768,12 @@ knowing before you trust the bootstrap-window argument in
 [ARCHITECTURE.md](ARCHITECTURE.md#known-limitations).
 
 ### 5.3 Confirm the policies rendered and are catching real cases
+
+> **Currently disabled.** On the VCFA build this was last run against, the
+> policy APIs publish no OpenAPI GVK, so Terraform can't plan them and
+> `tenants.yaml` has tenant-1's `policies:` block commented out
+> (`docs/BACKLOG.md`). Skip this section until that is fixed and the block is
+> back.
 
 ```sh
 vcf context use <your-vcfa-context>          # org-level context
