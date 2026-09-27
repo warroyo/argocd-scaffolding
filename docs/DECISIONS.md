@@ -1154,7 +1154,7 @@ question is which of the two, and in which scope.
   the instance's `argocd-k8s-sa` to hold a RoleBinding in the target
   namespace, which nothing creates, and fails with
   `ServiceAccount 'argocd-k8s-sa' is not bound to any role`. A `Failed` entity
-  is retried roughly every 15 minutes (re-measured 2026-09-26), so the `PHASE`
+  is retried after 5–15 minutes (measured 2026-09-26 and 09-27), so the `PHASE`
   column lags a fix.
 - **`EntityManagementPolicy` is native-scope only.** Neither `spec.config` nor
   `spec.rules[]` has a project field, so every entity it generates is
@@ -1199,7 +1199,7 @@ ApplicationSet's own patch to keep the base and the ApplicationSet in step.
 Cluster secrets now reach each guest's VIP directly rather than through the VCFA
 proxy, so the ArgoCD namespace needs network reach to every workload cluster
 VIP. A failed entity recovers on its own once the cause is fixed, but only on
-the controller's ~15-minute retry. In return the platform drops a Supervisor service and its CRDs, the
+the controller's retry (5–15 minutes). In return the platform drops a Supervisor service and its CRDs, the
 registration identity is the instance's own VCFA account instead of a
 cluster-admin certificate, and a policy-driven variant stays available if a
 later argocd-service adds a project field to `EntityManagementPolicy`.

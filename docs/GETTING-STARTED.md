@@ -322,14 +322,20 @@ first. An authentication error usually means an expired token in `.env`.
 ### 2.4 Verify ArgoCD is up
 
 The infra namespace got a vcfa-suffixed name (e.g. `infra-kyrtt`). Find it
-and look inside (service/pod names come from the vSphere ArgoCD operator,
-so use discovery rather than exact names):
+from the org context, then switch to that namespace's context to look inside
+(service/pod names come from the vSphere ArgoCD operator, so use discovery
+rather than exact names):
 
 ```sh
 vcf context use <your-vcfa-context>
-kubectl get ns | grep infra           # find the suffixed name
-kubectl get pods,svc -n infra-kyrtt   # ArgoCD pods + a UI service
+kubectl get supervisornamespaces -n infra-1     # -n = the infra tenant's project; shows infra-kyrtt
+vcf context refresh <your-vcfa-context>         # adds a context per new namespace
+vcf context use <your-vcfa-context>:infra-kyrtt:infra-1
+kubectl get pods,svc,managedentities            # ArgoCD pods, a UI service, registrations
 ```
+
+The org context can't list namespaces or pods (`kubectl get ns` is forbidden
+for an org admin); the per-namespace context can.
 
 Open the UI via the service's external address (or port-forward it) and
 log in as `admin` with the password you hashed in 2.1.
@@ -340,19 +346,27 @@ log in as `admin` with the password you hashed in 2.1.
 - AppProjects `infra` and `tenant-1`
 - ApplicationSets `cluster-provisioning`, `cluster-apps`,
   `cluster-registration` and `namespace-resources`
-- `Ready` ManagedEntities for both supervisor namespaces
-  (`kubectl get managedentities -n infra-kyrtt`)
-- **The ManagedEntities can take up to ~15 minutes to go `Ready`.** On a
-  fresh install the host entity is created before the role grant lands, fails
-  once, and waits for the controller's retry. `root-bootstrap` reports
-  `there are no clusters with this name` until then.
-- **zero generated Applications — this is correct.** No cluster
-  directories exist in git yet, so the ApplicationSets have nothing to
-  generate. That's the next part.
+- `Ready` ManagedEntities for both supervisor namespaces (the
+  `managedentities` in the listing above)
+- **The host ManagedEntity takes a few minutes to go `Ready`** (~5 min
+  measured). It is created before the operator has written `vcfa-config`
+  and the role grant has landed, fails once, and recovers on the
+  controller's retry. `root-bootstrap` reports `there are no clusters with
+  this name` until then, and syncs by itself a couple of minutes later.
+- generated Applications only for what is already in git. This repo ships
+  one worked example, `infrastructure/clusters/tenant-1/dev-1/dev1-cluster`,
+  so the ApplicationSets start provisioning it straight away (Part 3 walks
+  through what it is made of). In a fork without cluster directories you'd
+  see zero, which is correct: the ApplicationSets have nothing to generate.
 
 ## Part 3 — Your first cluster (~30 min + provisioning time)
 
 ### 3.1 Create the cluster directory
+
+This repo already ships `tenant-1/dev-1/dev1-cluster` as a worked example,
+so if you kept it, it is already provisioning. Read along against it, or
+pick a new cluster name below. `cp -r` into an existing directory nests the
+template inside it instead of replacing it.
 
 ```sh
 cp -r docs/examples/cluster-template \
@@ -382,7 +396,8 @@ inherits the dev profile:
   `antrea-nsx`. Swap both lines for `cni-cilium` or `cni-calico` **before
   the first commit** — the choice is immutable after cluster creation.
 - **Add-ons** — come from the dev profile's bundle
-  (`addon-bundles/standard`: istio, external-secrets, observability);
+  (`addon-bundles/standard`: istio, external-secrets, cert-manager,
+  observability);
   drop one with the matching `disable-*` component.
 - **AKO/AVI** — add `components/ako-istio` only if this cluster runs it.
 - **Istio overrides** — add `components/istio-config` only if it needs
@@ -405,10 +420,12 @@ make validate
 ```
 building argocd
 building infrastructure/clusters/tenant-1/dev-1/dev1-cluster
+building registration for tenant-1/dev-1/dev1-cluster
 building infrastructure/clusters/tenant-1/dev-1/dev1-cluster/apps
 building infrastructure/clusters/tenant-1/dev-1/namespace-resources
 building docs/examples/cluster-template (temp copy)
 building docs/examples/namespace-resources-template (temp copy)
+skipping opa check (opa not on PATH)     # only when opa isn't installed
 OK: all kustomize entrypoints build
 ```
 
@@ -443,8 +460,10 @@ dev1-cluster   Provisioned    14m
 ```
 
 Alongside it, **`tenant-1-dev-1-dev1-cluster-registration`** syncs the
-cluster's `ManagedEntity` into the ArgoCD namespace; it is `Ready` as soon
-as the cluster has a control-plane address, well before the nodes are up:
+cluster's `ManagedEntity` into the ArgoCD namespace. It shows `Failed`
+(`dev1-cluster-kubeconfig not found`) until the cluster's kubeconfig exists,
+then goes `Ready` on the controller's next retry, usually before the nodes
+are up:
 
 ```sh
 kubectl get managedentity -n infra-abcde    # your suffixed ArgoCD namespace
@@ -459,9 +478,9 @@ Once the cluster is ready, a third Application appears:
 secret-store, anything you enabled) reconciling onto the new cluster.
 
 **If a `ManagedEntity` shows `Failed`**, read its conditions
-(`kubectl describe managedentity -n infra-abcde <name>`). The controller does
-not retry a failed entity, so after fixing the cause, delete it and let
-ArgoCD re-sync it. A namespace or cluster can have only one `ManagedEntity`:
+(`kubectl describe managedentity -n infra-abcde <name>`). The controller
+retries a failed entity after 5–15 minutes (backoff varies), so after fixing the cause it
+recovers on its own; the `PHASE` column lags the fix until that retry. A namespace or cluster can have only one `ManagedEntity`:
 if it was already registered by hand or in the VCFA UI, the webhook rejects
 this repo's with `spec.targetRef is already in use by another ManagedEntity`.
 Delete the other one first.
