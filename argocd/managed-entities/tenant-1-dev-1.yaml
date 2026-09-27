@@ -8,21 +8,21 @@
 apiVersion: argocd-service.vsphere.vmware.com/v1alpha1
 kind: ManagedEntity
 metadata:
-  name: supervisor-ns-dev-1-3h4pf
-  namespace: infra-h8qk6
+  name: supervisor-ns-dev-1-p9hx9
+  namespace: infra-ps7pl
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
   targetRef:
     apiGroup: ""
     kind: Namespace
-    name: dev-1-3h4pf
+    name: dev-1-p9hx9
     project: tenant-1
-  clusterName: supervisor-ns-dev-1-3h4pf
+  clusterName: supervisor-ns-dev-1-p9hx9
   secretLabels:
-    gitops.platform/argo-namespace: "infra-h8qk6"
+    gitops.platform/argo-namespace: "infra-ps7pl"
     gitops.platform/environment: "dev"
-    gitops.platform/namespace: "dev-1-3h4pf"
+    gitops.platform/namespace: "dev-1-p9hx9"
     gitops.platform/namespace-ref: "dev-1"
     gitops.platform/project: "tenant-1"
     type: "supervisor-ns"
