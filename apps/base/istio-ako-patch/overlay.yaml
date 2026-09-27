@@ -7,8 +7,8 @@ stringData:
   istio-overlay.yaml: |
     #@ load("@ytt:overlay", "overlay")
 
-    #@ AKO 2.2.1 with istioEnabled renders the pod's istio annotations and
-    #@ istio-certs volume itself; only the namespace label is left to add.
+    #! AKO 2.2.1 with istioEnabled renders the pod's istio annotations and
+    #! istio-certs volume itself; only the namespace label is left to add.
     #@overlay/match by=overlay.subset({"kind": "Namespace", "metadata": {"name": "avi-system"}})
     ---
     metadata:
