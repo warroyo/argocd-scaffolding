@@ -7,31 +7,8 @@ stringData:
   istio-overlay.yaml: |
     #@ load("@ytt:overlay", "overlay")
 
-    #@overlay/match by=overlay.subset({"kind": "StatefulSet", "metadata": {"name": "ako"}})
-    ---
-    spec:
-      template:
-        metadata:
-          #@overlay/match missing_ok=True
-          annotations:
-            #@overlay/merge
-            traffic.sidecar.istio.io/includeInboundPorts: ""
-            traffic.sidecar.istio.io/includeOutboundIPRanges: ""
-            proxy.istio.io/config: |
-              proxyMetadata:
-                OUTPUT_CERTS: /etc/istio-output-certs
-            sidecar.istio.io/userVolume: '[{"name": "istio-certs", "emptyDir": {"medium":"Memory"}}]'
-            sidecar.istio.io/userVolumeMount: '[{"name": "istio-certs", "mountPath": "/etc/istio-output-certs"}]'
-        spec:
-        #@overlay/match missing_ok=True
-          volumes:
-          #@overlay/append
-          - name: istio-certs
-            emptyDir:
-              medium: Memory
-
-    ---
-
+    #@ AKO 2.2.1 with istioEnabled renders the pod's istio annotations and
+    #@ istio-certs volume itself; only the namespace label is left to add.
     #@overlay/match by=overlay.subset({"kind": "Namespace", "metadata": {"name": "avi-system"}})
     ---
     metadata:
