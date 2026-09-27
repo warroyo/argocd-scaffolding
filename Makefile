@@ -163,8 +163,9 @@ destroy-bootstrap: init-infra init-bootstrap
 	  terraform -chdir=$(BOOTSTRAP_DIR) apply -input=false "$$tfp"; \
 	  rc=$$?; rm -f "$$tfp"; exit $$rc
 
+# AUTO_APPROVE=1 skips the prompt, same gate as destroy-bootstrap.
 destroy-infra: init-infra
-	terraform -chdir=$(INFRA_DIR) destroy
+	terraform -chdir=$(INFRA_DIR) destroy $(if $(AUTO_APPROVE),-auto-approve -input=false)
 
 ## Delete ArgoCD-managed ApplicationSets + Applications and let their finalizers
 ## cascade (removing the VKS workload clusters) BEFORE ArgoCD is torn down. Those
@@ -172,7 +173,9 @@ destroy-infra: init-infra
 ## orphans them and leaks clusters. First quiesces the helm-owned root app (removes
 ## its automated syncPolicy so it stops selfHeal-recreating the appsets / pruning the
 ## AppProjects mid-teardown, and strips its finalizer) but leaves the object for
-## destroy-bootstrap/helm to delete — the root app has a single owner (helm). Keeping
+## destroy-bootstrap/helm to delete — the root app has a single owner (helm).
+## (`delete application --all` below still removes it; harmless once the
+## finalizer is gone, and helm then finds nothing to delete.) Keeping
 ## the AppProjects alive while the workload apps delete avoids "app is not allowed in
 ## project" finalizer deadlock. Talks to the vcfa supervisor (where ArgoCD runs)
 ## via a throwaway kubeconfig built from bootstrap's argo_endpoints output — no ambient

@@ -86,6 +86,8 @@ cp .env.example .env
 set -a; . ./.env; set +a                # load .env into this shell
 kubectl create --validate=false -f terraform/state-namespace/project.yaml
 NAME=$(envsubst < terraform/state-namespace/state-namespace.yaml | kubectl create --validate=false -f - -o jsonpath='{.metadata.name}')
+# wait until it's usable (~1 min); Terraform refuses a namespace that isn't Created
+until [ "$(kubectl get supervisornamespace -n tf-state "$NAME" -o jsonpath='{.status.phase}')" = Created ]; do sleep 10; done
 echo "namespace = \"$NAME\"" > terraform/state-backend/namespace.auto.tfvars
 git add terraform/state-backend/namespace.auto.tfvars
 git commit -m "capture state namespace name"
@@ -887,7 +889,9 @@ down everything the state describes:
 
 ```sh
 vcf context use <your-vcfa-context>
-kubectl delete -f terraform/state-namespace/state-namespace.yaml   # or: kubectl delete supervisornamespace <the generated name>
+# by name: the manifest uses generateName, so `delete -f` can't find it
+kubectl delete supervisornamespace -n tf-state "$(sed -E 's/.*"(.*)".*/\1/' terraform/state-backend/namespace.auto.tfvars)"
+# wait for it to disappear before deleting its project
 kubectl delete -f terraform/state-namespace/project.yaml
 ```
 
