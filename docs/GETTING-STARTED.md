@@ -279,7 +279,7 @@ make apply-infra
 namespaces, then render config into the repo:
 
 ```
-Apply complete! Resources: 12 added, 0 changed, 0 destroyed.
+Apply complete! Resources: 25 added, 0 changed, 0 destroyed.
 
 $ git status --short
  M argocd/projects/kustomization.yaml
