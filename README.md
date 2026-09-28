@@ -233,7 +233,7 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `cluster-template/`: Copy-me template for onboarding a new cluster.
   - `sample-tenant-repo/`: Example of what a tenant keeps in their **own** app repo (not deployed by this platform).
 - `.github/workflows/`
-  - `apply.yml`: On pushes to `main` touching `terraform/**` or `charts/bootstrap-tenant/**`, runs `make apply-infra` (provisions + renders generated files), commits them (`git add -A`, so deletions of removed tenants are staged too), then runs `make apply-bootstrap`. `apply-infra` runs with `TF_APPLY_FLAGS=-auto-approve -input=false`; `apply-bootstrap` (which plans to a file then applies it) skips its manual confirm gate via `AUTO_APPROVE=1` (no TTY in Actions).
+  - `apply.yml`: On pushes to `main` touching `terraform/**` or `charts/bootstrap-tenant/**`, **only when the repo variable `SELF_HOSTED` is `true`** (runs on a `self-hosted` runner — GitHub-hosted runners can't reach VCFA, so without one the job is skipped, not failed), runs `make apply-infra` (provisions + renders generated files), commits them (`git add -A`, so deletions of removed tenants are staged too), then runs `make apply-bootstrap`. `apply-infra` runs with `TF_APPLY_FLAGS=-auto-approve -input=false`; `apply-bootstrap` (which plans to a file then applies it) skips its manual confirm gate via `AUTO_APPROVE=1` (no TTY in Actions).
   - `validate.yml`: On PRs and pushes to `main`, runs `scripts/validate.sh` (see [Local Testing](#local-testing)) plus a terraform job (`fmt -check` and `validate` with `-backend=false` for each root).
 
 ## Local Testing
@@ -263,7 +263,9 @@ skipped cleanly if `opa` is absent.
 
 You can run the workflows in `.github/workflows/` locally with
 [`act`](https://github.com/nektos/act) (requires Docker). Repo defaults live in
-`.actrc` (pins the `catthehacker/ubuntu:act-latest` runner image).
+`.actrc` (maps `ubuntu-latest` and `self-hosted` to the `catthehacker/ubuntu:act-latest`
+runner image, and sets `SELF_HOSTED=true` so `apply.yml`'s gate passes). Installed as a
+`gh` extension (`gh extension install nektos/gh-act`), the command is `gh act`.
 
 ```sh
 # validate.yml — safe, no secrets (mirrors `make validate`)
@@ -293,7 +295,7 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
 1. Add a new entry to `terraform/infra/tenants.yaml`. Required per-namespace fields:
    - `environment` — selects the Kustomize profile (`dev`, `prod`, …)
    - `zone_name` — vSphere zone for the namespace (a default of `z-wld-a` exists but **always set this explicitly** — zone names vary per region)
-2. Run `make apply` (or push to `main` — the Apply workflow runs it). `apply-infra`:
+2. Run `make apply` (or push to `main` — the Apply workflow runs it, given a self-hosted runner and `SELF_HOSTED=true`). `apply-infra`:
    - provisions the supervisor namespace(s), and
    - renders `argocd/projects/{tenant}.yaml`, the projects kustomization,
      `infrastructure/clusters/{tenant}/vars/{tenant-vars,kustomization}.yaml`

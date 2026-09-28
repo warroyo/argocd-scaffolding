@@ -16,7 +16,10 @@ env:
 
 jobs:
   apply:
-    runs-on: ubuntu-latest
+    # GitHub-hosted runners can't reach VCFA: runs only where the repo variable
+    # SELF_HOSTED is "true" (a self-hosted runner, or `act` via .actrc). See README.
+    if: vars.SELF_HOSTED == 'true'
+    runs-on: self-hosted
     permissions:
       contents: write
 

@@ -1,3 +1,6 @@
 # Default flags for `act` (https://github.com/nektos/act).
 # Use a medium image that ships make/git/curl/sudo — required by both workflows.
 -P ubuntu-latest=catthehacker/ubuntu:act-latest
+# apply.yml runs on `self-hosted`, gated on the SELF_HOSTED repo variable.
+-P self-hosted=catthehacker/ubuntu:act-latest
+--var SELF_HOSTED=true

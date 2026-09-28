@@ -123,7 +123,8 @@ validate` in `validate.yml`. Requires `kustomize`.
 ### Adding a new tenant
 1. Add an entry to `terraform/infra/tenants.yaml` (set per-namespace `environment`).
 2. Run `make apply` (or push to `main` — the Apply workflow runs it; it triggers on
-   `terraform/**` and `charts/bootstrap-tenant/**`). `apply-infra` provisions the
+   `terraform/**` and `charts/bootstrap-tenant/**`, only on a `self-hosted` runner with
+   the repo variable `SELF_HOSTED=true`, else skipped). `apply-infra` provisions the
    namespaces and renders the AppProject, tenant-vars, and bootstrap wiring; commit
    those, then bootstrap runs (`apply-bootstrap` refuses while rendered files are
    uncommitted — `SKIP_GENERATED_CHECK=1` overrides).

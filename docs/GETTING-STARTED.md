@@ -813,7 +813,7 @@ rather see it recorded without blocking.)
 
 - **Add a namespace or tenant:** edit `tenants.yaml`, `make apply`, commit
   the rendered files (or push to `main` and let the Apply workflow do all
-  of it).
+  of it, on a self-hosted runner with the `SELF_HOSTED` repo variable set).
 - **Add a cluster:** copy the template, edit three values, push (Part 3).
 - **Roll a version:** bump one pin in `components/envs/dev`, let it soak,
   mirror to prod — see the README's *Version management* section.
