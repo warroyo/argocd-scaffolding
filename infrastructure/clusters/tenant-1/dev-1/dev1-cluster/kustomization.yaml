@@ -4,7 +4,6 @@ kind: Kustomization
 resources:
 - ../../../../profiles/dev        # dev env defaults
 - ./cluster-details.yaml
-- ../../vars                      # per-tenant tenant-vars
 
 components:
 # CNI: exactly one, day-0 immutable.

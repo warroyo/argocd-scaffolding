@@ -3,22 +3,11 @@
 # second run consumes). See docs/DECISIONS.md #1.
 
 locals {
-  # Tenant names.
-  tenant_names = keys(local.tenant_map)
-
   # ArgoCD AppProject name per tenant. The infra tenant's project is always named
   # "infra" (the project the ApplicationSets target), regardless of tenant name,
   # so there is no separate hand-authored infra AppProject to keep in sync.
   project_names = {
     for k, v in local.tenant_map : k => lookup(v, "type", "") == "infra" ? "infra" : v.name
-  }
-
-  # Per-tenant managing ArgoCD namespace (vcfa-suffixed), taken from any of the
-  # tenant's namespace deployments — they all share the same argo_namespace.
-  tenant_argo_namespace = {
-    for t_name in local.tenant_names : t_name => [
-      for k, ns in local.ns_deployments : ns.argo_namespace if ns.tenant_name == t_name
-    ][0]
   }
 
   # Structural wiring keys for the generated bootstrap providers/modules.
@@ -120,17 +109,15 @@ resource "local_file" "managed_entities_kustomization" {
   })
 }
 
-# ── Post-apply tenant-vars handoff (the single terraform -> argocd contract) ───
-# Also carries the tenant's human identity group, which cluster-var-injector
-# binds read-only via the ClusterRoleBinding in apps/base/tenant-users.
+# ── Per-tenant vars: the tenant's human identity group ─────────────────────────
+# cluster-var-injector binds it read-only via apps/base/tenant-users.
 # See docs/ARCHITECTURE.md "Tenant human access", docs/DECISIONS.md #22.
 
 resource "local_file" "tenant_vars" {
   for_each = local.tenant_map
   filename = "${path.module}/../../infrastructure/clusters/${each.key}/vars/tenant-vars.yaml"
   content = templatefile("${path.module}/templates/tenant-vars.yaml.tftpl", {
-    argo_namespace = local.tenant_argo_namespace[each.key]
-    group          = local.tenant_group[each.key]
+    group = local.tenant_group[each.key]
   })
 }
 

@@ -5,7 +5,6 @@ kind: Kustomization
 resources:
 - ../../../../profiles/dev        # env defaults — match namespace `environment` in tenants.yaml
 - ./cluster-details.yaml
-- ../../vars
 
 components:
 # CNI: exactly one, day-0 immutable. Default antrea (+antrea-nsx), or swap for cilium/calico.

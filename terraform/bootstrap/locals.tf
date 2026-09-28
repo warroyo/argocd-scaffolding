@@ -12,7 +12,6 @@ locals {
       namespace      = nc.namespace
       tenant_name    = nc.tenant_name
       deploy_argo    = nc.deploy_argo
-      argo_namespace = nc.argo_namespace
       cluster_labels = nc.cluster_labels
 
       repo_url      = local.repo_url

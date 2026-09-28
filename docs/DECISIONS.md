@@ -61,12 +61,12 @@ tenants/namespaces.
 ## 3. Why are generated files committed to git?
 
 **The problem.** Some values only exist after Terraform runs (the tenant's
-UUID, the VPC path, the ArgoCD namespace name) — but kustomize needs them at
+UUID, the VPC path, the vcfa-suffixed namespace name) — but kustomize needs them at
 sync time, and ArgoCD reads git, not Terraform state.
 
 **The choice.** The infra run renders them into the repo
-(`argocd/projects/*`, `infrastructure/clusters/{tenant}/vars/tenant-vars.yaml`,
-and the bootstrap wiring) and they get committed. CI commits them
+(`argocd/projects/*`, `argocd/managed-entities/*`, the per-namespace
+`ns-vars.yaml`, and the bootstrap wiring) and they get committed. CI commits them
 automatically between the two applies; locally, `make apply-bootstrap` refuses
 to run until you commit them.
 
@@ -603,8 +603,8 @@ target must be the *real* name.
 **The choice.** Render the suffixed name into a per-namespace `ns-vars.yaml`
 (`terraform/infra/generate.tf`, one per `(tenant, namespace_ref)`), and have
 `cluster-var-injector` build the mount/role from it plus `cluster_name`. This is
-the same class of TF→git value handoff as `tenant-vars.yaml`/`argo_namespace`
-(#3), at per-namespace granularity — a *value* a resource reads, never a
+the same class of TF→git value handoff as `argocd/managed-entities/`
+(#3) — a *value* a resource reads, never a
 targeting handle. It does **not** replace `namespace_ref`, and it doesn't
 re-introduce the coupling #2 avoids: routine git changes (add a cluster, add an
 app) never run Terraform, because `ns-vars` already exists for the namespace and

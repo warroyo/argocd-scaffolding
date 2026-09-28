@@ -38,7 +38,7 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 | `argocd/projects/kustomization.yaml` | `terraform/infra` → `templates/projects-kustomization.yaml.tftpl` |
 | `argocd/managed-entities/*.yaml` | `terraform/infra` → `templates/managed-entity.yaml.tftpl` (needs state: suffixed namespace + ArgoCD namespace; one per namespace except an ArgoCD host, which `charts/bootstrap-tenant` registers) |
 | `argocd/managed-entities/kustomization.yaml` | `terraform/infra` → `templates/managed-entities-kustomization.yaml.tftpl` |
-| `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (needs state: `argo_namespace` — no longer read by anything since the `ArgoCluster` removal, `docs/DECISIONS.md` #24; also carries `tenant_group`, the tenant's human identity group, which the apps-side injector binds via `apps/base/tenant-users`) |
+| `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (no state needed: carries only `tenant_group`, the tenant's human identity group from `tenants.yaml`, which the apps-side injector binds via `apps/base/tenant-users`) |
 | `infrastructure/clusters/*/vars/kustomization.yaml` | `terraform/infra` → `templates/vars-kustomization.yaml.tftpl` |
 | `infrastructure/clusters/*/*/vars/ns-vars.yaml` | `terraform/infra` → `templates/ns-vars.yaml.tftpl` (needs state: the vcfa-**suffixed** supervisor namespace name; per `(tenant, namespace_ref)`, feeds the secret-store mount/role) |
 | `infrastructure/clusters/*/*/vars/kustomization.yaml` | `terraform/infra` → `templates/ns-vars-kustomization.yaml.tftpl` |

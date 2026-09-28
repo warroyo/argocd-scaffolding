@@ -207,7 +207,7 @@ flowchart TB
     envs["env overlays (components/envs/{env})<br/>real values + always-on version pins;<br/>feature-scoped sub-components<br/>(envs/{env}/istio, envs/{env}/headlamp)<br/>pin shared add-on versions (via namespace-resources)"]
     profile["profiles/common + profiles/{env}<br/>common = bases + always-on components;<br/>{env} = common + its envs/{env} overlay"]
     cluster["cluster dir<br/>profile + optional features (enablement labels,<br/>opt-in config overrides) + override patches"]
-    inject["cluster-var-injector (LAST)<br/>rewrites names from cluster-details.yaml<br/>+ argo_namespace from tenant-vars.yaml"]
+    inject["cluster-var-injector (LAST)<br/>rewrites names from cluster-details.yaml"]
 
     bases --> profile
     comps --> profile

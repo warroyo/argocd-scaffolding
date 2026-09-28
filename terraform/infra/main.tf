@@ -92,7 +92,6 @@ output "namespace_config" {
       namespace      = ns.ns_name
       tenant_name    = ns.tenant_name
       deploy_argo    = ns.deploy_argo
-      argo_namespace = ns.argo_namespace
       cluster_labels = ns.cluster_labels
     }
   }
