@@ -33,8 +33,8 @@ locals {
           if infra_ns_val.deploy_argo == true && infra_ns_key == lookup(local.tenant_map[t_name], "argo_namespace", "argocd")
         ][0], null)
 
-        # Decision-model labels, computed once here (the chart adds the suffixed
-        # gitops.platform/namespace label at install time from .Release.Namespace).
+        # Decision-model labels, computed once here (terraform/bootstrap/locals.tf
+        # adds the suffixed namespace + argo-namespace labels).
         cluster_labels = merge(
           try([for ns in local.tenant_map[t_name].namespaces : lookup(ns, "argo_labels", {}) if ns.name == ns_key][0], {}),
           {
@@ -92,6 +92,7 @@ output "namespace_config" {
       namespace      = ns.ns_name
       tenant_name    = ns.tenant_name
       deploy_argo    = ns.deploy_argo
+      argo_namespace = ns.argo_namespace
       cluster_labels = ns.cluster_labels
     }
   }

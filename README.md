@@ -169,13 +169,12 @@ bootstrap can't be destroyed through the Makefile. Recover by:
 **Deletion is live.** Removing or renaming a cluster directory deletes the real
 cluster (a rename is delete + recreate to ArgoCD). Likewise, committing the
 deletion of the `apply-infra`-rendered files (`argocd/projects/`,
-`argocd/managed-entities/`,
 `infrastructure/clusters/*/vars/`, `terraform/bootstrap/{main,providers}.tf`)
 makes ArgoCD prune the corresponding AppProjects. If you deleted them by
 accident, restore before syncing:
 
 ```sh
-git checkout -- argocd/projects argocd/managed-entities 'infrastructure/clusters/*/vars/**' \
+git checkout -- argocd/projects 'infrastructure/clusters/*/vars/**' \
   terraform/bootstrap/main.tf terraform/bootstrap/providers.tf
 ```
 
@@ -213,10 +212,9 @@ The project follows a **GitOps** workflow where the entire state of the infrastr
   - `modules/cluster-policy/`, `modules/cluster-policy-template/`: Vendored (split) from [warroyo/vcfa-terraform-examples](https://github.com/warroyo/vcfa-terraform-examples/tree/main/cluster-policy-custom) — the `ClusterPolicy`/`ClusterPolicyTemplate` mechanics behind the custom cluster policy catalog. See [Cluster Policy & Namespace Self-Service](#cluster-policy--namespace-self-service).
   - `infra/policies.tf`, `infra/rego/*.rego`: The custom cluster policy catalog, driven by each tenant's `policies:` block in `tenants.yaml`.
 - `supervisor-addons/`: Hand-authored, **not** Terraform-managed, **not** GitOps-synced. `AddonRepository`/`AddonRepositoryInstall` manifests registering custom addon repos as installable VKS addons in `vmware-system-vks-public` — a genuine Supervisor-scope namespace this repo's Terraform and ArgoCD credentials can't reach. Applied manually with `kubectl` by a human holding Supervisor-admin access; see [Getting Started](docs/GETTING-STARTED.md) Part 1.2. Two repos: `external-secrets` (helm chart, tenant secrets) and `dayzero` (imgpkg/Carvel package, [dayzero-addon-service](https://github.com/warroyo/dayzero-addon-service)), which drives the **mandatory** `argocd-attach-rbac` addon — it seeds one ClusterRoleBinding granting `cluster-admin` to `default:argo-attach-sa`, the identity ArgoCD's `cluster-apps` sync impersonates on each workload cluster; without it the standard app stack can't sync, see [DECISIONS](docs/DECISIONS.md) #18.
-- `charts/bootstrap-tenant/`: Helm chart installed into every supervisor namespace: the `argo-attach-sa` sync identity (SA + RoleBinding to `edit`) everywhere, plus — in the ArgoCD-hosting namespace — the ArgoCD instance, that namespace's own `ManagedEntity` registration, and the root Application.
+- `charts/bootstrap-tenant/`: Helm chart installed into every supervisor namespace: the `argo-attach-sa` sync identity (SA + RoleBinding to `edit`) everywhere, plus — in the ArgoCD-hosting namespace — the ArgoCD instance, a `ManagedEntity` registration for every supervisor namespace that instance manages (its own included), and the root Application.
 - `argocd/`
   - `appsets/`: ApplicationSets that discover and deploy clusters and apps (label-based join): `cluster-provisioning` (per cluster dir), `cluster-registration` (per cluster dir — syncs the cluster's `ManagedEntity` from `infrastructure/base/cluster-registration` into the ArgoCD namespace, see [DECISIONS](docs/DECISIONS.md) #24), `cluster-apps` (per cluster `apps/` dir), and `namespace-resources` (one app per supervisor namespace, sourced from `infrastructure/clusters/{project}/{namespace_ref}/namespace-resources/` — for namespace-scoped shared resources like label-gated add-on installs).
-  - `managed-entities/`: One `ManagedEntity` per supervisor namespace (except the ArgoCD host, which the chart registers), rendered by the infra run — each registers its namespace with ArgoCD, carrying the decision-model labels.
   - `projects/`: ArgoCD AppProject definitions, all rendered by the infra run (the `infra`-type tenant's project is rendered as `infra.yaml`, the project the ApplicationSets target).
   - `config/`: Server-Side-Apply patch enabling ArgoCD sync impersonation (`argocd-cm-patch.yaml` — owns one `argocd-cm` key, coexisting with the argocd-service operator's own management of the rest).
   - `repo-config.yaml`: Single source of truth for the GitOps repo URL.
@@ -298,7 +296,6 @@ fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_T
 2. Run `make apply` (or push to `main` — the Apply workflow runs it). `apply-infra`:
    - provisions the supervisor namespace(s), and
    - renders `argocd/projects/{tenant}.yaml`, the projects kustomization,
-     `argocd/managed-entities/{tenant}-{namespace}.yaml` (+ kustomization),
      `infrastructure/clusters/{tenant}/vars/{tenant-vars,kustomization}.yaml`
      (the tenant's identity `group`), and
      `terraform/bootstrap/{providers,main}.tf`.

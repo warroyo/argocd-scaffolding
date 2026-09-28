@@ -1,6 +1,5 @@
 # Renders every config artifact derived from tenants.yaml (AppProjects,
-# supervisor-namespace ManagedEntities, tenant-vars handoff, bootstrap wiring the
-# second run consumes). See docs/DECISIONS.md #1.
+# tenant-vars handoff, bootstrap wiring the second run consumes). See docs/DECISIONS.md #1.
 
 locals {
   # ArgoCD AppProject name per tenant. The infra tenant's project is always named
@@ -72,40 +71,6 @@ resource "local_file" "projects_kustomization" {
   filename = "${path.module}/../../argocd/projects/kustomization.yaml"
   content = templatefile("${path.module}/templates/projects-kustomization.yaml.tftpl", {
     projects = sort(values(local.project_names))
-  })
-}
-
-# ── Supervisor-namespace ManagedEntities (synced by root-bootstrap) ────────────
-# Every namespace except an ArgoCD host, whose own entry the bootstrap chart
-# renders. Labels are the decision-model set. See docs/DECISIONS.md #24.
-
-locals {
-  # Filter on deploy_argo from tenants.yaml, not suffixed names — for_each keys
-  # must be known at plan time on a fresh apply.
-  managed_namespaces = {
-    for k, ns in local.ns_deployments : k => ns
-    if !try([for n in local.tenant_map[ns.tenant_name].namespaces : lookup(n, "deploy_argo", false) if n.name == ns.ns_ref][0], false)
-  }
-}
-
-resource "local_file" "managed_entity" {
-  for_each = local.managed_namespaces
-  filename = "${path.module}/../../argocd/managed-entities/${each.key}.yaml"
-  content = templatefile("${path.module}/templates/managed-entity.yaml.tftpl", {
-    namespace      = each.value.ns_name
-    argo_namespace = each.value.argo_namespace
-    project        = each.value.tenant_name
-    labels = merge(each.value.cluster_labels, {
-      "gitops.platform/namespace"      = each.value.ns_name
-      "gitops.platform/argo-namespace" = each.value.argo_namespace
-    })
-  })
-}
-
-resource "local_file" "managed_entities_kustomization" {
-  filename = "${path.module}/../../argocd/managed-entities/kustomization.yaml"
-  content = templatefile("${path.module}/templates/managed-entities-kustomization.yaml.tftpl", {
-    entities = sort(keys(local.managed_namespaces))
   })
 }
 

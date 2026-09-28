@@ -1,14 +1,15 @@
 project: "default"
 
 deployArgo: false
-tenantName: "tenant"
 
 argoInstance:
   name: "argocd"
   version: "3.4.4+vmware.1-vks.1"
   password: "" 
 
-clusterLabels: {}
+# deployArgo only: every supervisor namespace this instance registers, itself
+# included — [{name, project, labels}], built in terraform/bootstrap/locals.tf.
+managedNamespaces: []
 
 rootApp:
   enabled: true

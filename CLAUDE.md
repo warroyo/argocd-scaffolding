@@ -36,8 +36,6 @@ There is no Python generator and no ytt. These files are produced/refreshed by
 |------|------------------------|
 | `argocd/projects/*.yaml` | `terraform/infra` → `templates/appproject.yaml.tftpl` |
 | `argocd/projects/kustomization.yaml` | `terraform/infra` → `templates/projects-kustomization.yaml.tftpl` |
-| `argocd/managed-entities/*.yaml` | `terraform/infra` → `templates/managed-entity.yaml.tftpl` (needs state: suffixed namespace + ArgoCD namespace; one per namespace except an ArgoCD host, which `charts/bootstrap-tenant` registers) |
-| `argocd/managed-entities/kustomization.yaml` | `terraform/infra` → `templates/managed-entities-kustomization.yaml.tftpl` |
 | `infrastructure/clusters/*/vars/tenant-vars.yaml` | `terraform/infra` → `templates/tenant-vars.yaml.tftpl` (no state needed: carries only `tenant_group`, the tenant's human identity group from `tenants.yaml`, which the apps-side injector binds via `apps/base/tenant-users`) |
 | `infrastructure/clusters/*/vars/kustomization.yaml` | `terraform/infra` → `templates/vars-kustomization.yaml.tftpl` |
 | `infrastructure/clusters/*/*/vars/ns-vars.yaml` | `terraform/infra` → `templates/ns-vars.yaml.tftpl` (needs state: the vcfa-**suffixed** supervisor namespace name; per `(tenant, namespace_ref)`, feeds the secret-store mount/role) |
@@ -74,7 +72,7 @@ target), regardless of the tenant's name. There is no separate hand-authored
 | `terraform/bootstrap/argocd-sa-role.tf` | Gives each ArgoCD instance's VCFA service account the `ArgoCD Instance` org role (the operator's API path creates it role-less; the UI adds the role). Without it every `ManagedEntity` fails `No assigned roles` and nothing syncs. TerraCurl, with ephemeral reads and a write-only PUT — keep VCFA credentials out of state. `docs/DECISIONS.md` #25. |
 | `argocd/repo-config.yaml` | Single repo URL used by all ApplicationSets |
 | `infrastructure/base/cluster-registration/` + `argocd/appsets/cluster-registration.yaml` | Workload-cluster registration: the `ManagedEntity` base (all `replace-me`) and the ApplicationSet whose inline patch fills it per cluster dir. Change them together — `validate.sh` renders one with the other. Not part of any cluster tree. See `docs/DECISIONS.md` #24. |
-| `charts/bootstrap-tenant/` | Per-namespace bootstrap: `argo-attach-sa` + RoleBinding to `edit` (the `infra` project's impersonation target) everywhere; ArgoCD instance (version pin in `values.yaml`), its own namespace's `ManagedEntity`, and root app where `deployArgo`. |
+| `charts/bootstrap-tenant/` | Per-namespace bootstrap: `argo-attach-sa` + RoleBinding to `edit` (the `infra` project's impersonation target) everywhere; ArgoCD instance (version pin in `values.yaml`), a `ManagedEntity` for every supervisor namespace it manages (its own included, list from `terraform/bootstrap/locals.tf`), and root app where `deployArgo`. |
 | `docs/examples/cluster-template/` | Copy-me template for a new cluster |
 | `docs/examples/namespace-resources-template/` | Copy-me template for a namespace's `namespace-resources/` dir (shared add-on installs) |
 | `terraform/state-namespace/{project,state-namespace}.yaml` | CCI `Project` + `SupervisorNamespace` CRs for the Terraform-state backend. Applied once out-of-band with `kubectl` (README → Backend Configuration explains the design; the commands live in `docs/GETTING-STARTED.md` Part 1.1). |
@@ -86,9 +84,9 @@ Each supervisor namespace registers to ArgoCD through an in-project `ManagedEnti
 whose `secretLabels` are `type: supervisor-ns`, `gitops.platform/project`,
 `gitops.platform/namespace-ref`, `gitops.platform/environment`,
 `gitops.platform/namespace` (the vcfa-suffixed name) and
-`gitops.platform/argo-namespace` (the suffixed ArgoCD namespace). Terraform renders
-them into `argocd/managed-entities/`; the ArgoCD-hosting namespace's own entry comes
-from the bootstrap chart. Why `ManagedEntity` with `targetRef.project`, not
+`gitops.platform/argo-namespace` (the suffixed ArgoCD namespace). The ArgoCD
+host's bootstrap chart release renders all of them, its own included
+(`terraform/bootstrap/locals.tf` builds the list from the infra `namespace_config`). Why `ManagedEntity` with `targetRef.project`, not
 `EntityManagementPolicy`: `docs/DECISIONS.md` #24. The `cluster-provisioning`
 ApplicationSet joins a cluster directory to its supervisor namespace on
 `(project, namespace_ref)` — which is also

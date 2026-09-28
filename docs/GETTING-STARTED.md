@@ -279,12 +279,11 @@ make apply-infra
 namespaces, then render config into the repo:
 
 ```
-Apply complete! Resources: 14 added, 0 changed, 0 destroyed.
+Apply complete! Resources: 12 added, 0 changed, 0 destroyed.
 
 $ git status --short
  M argocd/projects/kustomization.yaml
 ?? argocd/projects/tenant-1.yaml
- M argocd/managed-entities/tenant-1-dev-1.yaml
  M infrastructure/clusters/tenant-1/vars/tenant-vars.yaml
 ?? infrastructure/clusters/tenant-1/dev-1/vars/
 ?? infrastructure/clusters/infra-1/infra/vars/
@@ -299,7 +298,7 @@ so git (not your shell) expands the glob — it needs to reach both
 only ever catches the first:
 
 ```sh
-git add argocd/projects argocd/managed-entities 'infrastructure/clusters/*/vars/**' terraform/bootstrap/{providers,main}.tf
+git add argocd/projects 'infrastructure/clusters/*/vars/**' terraform/bootstrap/{providers,main}.tf
 git commit -m "rendered config for tenants" && git push
 ```
 
@@ -348,10 +347,10 @@ log in as `admin` with the password you hashed in 2.1.
   `cluster-registration` and `namespace-resources`
 - `Ready` ManagedEntities for both supervisor namespaces (the
   `managedentities` in the listing above)
-- **The host ManagedEntity takes a few minutes to go `Ready`** (~5 min
-  measured). It is created before the operator has written `vcfa-config`
-  and the role grant has landed, fails once, and recovers on the
-  controller's retry. `root-bootstrap` reports `there are no clusters with
+- **The ManagedEntities take a few minutes to go `Ready`** (~5 min
+  measured). The host's release creates them before the operator has
+  written `vcfa-config` and the role grant has landed, so they fail once
+  and recover on the controller's retry. `root-bootstrap` reports `there are no clusters with
   this name` until then, and syncs by itself a couple of minutes later.
 - generated Applications only for what is already in git. This repo ships
   one worked example, `infrastructure/clusters/tenant-1/dev-1/dev1-cluster`,
@@ -899,11 +898,12 @@ it, and its finalizer deletes the VKS `Cluster`. No Terraform involved.
    resources keyed the same way.
 4. Commit the now-deleted rendered files, same as any other
    `apply-infra` run:
-   `git add -A argocd/projects argocd/managed-entities 'infrastructure/clusters/*/vars/**' && git commit -m "remove tenant-1/dev-1" && git push`.
-5. If the namespace ran `deploy_argo: true` (an infra tenant's ArgoCD),
-   `apply-infra` alone doesn't remove its helm release — run
-   `make apply-bootstrap` (which also reconciles the now-shorter
-   `namespace_config`), or, if you're decommissioning that ArgoCD
+   `git add -A argocd/projects 'infrastructure/clusters/*/vars/**' && git commit -m "remove tenant-1/dev-1" && git push`.
+5. Run `make apply-bootstrap`. It upgrades the ArgoCD host's release with
+   the now-shorter `namespace_config`, which deletes the namespace's
+   `ManagedEntity`. If the namespace ran `deploy_argo: true` (an infra
+   tenant's ArgoCD), it also removes that helm release. If you're
+   decommissioning that ArgoCD
    entirely, run the manual `destroy-apps`-style drain from the full
    teardown above before removing it from `tenants.yaml`.
 

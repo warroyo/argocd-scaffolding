@@ -65,7 +65,7 @@ UUID, the VPC path, the vcfa-suffixed namespace name) — but kustomize needs th
 sync time, and ArgoCD reads git, not Terraform state.
 
 **The choice.** The infra run renders them into the repo
-(`argocd/projects/*`, `argocd/managed-entities/*`, the per-namespace
+(`argocd/projects/*`, the per-namespace
 `ns-vars.yaml`, and the bootstrap wiring) and they get committed. CI commits them
 automatically between the two applies; locally, `make apply-bootstrap` refuses
 to run until you commit them.
@@ -603,7 +603,7 @@ target must be the *real* name.
 **The choice.** Render the suffixed name into a per-namespace `ns-vars.yaml`
 (`terraform/infra/generate.tf`, one per `(tenant, namespace_ref)`), and have
 `cluster-var-injector` build the mount/role from it plus `cluster_name`. This is
-the same class of TF→git value handoff as `argocd/managed-entities/`
+the same class of TF→git value handoff as `argocd/projects/`
 (#3) — a *value* a resource reads, never a
 targeting handle. It does **not** replace `namespace_ref`, and it doesn't
 re-introduce the coupling #2 avoids: routine git changes (add a cluster, add an
@@ -1173,11 +1173,15 @@ question is which of the two, and in which scope.
 
 **The choice.** A hand-authored, **in-project** `ManagedEntity` for every
 supervisor namespace and every workload cluster; no `EntityManagementPolicy`.
-- *Namespaces:* Terraform already knows the suffixed name and the label set, so
-  `terraform/infra` renders one entity per namespace into
-  `argocd/managed-entities/`, which root-bootstrap syncs — the same idiom as
-  `argocd/projects/`. The ArgoCD-hosting namespace is the exception: nothing can
-  sync until it is registered, so the bootstrap chart renders its entry.
+- *Namespaces:* the ArgoCD host's `bootstrap-tenant` release renders one entity
+  per namespace it manages, its own included; `terraform/bootstrap/locals.tf`
+  builds the list from the infra `namespace_config`. Only the host's release can:
+  a tenant namespace's release holds a token for that namespace alone, and the
+  entity must sit in the ArgoCD namespace. One owner means no host special case
+  (nothing can sync until the host is registered) and no ordering on
+  root-bootstrap. The cost: ArgoCD doesn't self-heal these entities, so a deleted
+  one stays gone until the next `make apply-bootstrap`, and adding a namespace
+  upgrades the host's release.
 - *Clusters:* clusters are born from git, so Terraform can't list them, and the
   cluster tree syncs into the supervisor namespace while the entity must sit in
   the ArgoCD namespace. A separate `cluster-registration` ApplicationSet does the
