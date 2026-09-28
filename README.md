@@ -269,14 +269,14 @@ runner image, and sets `SELF_HOSTED=true` so `apply.yml`'s gate passes). Install
 
 ```sh
 # validate.yml — safe, no secrets (mirrors `make validate`)
-act pull_request -W .github/workflows/validate.yml
+gh act pull_request -W .github/workflows/validate.yml
 
 # apply.yml — runs real terraform apply against live infrastructure
-act push -W .github/workflows/apply.yml --secret-file .secrets
+gh act push -W .github/workflows/apply.yml --secret-file .secrets
 ```
 
-`apply.yml` needs the same secrets CI uses — copy them into `.secrets` (gitignored;
-see the placeholders in that file). State now lives in the Kubernetes backend, so the
+`apply.yml` needs the same secrets CI uses — `cp .secrets.example .secrets` (gitignored)
+and fill it in; the names mirror `.env.example`. State now lives in the Kubernetes backend, so the
 state-namespace must already exist and `terraform/state-backend/namespace.auto.tfvars`
 must hold its name (see **Backend Configuration**); the workflow's `state-backend` step
 fetches the kubeconfig at run time from the vcfa creds. Optionally set `GITHUB_TOKEN` in

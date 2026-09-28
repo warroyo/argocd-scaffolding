@@ -32,13 +32,20 @@ jobs:
       # apply-infra → init-infra → state-backend: the stateless helper pulls a fresh
       # state-namespace kubeconfig via the vcfa provider and renders the gitignored
       # backend kubeconfig, then infra inits against the kubernetes backend.
+      # LB settings are exported only when set: an empty value isn't the
+      # variable's default to terraform (see .env.example).
       - name: Apply infra (provisions + renders all generated config)
-        run: make apply-infra
+        run: |
+          if [ -n "$AVI_ENABLED" ]; then export TF_VAR_avi_enabled="$AVI_ENABLED"; fi
+          if [ -n "$SEG_NAME" ]; then export TF_VAR_seg_name="$SEG_NAME"; fi
+          make apply-infra
         env:
           TF_VAR_vcfa_refresh_token: ${{ secrets.VCFA_REFRESH_TOKEN }}
           TF_VAR_vcfa_url: ${{ secrets.VCFA_URL }}
           TF_VAR_vcfa_org: ${{ secrets.VCFA_ORG }}
           TF_VAR_region_name: ${{ secrets.REGION_NAME }}
+          AVI_ENABLED: ${{ secrets.AVI_ENABLED }}
+          SEG_NAME: ${{ secrets.SEG_NAME }}
 
       # -A stages deletions too — removing a tenant from tenants.yaml must delete
       # its stale argocd/projects/<name>.yaml and clusters/<name>/vars/.
@@ -68,6 +75,3 @@ jobs:
           TF_VAR_vcfa_org: ${{ secrets.VCFA_ORG }}
           TF_VAR_argo_password: ${{ secrets.ARGO_PASSWORD }}
           TF_VAR_repo_url: ${{ secrets.REPO_URL }}
-          TF_VAR_ako_username: ${{ secrets.AKO_USERNAME }}
-          TF_VAR_ako_password: ${{ secrets.AKO_PASSWORD }}
-          TF_VAR_ako_ca_data: ${{ secrets.AKO_CA_DATA }}
