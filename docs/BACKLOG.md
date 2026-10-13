@@ -191,6 +191,43 @@ improvement · **P3** = nice-to-have / hygiene.
   by hand and check the live object.
 - **Size:** M.
 
+### P3 — Headlamp browser SSO via a Terraform-owned VCFA relying party
+- **What:** replace the pasted bearer (`scripts/headlamp-token.sh`) with a real
+  auth-code + PKCE login in Headlamp. VCFA 9.1.1 makes this possible: its
+  discovery now advertises `code_challenge_methods_supported: [S256]`, and
+  public clients exist — every ArgoCD instance logs in through one
+  (`clientSecret: ""`, `enablePKCEAuthentication: true`). That removes the
+  "needs a client secret per cluster" objection in `docs/DECISIONS.md` #21; the
+  "needs a redirect URI per cluster" objection remains.
+- **Constraint:** Headlamp **cannot be centralized** — its in-cluster auth model
+  means one instance per workload cluster, so one callback URL per cluster.
+- **How ArgoCD does it:** the argocd-service operator registers one VCFA
+  `oidcRelyingParty` per instance (`status.oidcConfig` on the `ArgoCD` CR:
+  `redirectUris` = instance URL + `http://127.0.0.1:8085/auth/callback`) through
+  the instance's VCFA service account. The API is plain REST, org-scoped:
+  `/cloudapi/1.0.0/openIdProvider/relyingParties` (fields `clientId`,
+  `clientName`, `isPublic`, `isPkceEnabled`, `redirectUris`, `scope`).
+- **Proposed design:** one Headlamp relying party per org, owned by
+  `terraform/infra` via TerraCurl (same idiom as
+  `terraform/bootstrap/argocd-sa-role.tf`). Public + PKCE, scope incl. `groups`.
+  `redirectUris` built from every `cluster-details.yaml` that sets
+  `headlamp_hostname` (`fileset` + `yamldecode`). The client id is constant, so
+  everything else stays org-global: `oidc-auth` `audiences` becomes
+  `[portal client, headlamp RP]` (paste path keeps working during migration),
+  the headlamp `AddonConfig` gets `oidc.clientID` + `usePKCE: true`, and
+  `callbackURL` is injected from `headlamp_hostname`. Also settles #21's
+  audience-width trade-off — a dedicated aud instead of the portal client.
+- **Cost:** clusters are born from git, so a new Headlamp cluster needs an infra
+  apply before login works — trigger the Apply workflow on
+  `infrastructure/clusters/**/cluster-details.yaml`, or avoid it entirely with a
+  wildcard redirect URI if VCFA accepts one.
+- **Spike first (needs writes against VCFA):** with a throwaway public+PKCE RP,
+  check (1) whether `redirectUris` accepts a wildcard, (2) whether a PUT that
+  changes `redirectUris` keeps the same `clientId` (the single-RP design depends
+  on it), (3) whether Headlamp 0.42 `oidc.usePKCE` works with no client secret
+  against VCFA and the token carries `groups`.
+- **Size:** S spike, M build.
+
 ### P3 — Per-org OIDC bundle when multi-org lands
 - **What:** `components/oidc-auth` is TF-generated and **org-global** (one flat
   bundle for the single org this infra run targets). Multi-org re-keys it **per
