@@ -944,10 +944,10 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
 
   | anonymous request | no `extraAuthentication` | with it (pre-3.7.2) | with it (3.7.2) |
   |---|---|---|---|
-  | `kube-public/cluster-info` | 200 | **200** | PROBE |
-  | `kube-public/pinniped-info` | 200 | **401** | PROBE |
-  | `TokenCredentialRequest` POST | 201 | **401** | PROBE |
-  | `default/pods` | 403 | 401 | PROBE |
+  | `kube-public/cluster-info` | 200 | **200** | 200 |
+  | `kube-public/pinniped-info` | 200 | **401** | **200** |
+  | `TokenCredentialRequest` POST | 201 | **401** | **201** |
+  | `default/pods` | 403 | 401 | 401 |
 
   The 403→401 shift on `default/pods` is the tell: without the config anonymous
   authenticates and RBAC denies; with it anonymous is refused at the
@@ -971,6 +971,14 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
   (`pinniped:view-pinnipedinfo`, `get` on that one resource name) is the tell:
   only a client that has no credential yet needs such a grant. It is read
   *before* login, not by an already-authenticated kubeconfig generator.
+
+  3.7.2 adds exactly those two paths to the rendered `anonymous.conditions`
+  (the Secret is now content-hashed, `<cluster>-authentication-config-<hash>`).
+  `auth whoami` on `dev1-cluster` after the roll: the vcf CLI cert path resolves
+  `admin` with `[Organization Administrator edit-<projectId>-tenant1@… …]`, the
+  pasted bearer `admin` with `[Organization Administrator …]`. Same expressions;
+  the derived `edit-…` group comes from the cluster-scoped token the CLI mints,
+  which a plain VCFA bearer doesn't carry.
 
   No allowlist entry, no CLI login. Before 3.7.2, enabling the bearer path
   removed the CLI path, and the Concierge cert path was **not** break-glass.
