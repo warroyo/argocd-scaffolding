@@ -3,9 +3,9 @@ INFRA_DIR         := $(REPO_ROOT)/terraform/infra
 BOOTSTRAP_DIR     := $(REPO_ROOT)/terraform/bootstrap
 STATE_BACKEND_DIR := $(REPO_ROOT)/terraform/state-backend
 
-# Extra flags for `terraform apply`. Empty locally (interactive approval); CI
-# sets TF_APPLY_FLAGS=-auto-approve -input=false (there is no TTY to approve on).
-TF_APPLY_FLAGS ?=
+# Every apply/destroy target prompts for approval; AUTO_APPROVE=1 skips it (CI,
+# no TTY). Without it, require-tty fails fast instead of aborting mid-run.
+APPROVE_FLAGS = $(if $(AUTO_APPROVE),-auto-approve -input=false)
 
 # Load a gitignored .env into EVERY recipe so all terraform roots — infra, bootstrap, AND
 # state-backend — see the same vcfa creds (tfvars only apply to their own dir, which is why
@@ -39,7 +39,7 @@ SRC_BACKEND := set -a; [ -f $(BACKEND_ENV) ] && . $(BACKEND_ENV); set +a;
 GENERATED_PATHS := argocd/projects 'infrastructure/clusters/*/vars/**' \
                    terraform/bootstrap/providers.tf terraform/bootstrap/main.tf
 
-.PHONY: validate state-backend check-generated-clean \
+.PHONY: validate state-backend check-generated-clean require-tty \
         init-infra plan-infra apply-infra \
         init-bootstrap plan-bootstrap apply-bootstrap \
         apply destroy-apps destroy-bootstrap destroy-infra destroy \
@@ -57,6 +57,14 @@ TF_ROOT_DIR := $(if $(filter infra,$(ROOT)),$(INFRA_DIR),$(if $(filter bootstrap
 ## Build-test every kustomize entrypoint locally (same script CI runs). Requires kustomize.
 validate:
 	@$(REPO_ROOT)/scripts/validate.sh
+
+## Listed first by every approval-gated target, so a run with nobody to confirm
+## fails before any work instead of aborting mid-teardown.
+require-tty:
+	@[ -n "$$AUTO_APPROVE" ] || [ -t 0 ] || { \
+	  echo "error: this target asks for approval but stdin is not a terminal." >&2; \
+	  echo "  Run it from a terminal, or set AUTO_APPROVE=1 to skip the prompt." >&2; \
+	  exit 1; }
 
 # ── State backend ────────────────────────────────────────────────────────────────
 
@@ -84,8 +92,8 @@ plan-infra: init-infra
 
 ## Provisions namespaces and renders all generated config (AppProjects,
 ## tenant-vars, and terraform/bootstrap/{providers,main}.tf). Commit the result.
-apply-infra: init-infra
-	terraform -chdir=$(INFRA_DIR) apply $(TF_APPLY_FLAGS)
+apply-infra: require-tty init-infra
+	terraform -chdir=$(INFRA_DIR) apply $(APPROVE_FLAGS)
 
 # ── Bootstrap module ───────────────────────────────────────────────────────────
 
@@ -118,7 +126,7 @@ plan-bootstrap: init-infra init-bootstrap
 ## plan+apply and the still-set TF_VAR_namespace_config trips the "can't set a variable
 ## when applying a saved plan" guard. Baking the var into the plan file avoids it. The
 ## confirmation gate is preserved manually (set AUTO_APPROVE=1 to skip it, e.g. in CI).
-apply-bootstrap: check-generated-clean init-infra init-bootstrap
+apply-bootstrap: require-tty check-generated-clean init-infra init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config))
 	@tfp=$$(mktemp); \
 	  TF_VAR_namespace_config='$(NS_CONFIG)' terraform -chdir=$(BOOTSTRAP_DIR) plan -out="$$tfp" || { rm -f "$$tfp"; exit 1; }; \
@@ -143,7 +151,7 @@ apply: apply-infra apply-bootstrap
 ## plan+apply and the still-set TF_VAR_namespace_config trips the "can't set a variable
 ## when applying a saved plan" guard. The confirmation gate is preserved manually (set
 ## AUTO_APPROVE=1 to skip it, e.g. in CI).
-destroy-bootstrap: init-infra init-bootstrap
+destroy-bootstrap: require-tty init-infra init-bootstrap
 	$(eval NS_CONFIG := $(shell $(SRC_BACKEND) terraform -chdir=$(INFRA_DIR) output -json namespace_config 2>/dev/null))
 	@if [ -z '$(NS_CONFIG)' ]; then \
 	  echo "error: infra output 'namespace_config' is empty or absent." >&2; \
@@ -164,8 +172,8 @@ destroy-bootstrap: init-infra init-bootstrap
 	  rc=$$?; rm -f "$$tfp"; exit $$rc
 
 # AUTO_APPROVE=1 skips the prompt, same gate as destroy-bootstrap.
-destroy-infra: init-infra
-	terraform -chdir=$(INFRA_DIR) destroy $(if $(AUTO_APPROVE),-auto-approve -input=false)
+destroy-infra: require-tty init-infra
+	terraform -chdir=$(INFRA_DIR) destroy $(APPROVE_FLAGS)
 
 ## Delete ArgoCD-managed ApplicationSets + Applications and let their finalizers
 ## cascade (removing the VKS workload clusters) BEFORE ArgoCD is torn down. Those
@@ -218,7 +226,7 @@ destroy-apps: init-infra init-bootstrap
 ## infra (namespaces/projects). Sequential sub-makes so the order holds even under
 ## `make -j` — infra must still exist while bootstrap is destroyed (bootstrap mints
 ## tokens against the still-existing namespaces and reads infra's namespace_config).
-destroy:
+destroy: require-tty
 	$(MAKE) destroy-apps
 	$(MAKE) destroy-bootstrap
 	$(MAKE) destroy-infra

@@ -11,8 +11,8 @@ on:
       - 'charts/bootstrap-tenant/**'
 
 env:
-  # No TTY in Actions — a bare `terraform apply` would die asking for approval.
-  TF_APPLY_FLAGS: -auto-approve -input=false
+  # No TTY in Actions: skip every make target's approval prompt.
+  AUTO_APPROVE: 1
 
 jobs:
   apply:
@@ -67,9 +67,6 @@ jobs:
       - name: Apply bootstrap
         run: make apply-bootstrap
         env:
-          # apply-bootstrap plans to a file then applies it (saved-plan guard workaround);
-          # skip the manual confirm gate here — no TTY in Actions.
-          AUTO_APPROVE: 1
           TF_VAR_vcfa_refresh_token: ${{ secrets.VCFA_REFRESH_TOKEN }}
           TF_VAR_vcfa_url: ${{ secrets.VCFA_URL }}
           TF_VAR_vcfa_org: ${{ secrets.VCFA_ORG }}

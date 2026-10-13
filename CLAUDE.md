@@ -206,7 +206,7 @@ Three constraints that shape every policy here:
   `vmware-system-vksm` — no `vmware-system-*` wildcard (verified live). A
   policy targeting a broad kind like `Pod` would evaluate in every other
   platform namespace and duplicate VKSM's own built-in pod-security policies.
-  The four shipped policies stay narrow (`Namespace`; ingress/Service kinds
+  The five shipped policies stay narrow (`Namespace`; ingress/Service kinds
   only) specifically to avoid this — keep new policies just as narrow, or use
   `selector_mode` to scope by tenant ownership instead of an exclude-list.
 

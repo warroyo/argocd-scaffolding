@@ -24,6 +24,7 @@ finish this.
 | `kubectl` | recent | one-time state-namespace setup, verification |
 | `envsubst` | any (gettext) | rendering the state-namespace manifest (Part 1.1); macOS: `brew install gettext` |
 | `vcf` CLI | recent | pointing kubectl at your VCF endpoint |
+| `htpasswd` | any | bcrypt-hashing the ArgoCD admin password (Part 2.1); `apache2-utils` / `httpd-tools` |
 | `make`, `git` | any | orchestration |
 
 **From your VCF Automation org** (ask your provider admin if unsure):
@@ -60,12 +61,12 @@ Supervisor-admin kubeconfig can reach.
 
 ## Part 1 — One-time, out-of-band setup (~15 min)
 
-Two things have to exist before Terraform or ArgoCD can do anything, and
-neither is created by this repo's automation — both are hand-applied with
+Three things have to exist before Terraform or ArgoCD can do anything, and
+none is created by this repo's automation — each is done by hand with
 `kubectl`, once, before Part 3 provisions a cluster.
 
 They use different credentials: 1.1 runs against your vcfa org context
-(`vcf context use`), 1.2 against the Supervisor cluster. A Supervisor
+(`vcf context use`), 1.2 and 1.3 against the Supervisor cluster. A Supervisor
 kubeconfig is usually the longer pole to get, so start asking for one now
 if you don't have it.
 
@@ -275,6 +276,10 @@ it); this walkthrough's minimal example omits it.
 make apply-infra
 ```
 
+It asks you to approve the plan, so run it from a terminal, or set
+`AUTO_APPROVE=1` where there isn't one (same for every `apply`/`destroy`
+target below).
+
 *You should see* Terraform create the projects, VPCs, and supervisor
 namespaces, then render config into the repo:
 
@@ -282,14 +287,15 @@ namespaces, then render config into the repo:
 Apply complete! Resources: 25 added, 0 changed, 0 destroyed.
 
 $ git status --short
- M argocd/projects/kustomization.yaml
-?? argocd/projects/tenant-1.yaml
- M infrastructure/clusters/tenant-1/vars/tenant-vars.yaml
-?? infrastructure/clusters/tenant-1/dev-1/vars/
-?? infrastructure/clusters/infra-1/infra/vars/
- M terraform/bootstrap/providers.tf
- M terraform/bootstrap/main.tf
+ M infrastructure/clusters/infra-1/infra/vars/ns-vars.yaml
+ M infrastructure/clusters/tenant-1/dev-1/vars/ns-vars.yaml
 ```
+
+That's a fork with the shipped `tenants.yaml`: the rendered files are
+already committed, so only the new namespace suffixes differ. Add or rename
+a tenant or namespace and you'll also see new `??` files under
+`argocd/projects/` and `infrastructure/clusters/*/vars/`, plus changes to
+`terraform/bootstrap/{providers,main}.tf`.
 
 Those rendered files are the Terraform → ArgoCD handoff. **Commit and push
 them** — ArgoCD reads git, not your working tree. Quote the `vars` pathspec
@@ -328,10 +334,23 @@ rather than exact names):
 ```sh
 vcf context use <your-vcfa-context>
 kubectl get supervisornamespaces -n infra-1     # -n = the infra tenant's project; shows infra-kyrtt
-vcf context refresh <your-vcfa-context>         # adds a context per new namespace
+# re-create the context so it discovers the new namespaces (one context each)
+vcf context delete <your-vcfa-context> -y
+# token from .env (loaded in 1.1); add --ca-certificate <vcfa-ca.pem> for a private CA
+vcf context create <your-vcfa-context> --type cci --endpoint https://<vcfa-host> \
+  --tenant-name <org> --api-token "$TF_VAR_vcfa_refresh_token"
 vcf context use <your-vcfa-context>:infra-kyrtt:infra-1
 kubectl get pods,svc,managedentities            # ArgoCD pods, a UI service, registrations
 ```
+
+**Why not `vcf context refresh`:** it only adds namespace contexts when it
+actually re-authenticates, and it skips that while the token is still valid
+(`Token is still active. Skipped the token refresh`). Only `create` reliably
+discovers namespaces made since the last login. Re-create the context the
+same way after any `apply-infra` that adds a namespace. Pass the endpoint CA
+with `--ca-certificate` (or rely on a publicly trusted one) rather than
+`--insecure-skip-tls-verify`: a context without CA data breaks
+`scripts/pinniped-kubeconfig.sh` in Part 4.3.
 
 The org context can't list namespaces or pods (`kubectl get ns` is forbidden
 for an org admin); the per-namespace context can.
@@ -531,10 +550,13 @@ spec:
 
 The Application resource itself lives in the managing ArgoCD's namespace.
 Today that means the platform operator applies it (or the tenant uses the
-ArgoCD UI/CLI — per-tenant SSO/RBAC is tracked in [BACKLOG.md](BACKLOG.md)):
+ArgoCD UI/CLI — per-tenant SSO/RBAC is tracked in [BACKLOG.md](BACKLOG.md)).
+For this walkthrough, apply the shipped sample — it points at this repo's
+own copy of the tenant manifests, so it works as-is:
 
 ```sh
-kubectl apply -f app.yaml -n infra-kyrtt    # the suffixed infra namespace
+vcf context use <your-vcfa-context>:infra-kyrtt:infra-1     # the suffixed infra namespace
+kubectl apply -f docs/examples/sample-tenant-repo/tenant-1/app.yaml -n infra-kyrtt
 ```
 
 The `tenant-1` AppProject is the enforcement boundary: workloads only, on
@@ -549,10 +571,16 @@ everyone else's.
 
 ```sh
 kubectl get pods -n music-store     # against dev1-cluster's kubeconfig
-NAME                        READY   STATUS    RESTARTS   AGE
-cart-5f6c…                  1/1     Running   0          1m
-catalog-7d9b…               1/1     Running   0          1m
+NAME                             READY   STATUS    RESTARTS   AGE
+cart-service-c96dd7d86-knlx9     2/2     Running   0          1m
+music-store-1-5c5b7587f9-8wf8p   2/2     Running   0          1m
+music-store-1-5c5b7587f9-tv8d5   2/2     Running   0          1m
+order-service-6f7dcb9796-jz8j8   2/2     Running   0          1m
+postgres-9f9c464d8-nmwn4         2/2     Running   0          1m
+users-service-778d67b69b-sxqk8   2/2     Running   0          1m
 ```
+
+`2/2` is the app container plus its istio sidecar.
 
 ### 4.1 Secret store smoke test (optional)
 
@@ -633,7 +661,7 @@ public CAs, and the identity comes from whoever's token the exec plugin presents
 at run time:
 
 ```sh
-vcf context use <org>-<user>:<supervisor-ns>:<project>     # a VCFA namespace context
+vcf context use <your-vcfa-context>:<supervisor-ns>:<project>     # a VCFA namespace context (2.4)
 ./scripts/pinniped-kubeconfig.sh <cluster> -o ~/.kube/<cluster>.config
 
 VCF_CLI_VCFA_API_TOKEN='<your VCFA API token>' \
@@ -853,9 +881,14 @@ or re-run one):
    (the ArgoCD helm releases).
 3. **`destroy-infra`** — `terraform destroy` on `terraform/infra` (the
    supervisor namespaces, VPCs, AppProjects, and every file it rendered).
+   Those rendered files disappear from your working tree too. Don't commit
+   the deletions if you're about to rebuild: the next `apply-infra`
+   re-renders them, and only the namespace suffixes change.
 
-Same confirmation gate as `apply-bootstrap` (`AUTO_APPROVE=1` to skip,
-e.g. CI). Prompts you once per destroy plan.
+Same confirmation gate as `apply-bootstrap`: it prompts once per destroy
+plan, so it needs a terminal. Without one (CI, or a `!` command in Claude
+Code), set `AUTO_APPROVE=1`; otherwise `make` stops with an error before
+deleting anything.
 
 **What `make destroy` does not touch** (Part 1's out-of-band, hand-applied
 objects — different credentials, different lifecycle):
@@ -925,8 +958,10 @@ down everything the state describes:
 ```sh
 vcf context use <your-vcfa-context>
 # by name: the manifest uses generateName, so `delete -f` can't find it
-kubectl delete supervisornamespace -n tf-state "$(sed -E 's/.*"(.*)".*/\1/' terraform/state-backend/namespace.auto.tfvars)"
-# wait for it to disappear before deleting its project
+NAME=$(sed -E 's/.*"(.*)".*/\1/' terraform/state-backend/namespace.auto.tfvars)
+kubectl delete supervisornamespace -n tf-state "$NAME"
+# delete returns before the namespace is gone (~30s); its project can't go first
+kubectl wait --for=delete supervisornamespace -n tf-state "$NAME" --timeout=5m
 kubectl delete -f terraform/state-namespace/project.yaml
 ```
 
