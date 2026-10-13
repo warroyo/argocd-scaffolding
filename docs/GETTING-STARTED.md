@@ -612,21 +612,34 @@ would ship the `ExternalSecret` in their own repo (Part 4); the
 `KeyValueSecret` is applied by hand or by whatever owns the secret's
 lifecycle.
 
-### 4.2 Headlamp — expose the UI (login is parked)
+### 4.2 Headlamp — expose the UI and log in
 
-Headlamp is exposed through Gateway API, but there is **no working browser
-login** today. The design was a pasted VCFA bearer accepted by the guest
-apiserver's structured `AuthenticationConfiguration` (`components/oidc-auth`) —
-that config narrows anonymous authentication to a **fixed VKS allowlist**
-(`/healthz`, `/readyz`, `/livez`, `kube-public/cluster-info`) that omits the two
-paths Pinniped Concierge needs, so it takes out the vcf CLI path. It is parked
-on `wip/headlamp-oidc-auth` until a VKS release fixes that; see
-`docs/BACKLOG.md` and `docs/DECISIONS.md` #21. Cluster access today is the vcf
-CLI (Concierge client-cert exchange).
+Headlamp is exposed through Gateway API. Login is a pasted VCFA bearer that the
+guest apiserver accepts through structured `AuthenticationConfiguration`
+(`components/oidc-auth`). **Needs VKS 3.7.2+** — on earlier releases that config
+broke vcf CLI (Concierge) login with a 401; see `docs/DECISIONS.md` #21.
 
-**Expose the UI.** In the cluster's `kustomization.yaml` add
-`components/headlamp-config` (before `cluster-var-injector`) and set
-`headlamp_hostname` in `cluster-details.yaml`. `headlamp-config` defaults the UI
+**Render the auth bundle (once per org).** Set the audience in `.env` — read it
+off your own token — and re-run the infra apply. For the Apply workflow, set the
+same value as the repo variable `VCFA_OIDC_AUDIENCE`; without it the workflow
+renders nothing and deletes the committed file.
+
+```sh
+./scripts/headlamp-token.sh | cut -d. -f2 | base64 -d | jq -r .aud
+# .env: TF_VAR_vcfa_oidc_audience=<that value>
+make apply-infra   # renders infrastructure/components/oidc-auth/kustomization.yaml — commit it
+```
+
+The CA is fetched from the VCFA endpoint with chain verification on, so the
+machine running Terraform must trust the VCFA root. A lab with a VMCA-signed
+VCFA can point `SSL_CERT_FILE` at a bundle that adds the root from
+`https://<vcenter>/certs/download.zip`.
+
+**Opt a cluster in.** In the cluster's `kustomization.yaml` add
+`components/oidc-auth` and `components/headlamp-config` (both before
+`cluster-var-injector`) and set `headlamp_hostname` in `cluster-details.yaml`.
+`oidc-auth` rolls the control plane once — on a single replica that is an API
+outage (`validate.sh` warns). `headlamp-config` defaults the UI
 Gateway to the `avi-lb` GatewayClass. On a **non-AKO** cluster (`disable-ako`)
 that class doesn't exist — override it in the cluster's `patches:` block:
 
@@ -639,9 +652,14 @@ patches:
       value: istio   # or whatever gateway class the cluster provides
 ```
 
-`scripts/headlamp-token.sh` still prints the VCFA bearer from your vcf CLI
-kubeconfig — useful for `auth whoami` against VCFA, not for cluster login. A
-cluster will reject it until the parked component returns.
+**Log in.** `scripts/headlamp-token.sh` prints the VCFA bearer from your vcf CLI
+kubeconfig; paste it into Headlamp's token field. It expires in about an hour —
+re-run the script. Check what the cluster sees first:
+
+```sh
+kubectl --server=https://<cluster-endpoint>:6443 --insecure-skip-tls-verify \
+  --token="$(./scripts/headlamp-token.sh)" auth whoami
+```
 
 ### 4.3 A tenant's kubectl access (`scripts/pinniped-kubeconfig.sh`)
 
@@ -681,9 +699,8 @@ knowing:
   out of band if you need protection from an active MITM. Fallbacks, in order:
   the Pinniped `CredentialIssuer`, a local kubeconfig entry for the same server,
   `--ca-file`. This path needs **anonymous auth**, and it keeps working under
-  the parked `oidc-auth` component: VKS hardcodes `cluster-info` into the
-  anonymous allowlist because worker-node bootstrap depends on it (verified
-  2026-08-27, `docs/DECISIONS.md` #21).
+  `oidc-auth`: VKS hardcodes `cluster-info` into the anonymous allowlist because
+  worker-node bootstrap depends on it (verified 2026-08-27, `docs/DECISIONS.md` #21).
 - **The credential cache is keyed by cluster UUID only**, so two identities using
   the default cache evict each other. The script scopes it per user
   (`credentials-<username>.json`) so an admin and a tenant context can be live at
@@ -696,7 +713,7 @@ terminals.
 **Tenant group binding — verified working on the CLI path (2026-08-25).**
 A tenant user resolves to `[tenant-1-users Organization User system:authenticated]`
 through the Concierge certificate and gets exactly this layer's authorization; the
-parked bearer path is only needed for the Headlamp browser login. Tenants get **read-only**; every write goes through
+bearer path (Headlamp) runs the same claim expressions, so the same binding applies. Tenants get **read-only**; every write goes through
 the tenant's gitops flow. The grant is in place if three things are true:
 
 a. **Your token carries the tenant's group.** The workload apiserver sees

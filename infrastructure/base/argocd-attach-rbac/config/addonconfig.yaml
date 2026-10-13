@@ -49,9 +49,8 @@ spec:
         # substitutes both at apply time.
         audience: ${CLUSTER_NAME}-${CLUSTER_UID}
         claims:
-          # These expressions are the identity contract for the vcf CLI path.
-          # The parked apiserver bearer path must match them byte-for-byte when
-          # it returns (docs/BACKLOG.md), or the two paths yield different subjects.
+          # Byte-identical to components/oidc-auth claimMappings (validate.sh
+          # checks) — one identity on both paths. Change both or neither.
           usernameExpression: 'claims.preferred_username'
           groupsExpression: 'claims.?groups.orValue([]) + claims.?roles.orValue([])'
         tls:

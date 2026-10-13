@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
-# Print the VCFA bearer the vcf CLI already holds. It is a normal VCFA
-# id/access token (iss=<vcfa>/oidc), not cluster-scoped. Workload apiservers do
-# NOT accept it today — components/oidc-auth is parked (docs/BACKLOG.md), so
-# this is a debugging aid (`auth whoami` against VCFA), not a cluster login.
+# Print the VCFA bearer the vcf CLI holds, to paste into Headlamp's token login.
+# Accepted by any cluster with components/oidc-auth; docs/ARCHITECTURE.md "VCFA identity".
 set -euo pipefail
 
 # Renew from the stored refresh token if the CLI supports it (no-op otherwise).

@@ -11,14 +11,18 @@
 #   3. no rendered output contains "replace-me" (catches a cluster that skipped
 #      its environment overlay — the bases carry replace-me placeholders).
 #   4. an apps/ dir that declares a `vars` cluster_name (for the apps-side
-#      injector) declares the directory's cluster name.
-#   5. docs/examples/cluster-template and docs/examples/namespace-resources-template
+#      injector) declares the directory's cluster name and project.
+#   5. a cluster enabling extraAuthentication (components/oidc-auth) on a
+#      single-replica control plane warns — the change rolls the API server.
+#   6. the oidc-auth claimMappings match the Concierge JWTAuthenticator claims
+#      byte-for-byte (one identity across the bearer and vcf CLI paths).
+#   7. docs/examples/cluster-template and docs/examples/namespace-resources-template
 #      still build (via temp copies at the real directory depth), so the
 #      templates can't rot silently.
-#   6. each cluster's ManagedEntity renders from infrastructure/base/cluster-registration
+#   8. each cluster's ManagedEntity renders from infrastructure/base/cluster-registration
 #      with the cluster-registration ApplicationSet's own patch (so the base and
 #      the appset can't drift) and leaves no replace-me behind.
-#   7. every cluster dir in docs/examples/sample-tenant-repo builds (the repo
+#   9. every cluster dir in docs/examples/sample-tenant-repo builds (the repo
 #      Part 4 of GETTING-STARTED deploys).
 #
 # Usage: scripts/validate.sh   (requires kustomize on PATH)
@@ -116,6 +120,16 @@ while IFS= read -r details; do
   build_check "$dir"
   registration_check "$project" "$nsref" "$cluster"
 
+  # extraAuthentication rolls the control plane: an outage on one replica. Warn,
+  # don't fail — dev runs one replica. See docs/DECISIONS.md #21.
+  rendered="$(kustomize build "$dir" 2>/dev/null)"
+  if grep -q 'extraAuthentication' <<<"$rendered"; then
+    cp_replicas="$(awk '/^    controlPlane:/{f=1} f && /^      replicas:/{print $2; exit}' <<<"$rendered")"
+    if [ "$cp_replicas" = "1" ]; then
+      echo "::warning::$dir: extraAuthentication on a single-replica control plane — applying it rolls the API server (expect an outage; keep the vcf CLI / Concierge cert path as break-glass)"
+    fi
+  fi
+
   if [ -d "$dir/apps" ]; then
     # The apps tree can't read ../cluster-details.yaml (kustomize load
     # restrictions), so a cluster using the apps-side injector re-declares
@@ -140,6 +154,26 @@ while IFS= read -r details; do
     build_check "$dir/apps"
   fi
 done < <(find infrastructure/clusters -name cluster-details.yaml)
+
+# oidc-auth claimMappings must equal the Concierge JWTAuthenticator claims, or the
+# bearer and vcf CLI paths yield different RBAC subjects. See docs/DECISIONS.md #21.
+OIDC_COMPONENT="infrastructure/components/oidc-auth/kustomization.yaml"
+DAYZERO_CONFIG="infrastructure/base/argocd-attach-rbac/config/addonconfig.yaml"
+if [ -f "$OIDC_COMPONENT" ] && [ -f "$DAYZERO_CONFIG" ]; then
+  echo "checking OIDC claim-expression parity"
+  api_user="$(awk -F"'" '/^ *username:$/{f=1;next} f && /expression:/{print $2; exit}' "$OIDC_COMPONENT")"
+  api_groups="$(awk -F"'" '/^ *groups:$/{f=1;next} f && /expression:/{print $2; exit}' "$OIDC_COMPONENT")"
+  cc_user="$(awk -F"'" '/usernameExpression:/{print $2; exit}' "$DAYZERO_CONFIG")"
+  cc_groups="$(awk -F"'" '/groupsExpression:/{print $2; exit}' "$DAYZERO_CONFIG")"
+  for pair in "username:$api_user:$cc_user" "groups:$api_groups:$cc_groups"; do
+    field="${pair%%:*}"; rest="${pair#*:}"; a="${rest%%:*}"; b="${rest#*:}"
+    if [ -z "$a" ] || [ -z "$b" ]; then
+      fail "OIDC $field expression not found in $OIDC_COMPONENT / $DAYZERO_CONFIG — parity check can't run"
+    elif [ "$a" != "$b" ]; then
+      fail "OIDC $field expression differs: '$a' (apiserver) vs '$b' (Concierge) — they must be byte-identical or the CLI and dashboard paths yield different RBAC subjects"
+    fi
+  done
+fi
 
 # Namespace-level resources (namespace-resources ApplicationSet source): one dir
 # per {project}/{namespace_ref}, synced once into the supervisor namespace. No

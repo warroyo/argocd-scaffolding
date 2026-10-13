@@ -14,6 +14,20 @@ variable "vcfa_org" {
   description = "The VCF Automation org"
 }
 
+variable "vcfa_oidc_audience" {
+  type        = string
+  description = <<-EOT
+    The VCFA OIDC client id the vcf CLI's token carries (its `aud` claim) — the
+    audience the guest apiserver trusts for the Headlamp bearer path
+    (components/oidc-auth). Not a secret and not discoverable via TLS/discovery,
+    so it is supplied here rather than derived. Read it off a live token:
+      ./scripts/headlamp-token.sh | cut -d. -f2 | base64 -d | jq -r .aud
+    Org-global. Null (the default) skips rendering components/oidc-auth.
+    See docs/DECISIONS.md #21 (audience-width trade-off).
+  EOT
+  default     = null
+}
+
 variable "region_name" {
   type = string
 }

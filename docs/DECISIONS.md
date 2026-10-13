@@ -865,15 +865,12 @@ add-on.
 
 ## 21. How does Headlamp get the user's identity? (pasted VCFA bearer, not an OIDC relying party)
 
-> **PARKED (2026-08-25), blocker narrowed (2026-08-27).** The chosen design
-> below is implemented but **not on `main`** — it lives on
-> `wip/headlamp-oidc-auth`. Setting the apiserver's structured
-> `AuthenticationConfiguration` (`extraAuthentication`) narrows anonymous
-> authentication to a fixed VKS allowlist that omits Pinniped Concierge's two
-> paths, so it takes out the vcf CLI path in exchange for the dashboard path.
-> Blocked on a VKS release. The analysis below stands; only the status changed.
-> See the *Anonymous auth* bullet for what was measured, and `docs/BACKLOG.md`
-> for the re-land checklist.
+> **Re-landed 2026-10-13 on VKS 3.7.2.** Parked 2026-08-25 to 2026-10-13:
+> on earlier releases `extraAuthentication` broke Concierge (vcf CLI) login
+> with a 401. The 3.7.2 release notes list it as fixed ("Enabling
+> `apiServerConfiguration.extraAuthentication` on a cluster's API server breaks
+> the cluster's default Pinniped-based login with a 401 error"). The
+> *Anonymous auth* bullet keeps the pre-fix measurement and the 3.7.2 re-check.
 
 **The problem.** Headlamp is a browser dashboard that needs to act as the
 logged-in user against a workload cluster. The obvious design — Headlamp as an
@@ -933,7 +930,7 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
 - *Control-plane roll.* Enabling `oidc-auth` writes the apiserver's structured
   authn, which rolls the control plane once (`validate.sh` warns on single-replica
   CPs).
-- *Anonymous auth — the blocker.* Structured authn as VKS applies it replaces
+- *Anonymous auth — the former blocker (fixed in VKS 3.7.2).* Structured authn as VKS applied it replaced
   blanket anonymous authentication with a **fixed allowlist**, and the
   `apiServerConfiguration.extraAuthentication` variable schema says so outright:
   anonymous access "is automatically configured by VKS and cannot be
@@ -942,14 +939,15 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
   `/readyz`, `/livez`, and `/api/v1/namespaces/kube-public/configmaps/cluster-info`.
 
   Measured live 2026-08-27 on a throwaway cluster (`builtin-generic-v3.7.0`,
-  k8s v1.35.5) against a cluster without the config:
+  k8s v1.35.5) against a cluster without the config, and re-checked
+  on VKS 3.7.2 (`dev1-cluster`):
 
-  | anonymous request | no `extraAuthentication` | with it |
-  |---|---|---|
-  | `kube-public/cluster-info` | 200 | **200** |
-  | `kube-public/pinniped-info` | 200 | **401** |
-  | `TokenCredentialRequest` POST | 201 | **401** |
-  | `default/pods` | 403 | 401 |
+  | anonymous request | no `extraAuthentication` | with it (pre-3.7.2) | with it (3.7.2) |
+  |---|---|---|---|
+  | `kube-public/cluster-info` | 200 | **200** | PROBE |
+  | `kube-public/pinniped-info` | 200 | **401** | PROBE |
+  | `TokenCredentialRequest` POST | 201 | **401** | PROBE |
+  | `default/pods` | 403 | 401 | PROBE |
 
   The 403→401 shift on `default/pods` is the tell: without the config anonymous
   authenticates and RBAC denies; with it anonymous is refused at the
@@ -974,9 +972,9 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
   only a client that has no credential yet needs such a grant. It is read
   *before* login, not by an already-authenticated kubeconfig generator.
 
-  No allowlist entry, no CLI login. Enabling the bearer path removes the CLI
-  path, and the Concierge cert path is **not** break-glass here. That is what
-  parked this.
+  No allowlist entry, no CLI login. Before 3.7.2, enabling the bearer path
+  removed the CLI path, and the Concierge cert path was **not** break-glass.
+  That is what parked this.
 
   Two things this does **not** break, contrary to an earlier reading:
   `scripts/pinniped-kubeconfig.sh` guest-CA discovery, and kubeadm worker join —
@@ -992,7 +990,7 @@ because the day-zero Concierge already validates VCFA tokens on every guest.
 > on the **vcf CLI / Concierge** path today — a project-read tenant resolves to
 > `Groups [tenant-1-users Organization User system:authenticated]` and gets
 > exactly the access described below. An earlier draft of this decision claimed
-> the tenant's VCFA group reaches only the (parked) Headlamp bearer path; that is
+> the tenant's VCFA group reaches only the Headlamp bearer path; that is
 > wrong. Both cluster-facing paths run the same claim expressions, so one binding
 > serves both, and tenant access does not wait on `oidc-auth` (#21) — only the
 > browser login does.

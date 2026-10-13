@@ -1,6 +1,6 @@
 # Opt-in: Gateway API exposure for this cluster's headlamp UI. Needs
-# `headlamp_hostname` in cluster-details.yaml. No working browser login today —
-# the apiserver bearer path (components/oidc-auth) is parked, docs/BACKLOG.md.
+# `headlamp_hostname` in cluster-details.yaml. Login needs components/oidc-auth
+# (docs/ARCHITECTURE.md "VCFA identity").
 apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 

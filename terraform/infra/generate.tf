@@ -111,6 +111,20 @@ resource "local_file" "ns_vars_kustomization" {
   content  = templatefile("${path.module}/templates/ns-vars-kustomization.yaml.tftpl", {})
 }
 
+# ── OIDC identity bundle (Headlamp SSO) — components/oidc-auth ─────────────────
+# issuer + CA derived (locals + tls_certificate probe in oidc.tf); audience is
+# var.vcfa_oidc_audience (unset = not rendered). Org-global; per-org re-key is backlog.
+
+resource "local_file" "oidc_auth" {
+  count    = var.vcfa_oidc_audience == null ? 0 : 1
+  filename = "${path.module}/../../infrastructure/components/oidc-auth/kustomization.yaml"
+  content = templatefile("${path.module}/templates/oidc-auth.yaml.tftpl", {
+    issuer   = local.oidc_issuer
+    audience = var.vcfa_oidc_audience
+    ca_pem   = local.oidc_ca_pem
+  })
+}
+
 # ── Bootstrap wiring consumed by the second Terraform run ──────────────────────
 
 resource "local_file" "bootstrap_providers" {

@@ -38,6 +38,7 @@ jobs:
         run: |
           if [ -n "$AVI_ENABLED" ]; then export TF_VAR_avi_enabled="$AVI_ENABLED"; fi
           if [ -n "$SEG_NAME" ]; then export TF_VAR_seg_name="$SEG_NAME"; fi
+          if [ -n "$OIDC_AUDIENCE" ]; then export TF_VAR_vcfa_oidc_audience="$OIDC_AUDIENCE"; fi
           make apply-infra
         env:
           TF_VAR_vcfa_refresh_token: ${{ secrets.VCFA_REFRESH_TOKEN }}
@@ -46,6 +47,7 @@ jobs:
           TF_VAR_region_name: ${{ secrets.REGION_NAME }}
           AVI_ENABLED: ${{ secrets.AVI_ENABLED }}
           SEG_NAME: ${{ secrets.SEG_NAME }}
+          OIDC_AUDIENCE: ${{ vars.VCFA_OIDC_AUDIENCE }}
 
       # -A stages deletions too — removing a tenant from tenants.yaml must delete
       # its stale argocd/projects/<name>.yaml and clusters/<name>/vars/.

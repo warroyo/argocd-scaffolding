@@ -1,8 +1,7 @@
 # Optional config — headlamp is fine on defaults, so this ships only via the
 # opt-in components/headlamp-config (CLAUDE.md "Add-on config"). Only exposes the
-# UI through Gateway API; headlamp itself does NO OIDC. The bearer login path
-# (apiserver-side components/oidc-auth) is parked — see docs/BACKLOG.md.
-# hostname is injected from cluster-details.yaml (headlamp_hostname).
+# UI through Gateway API; login is the apiserver's oidc-auth, not headlamp. hostname
+# is injected from cluster-details.yaml. See docs/ARCHITECTURE.md "VCFA identity".
 apiVersion: addons.kubernetes.vmware.com/v1alpha1
 kind: AddonConfig
 metadata:

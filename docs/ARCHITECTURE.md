@@ -648,8 +648,8 @@ the API — defense in depth, same as the gateway-api grant.
 
 ## VCFA identity (cluster access)
 
-Every workload cluster trusts the same VCFA identity plane. One path reaches
-it:
+Every workload cluster trusts the same VCFA identity plane. Two paths reach
+it, and they resolve to the same subjects:
 
 - **CLI access (client certificate).** The vcf CLI logs a user into VCFA (a
   Pinniped Supervisor federates to VCFA via `OIDCIdentityProvider/oidc-idp`),
@@ -657,6 +657,12 @@ it:
   short-lived client certificate (`TokenCredentialRequest`, validated by the
   day-zero `tm-vks-jwt-authenticator` — audience `<cluster>-<uid>`, seeded by the
   mandatory `argocd-attach-rbac` dayzero payload). This is `kubectl`.
+- **Dashboard access (bearer).** On clusters that opt into `components/oidc-auth`,
+  the guest apiserver's structured `AuthenticationConfiguration`
+  (`apiServerConfiguration.extraAuthentication`) accepts the plain VCFA bearer
+  the vcf CLI already holds (`iss=<vcfa>/oidc`, org-global audience). The user
+  pastes it into Headlamp (`scripts/headlamp-token.sh`). Requires VKS 3.7.2+:
+  earlier releases broke the CLI path once this was set (`docs/DECISIONS.md` #21).
 
 **The authenticator's name is a CLI-facing contract.** `tm-vks-jwt-authenticator`
 is hardcoded in the `vcf` binary, not carried in the kubeconfig: the exec plugin
@@ -671,16 +677,15 @@ it under exactly that name instead of running
 `vcf … register-vcfa-jwt-authenticator` per cluster. `tkg-jwt-authenticator`
 (the supervisor's own, kapp-managed) is a different object and off-limits.
 
-**The guest apiserver accepts no bearer tokens.** The Concierge exchange above
-is the only authenticator on a workload cluster, so the subjects RBAC can bind
-are exactly the ones its `JWTAuthenticator` produces —
-`claims.preferred_username` and `claims.groups + claims.roles`, set in
-`infrastructure/base/argocd-attach-rbac/config`. An apiserver-side bearer path
-(what a Headlamp browser login would need) is not implemented; see
-`docs/DECISIONS.md` #21 and `docs/BACKLOG.md`.
+**One identity, two front doors.** Both paths run the same claim expressions —
+`claims.preferred_username` and `claims.groups + claims.roles` — set once in
+`infrastructure/base/argocd-attach-rbac/config` (Concierge) and once in the
+`oidc-auth` template (apiserver). `validate.sh` fails if they drift, because
+drift would give one person two RBAC subjects. The bearer path adds no prefix,
+so a `userValidationRules` entry rejects `system:` usernames instead.
 
-`headlamp-config` exposes the Headlamp UI through Gateway API; the UI has no
-working browser login today. It defaults its GatewayClass to `avi-lb`
+`headlamp-config` exposes the Headlamp UI through Gateway API; login is the
+`oidc-auth` bearer path above. It defaults its GatewayClass to `avi-lb`
 (AKO/AVI is default-on every cluster; Gateway API has no is-default-class, so
 this is an explicit default value). A **non-AKO** cluster running headlamp
 overrides `className` per-cluster (a `patches:` block targeting the headlamp
@@ -693,6 +698,7 @@ flowchart LR
   user([User]) -->|vcf CLI login| vcfa[(VCFA OIDC<br/>+ Pinniped Supervisor)]
   vcfa -->|VCFA bearer<br/>aud=org-global client| tok[/id/access token/]
   tok -->|kubectl: TokenCredentialRequest| concierge[Concierge on guest<br/>tm-vks-jwt-authenticator] -->|client cert| api1[Guest apiserver]
+  tok -->|Headlamp: pasted bearer| api1
 ```
 
 ## Tenant human access (who can see what, once logged in)
