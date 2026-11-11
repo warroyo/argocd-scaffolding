@@ -16,6 +16,10 @@ locals {
 }
 
 # Probes the VCFA TLS endpoint for its cert chain (no auth, non-secret).
+# verify_chain = false: the point is to fetch the CA we don't yet trust (lab
+# VCFA is signed by the vCenter VMCA), so validating against the host's trust
+# store would fail on exactly the case this exists for.
 data "tls_certificate" "vcfa" {
-  url = "https://${local.vcfa_host}"
+  url          = "https://${local.vcfa_host}"
+  verify_chain = false
 }
